@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   generateObject,
-  streamObject,
   type LanguageModelV1,
 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -36,7 +35,7 @@ function resolveLanguageModel(
   switch (provider) {
     case 'openai': {
       if (!env.OPENAI_API_KEY) throw new Error('OpenAI LLM requires OPENAI_API_KEY');
-      return createOpenAI({ apiKey: env.OPENAI_API_KEY, compatibility: 'strict' }).chat(model);
+      return createOpenAI({ apiKey: env.OPENAI_API_KEY, compatibility: 'compatible' }).chat(model, { structuredOutputs: false });
     }
     case 'anthropic': {
       if (!env.ANTHROPIC_API_KEY) throw new Error('Anthropic LLM requires ANTHROPIC_API_KEY');
@@ -81,43 +80,40 @@ const characterRoleEnum = z.enum([
 /** Pass 1: world + characters + chapters/scenes */
 const Pass1Schema = z.object({
   setting: z.string().describe('Overall world/setting description'),
-  genre: z.array(z.string()).default([]),
-  tone: z.string().optional(),
-  artStyle: z.string().optional(),
-  artStyleNegative: z.array(z.string()).default([]),
-  colorPalette: z.array(z.string()).default([]),
-  worldRules: z.array(z.string()).default([]),
+  genre: z.array(z.string()),
+  tone: z.string(),
+  artStyle: z.string(),
+  artStyleNegative: z.array(z.string()),
+  colorPalette: z.array(z.string()),
+  worldRules: z.array(z.string()),
   characters: z
     .array(
       z.object({
         name: z.string(),
-        aliases: z.array(z.string()).default([]),
+        aliases: z.array(z.string()),
         description: z.string(),
-        role: characterRoleEnum.default('supporting'),
-        paletteNotes: z.array(z.string()).default([]),
-        negativeConstraints: z.array(z.string()).default([]),
+        role: characterRoleEnum,
+        paletteNotes: z.array(z.string()),
+        negativeConstraints: z.array(z.string()),
       }),
-    )
-    .default([]),
+    ),
   chapters: z
     .array(
       z.object({
-        title: z.string().optional(),
+        title: z.string(),
         summary: z.string(),
         scenes: z
           .array(
             z.object({
-              title: z.string().optional(),
+              title: z.string(),
               summary: z.string(),
-              textExcerpt: z.string().optional().describe('Verbatim source text for this scene'),
-              emotionalTone: emotionalToneEnum.default('neutral'),
-              charactersPresent: z.array(z.string()).default([]),
+              textExcerpt: z.string().describe('Verbatim source text for this scene'),
+              emotionalTone: emotionalToneEnum,
+              charactersPresent: z.array(z.string()),
             }),
-          )
-          .default([]),
+          ),
       }),
-    )
-    .default([]),
+    ),
 });
 
 type Pass1Result = z.infer<typeof Pass1Schema>;
@@ -128,14 +124,13 @@ const Pass2Schema = z.object({
     .array(
       z.object({
         summary: z.string(),
-        text: z.string().optional(),
-        emotionalTone: emotionalToneEnum.default('neutral'),
-        cameraHint: cameraFramingEnum.optional(),
-        charactersPresent: z.array(z.string()).default([]),
-        objects: z.array(z.string()).default([]),
+        text: z.string(),
+        emotionalTone: emotionalToneEnum,
+        cameraHint: cameraFramingEnum,
+        charactersPresent: z.array(z.string()),
+        objects: z.array(z.string()),
       }),
-    )
-    .default([]),
+    ),
 });
 
 type Pass2Result = z.infer<typeof Pass2Schema>;
@@ -147,29 +142,26 @@ const Pass3Schema = z.object({
       z.object({
         beatIndex: z.number().int().nonnegative(),
         description: z.string(),
-        cameraFraming: cameraFramingEnum.optional(),
+        cameraFraming: cameraFramingEnum,
         characters: z
           .array(
             z.object({
               name: z.string(),
-              pose: z.string().optional(),
-              expression: z.string().optional(),
-              position: z.enum(['left', 'center', 'right', 'background']).optional(),
+              pose: z.string(),
+              expression: z.string(),
+              position: z.enum(['left', 'center', 'right', 'background']),
             }),
-          )
-          .default([]),
+          ),
         dialogueLines: z
           .array(
             z.object({
               speaker: z.string(),
               text: z.string(),
-              type: z.enum(['speech', 'thought', 'narration', 'sfx']).default('speech'),
+              type: z.enum(['speech', 'thought', 'narration', 'sfx']),
             }),
-          )
-          .default([]),
+          ),
       }),
-    )
-    .default([]),
+    ),
 });
 
 type Pass3Result = z.infer<typeof Pass3Schema>;
@@ -218,35 +210,45 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     const projectId = input.projectId;
     const text = truncate(input.text, MAX_PASS1_CHARS);
 
-    // ---- Pass 1: chapters + scenes + world + characters (streamed) ----
-    const pass1Stream = streamObject({
-      model: this.model,
-      schema: Pass1Schema,
-      schemaName: 'storyPlan',
-      schemaDescription: 'Top-level story plan: world, characters, chapters and scenes',
-      system: [
-        'You are a comic story planner. Decompose an audiobook/source text into a',
-        'structured plan suitable for adaptation into a narrated comic.',
-        'Identify the world setting, recurring characters, and break the text into',
-        'chapters and scenes. Each scene must include a short verbatim textExcerpt',
-        'drawn from the source so later passes can extract beats.',
-        input.artStyle ? `Target art style: ${input.artStyle}.` : '',
-        input.genre && input.genre.length > 0 ? `Genre: ${input.genre.join(', ')}.` : '',
-        input.language ? `Source language: ${input.language}.` : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
-      prompt: text,
-      abortSignal: input.signal,
-    });
-
-    // Consume the partial stream so callers could attach progress hooks, then
-    // await the final validated object.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _partial of pass1Stream.partialObjectStream) {
-      // intentionally empty — streaming is exercised; final value read below
+    // ---- Pass 1: chapters + scenes + world + characters ----
+    // Use generateObject with retry — streamObject can fail silently if the
+    // model returns no valid JSON, giving "No object generated" errors.
+    let pass1: Pass1Result | null = null;
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3 && !pass1; attempt++) {
+      try {
+        const result = await generateObject({
+          model: this.model,
+          schema: Pass1Schema,
+          schemaName: 'storyPlan',
+          schemaDescription: 'Top-level story plan: world, characters, chapters and scenes',
+          system: [
+            'You are a comic story planner. Decompose an audiobook/source text into a',
+            'structured plan suitable for adaptation into a narrated comic.',
+            'Identify the world setting, recurring characters, and break the text into',
+            'chapters and scenes. Each scene must include a short verbatim textExcerpt',
+            'drawn from the source so later passes can extract beats.',
+            input.artStyle ? `Target art style: ${input.artStyle}.` : '',
+            input.genre && input.genre.length > 0 ? `Genre: ${input.genre.join(', ')}.` : '',
+            input.language ? `Source language: ${input.language}.` : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          prompt: text,
+          abortSignal: input.signal,
+        });
+        pass1 = result.object;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < 2) {
+          // Brief pause before retry
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      }
     }
-    const pass1: Pass1Result = await pass1Stream.object;
+    if (!pass1) {
+      throw lastError ?? new Error('Story planner failed after 3 attempts');
+    }
 
     // ---- Build characters + world bible ----
     const nameToId = new Map<string, string>();

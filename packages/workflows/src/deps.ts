@@ -32,6 +32,23 @@ import { Readable } from 'node:stream';
 // Pipeline dependency wiring — connects all adapter packages
 // ============================================================================
 
+/** Convert snake_case keys to camelCase for raw SQL results. */
+function snakeToCamel(row: unknown): Record<string, unknown> {
+  if (typeof row !== 'object' || row === null) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    if (value === null) {
+      out[camelKey] = undefined;
+    } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value)) {
+      out[camelKey] = value.replace(' ', 'T').replace(/\+00$/, 'Z');
+    } else {
+      out[camelKey] = value;
+    }
+  }
+  return out;
+}
+
 export async function createPipelineDeps(): Promise<PipelineDeps> {
   const env = getEnv();
 
@@ -67,7 +84,7 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     createPanels: (panels) => Promise.all(panels.map((p) => raw.panelSpecs.create(p))).then(() => undefined),
     getPanelsByPage: async (pageId) => {
       const rows = await dbResult.sql`SELECT * FROM panel_specs WHERE page_id = ${pageId} ORDER BY index ASC`;
-      return rows as unknown as PanelSpec[];
+      return (rows as unknown[]).map(snakeToCamel) as unknown as PanelSpec[];
     },
     getPanelsByProject: (pid) => raw.panelSpecs.getByProjectId(pid),
     updatePanel: (id, patch) => raw.panelSpecs.patch(id, patch).then(() => undefined),
@@ -75,7 +92,7 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     createRenderResult: (result) => raw.panelRenderResults.create(result).then(() => undefined),
     getRenderResultsByPanel: async (panelId) => {
       const rows = await dbResult.sql`SELECT * FROM panel_render_results WHERE panel_id = ${panelId} ORDER BY created_at DESC`;
-      return rows as unknown as PanelRenderResult[];
+      return (rows as unknown[]).map(snakeToCamel) as unknown as PanelRenderResult[];
     },
     createComposite: (comp) => raw.pageComposites.create(comp).then(() => undefined),
     getCompositesByProject: (pid) => raw.pageComposites.getByProjectId(pid),
