@@ -1,6 +1,6 @@
 import type { JobRecord, Project, ProjectStage, StageState } from '@audiocomic/domain';
 import { uuid, nowIso } from '@audiocomic/shared';
-import { STAGE_ORDER, computeProgress, nextStage } from './stages.js';
+import { STAGE_ORDER, computeProgress, nextStage } from './stages';
 
 // ============================================================================
 // Durable job engine — polling-based worker with retry and crash recovery

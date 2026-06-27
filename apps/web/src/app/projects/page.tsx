@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { listProjects } from '@/lib/actions';
+export const dynamic = 'force-dynamic';
 
 export default async function ProjectsPage() {
   const projects = await listProjects();

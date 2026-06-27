@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { getEnv } from '@audiocomic/shared';
 import type { Env } from '@audiocomic/shared';
 import type { PanelRenderRequest, PanelRenderResult, RenderPreset } from '@audiocomic/domain';
-import type { RendererAdapter } from './types.js';
-import { panelRenderKey, promptHash, writeLocalImage } from './util.js';
+import type { RendererAdapter } from './types';
+import { panelRenderKey, promptHash, writeLocalImage } from './util';
 
 // ============================================================================
 // ComfyUI API response shapes (validated at the boundary with Zod)

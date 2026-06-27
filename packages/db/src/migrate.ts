@@ -9,7 +9,7 @@
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { resolve } from 'node:path';
 
-import { createDb } from './client.js';
+import { createDb } from './client';
 
 async function main(): Promise<void> {
   const migrationsFolder = resolve(import.meta.dirname, '..', 'migrations');

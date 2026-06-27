@@ -3,7 +3,7 @@ import { basename, extname, join } from 'node:path';
 
 import { zipSync, strToU8 } from 'fflate';
 
-import type { ExportResult } from './types.js';
+import type { ExportResult } from './types';
 
 // ============================================================================
 // Static page export — bundle / PDF (CBZ fallback)

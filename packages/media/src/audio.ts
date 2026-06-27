@@ -1,4 +1,4 @@
-import type { AudioProbe } from './types.js';
+import type { AudioProbe } from './types';
 
 // ============================================================================
 // ffprobe JSON helpers

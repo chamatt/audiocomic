@@ -1,7 +1,7 @@
 import { experimental_generateSpeech as generateSpeech } from 'ai';
 import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai';
 import type { Env } from '@audiocomic/shared';
-import type { TTSAdapter, TTSOptions, TTSResult, TTSProvider } from './types.js';
+import type { TTSAdapter, TTSOptions, TTSResult, TTSProvider } from './types';
 
 // ============================================================================
 // OpenAI TTS adapter

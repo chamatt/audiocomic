@@ -3,8 +3,8 @@ import sharp from 'sharp';
 import { getEnv } from '@audiocomic/shared';
 import type { Env } from '@audiocomic/shared';
 import type { PanelRenderRequest, PanelRenderResult } from '@audiocomic/domain';
-import type { RendererAdapter } from './types.js';
-import { panelRenderKey, promptHash, writeLocalImage } from './util.js';
+import type { RendererAdapter } from './types';
+import { panelRenderKey, promptHash, writeLocalImage } from './util';
 
 const PLACEHOLDER_BG = '#1e1e2e';
 const PLACEHOLDER_BORDER = '#cdd6f4';

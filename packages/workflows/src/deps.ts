@@ -1,5 +1,5 @@
 import { getEnv } from '@audiocomic/shared';
-import type { PipelineDeps, PipelineRepo, StoryPlanInput, StoryPlanOutput, PromptComposeInput, ParsedBook } from './pipeline.js';
+import type { PipelineDeps, PipelineRepo, StoryPlanInput, StoryPlanOutput, PromptComposeInput, ParsedBook } from './pipeline';
 import type {
   JobRecord,
   Project,

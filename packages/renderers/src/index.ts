@@ -1,27 +1,27 @@
 import type { Env } from '@audiocomic/shared';
-import type { RendererAdapter, RendererBackend } from './types.js';
-import { createPlaceholderRenderer } from './placeholder.js';
+import type { RendererAdapter, RendererBackend } from './types';
+import { createPlaceholderRenderer } from './placeholder';
 import {
   createComfyUIRenderer,
   type ComfyUIRendererOptions,
-} from './comfyui.js';
+} from './comfyui';
 import {
   createAISDKImageRenderer,
   type AISDKImageRendererOptions,
-} from './aisdk.js';
+} from './aisdk';
 
-export type { RendererAdapter, RendererBackend } from './types.js';
-export { PlaceholderRenderer, createPlaceholderRenderer } from './placeholder.js';
+export type { RendererAdapter, RendererBackend } from './types';
+export { PlaceholderRenderer, createPlaceholderRenderer } from './placeholder';
 export {
   ComfyUIRenderer,
   createComfyUIRenderer,
   type ComfyUIRendererOptions,
-} from './comfyui.js';
+} from './comfyui';
 export {
   AISDKImageRenderer,
   createAISDKImageRenderer,
   type AISDKImageRendererOptions,
-} from './aisdk.js';
+} from './aisdk';
 
 /**
  * Resolve a renderer adapter by backend name. Unknown or unsupported backends

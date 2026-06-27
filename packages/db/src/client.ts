@@ -10,7 +10,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { getEnv } from '@audiocomic/shared';
-import * as schema from './schema.js';
+import * as schema from './schema';
 
 export type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 

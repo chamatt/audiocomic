@@ -55,8 +55,8 @@ import type {
   WorldBible as WorldBibleType,
 } from '@audiocomic/domain';
 
-import type { Db } from './client.js';
-import * as schema from './schema.js';
+import type { Db } from './client';
+import * as schema from './schema';
 
 // ---------------------------------------------------------------------------
 // Generic per-entity CRUD

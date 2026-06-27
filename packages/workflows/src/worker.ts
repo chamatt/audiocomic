@@ -1,15 +1,15 @@
 import { getEnv } from '@audiocomic/shared';
 import type { JobRecord, ProjectStage, StageState } from '@audiocomic/domain';
 import { uuid, nowIso } from '@audiocomic/shared';
-import { JobWorker, type WorkerDeps } from './engine.js';
+import { JobWorker, type WorkerDeps } from './engine';
 import {
   FullPipelineHandler,
   RegeneratePanelHandler,
   RegeneratePageHandler,
   ExportHandler,
   type PipelineDeps,
-} from './pipeline.js';
-import { createPipelineDeps } from './deps.js';
+} from './pipeline';
+import { createPipelineDeps } from './deps';
 
 // ============================================================================
 // Worker entry point — polls the jobs table and executes pending jobs

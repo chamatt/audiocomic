@@ -3,16 +3,16 @@
 // lettering overlay, and page composition.
 // ============================================================================
 
-export { probeAudio, extractAudioDuration } from './audio.js';
-export { parseTextBook, splitIntoChunks } from './text.js';
+export { probeAudio, extractAudioDuration } from './audio';
+export { parseTextBook, splitIntoChunks } from './text';
 export {
   exportMotionComic,
   type PageImageSource,
   type MotionExportOptions,
-} from './motion.js';
-export { exportPageBundle, exportPdf, pageBasename } from './static.js';
-export { renderLetteringOverlay } from './lettering.js';
-export { composePage, type OutputSize, type ComposeOptions } from './composite.js';
+} from './motion';
+export { exportPageBundle, exportPdf, pageBasename } from './static';
+export { renderLetteringOverlay } from './lettering';
+export { composePage, type OutputSize, type ComposeOptions } from './composite';
 
 export type {
   AudioProbe,
@@ -20,4 +20,4 @@ export type {
   ParsedBook,
   ParsedChapter,
   TextChunk,
-} from './types.js';
+} from './types';

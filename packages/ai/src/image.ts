@@ -1,7 +1,7 @@
 import { experimental_generateImage as generateImage } from 'ai';
 import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai';
 import type { Env } from '@audiocomic/shared';
-import type { ImageAdapter, ImageOptions, ImageResult, ImageProvider } from './types.js';
+import type { ImageAdapter, ImageOptions, ImageResult, ImageProvider } from './types';
 
 // ============================================================================
 // AI SDK image generation adapter (OpenAI gpt-image-1 / dall-e-3)

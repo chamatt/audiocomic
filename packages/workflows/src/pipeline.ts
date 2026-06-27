@@ -26,8 +26,8 @@ import {
   ProjectStage,
 } from '@audiocomic/domain';
 import { uuid, nowIso, getEnv, panelImageKey, pageImageKey, letteringKey, exportKey } from '@audiocomic/shared';
-import type { JobHandler, JobResult, JobContext } from './engine.js';
-import { STAGE_ORDER, computeProgress } from './stages.js';
+import type { JobHandler, JobResult, JobContext } from './engine';
+import { STAGE_ORDER, computeProgress } from './stages';
 
 // ============================================================================
 // Pipeline dependencies — injected, not imported directly

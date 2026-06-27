@@ -1,4 +1,4 @@
-import type { ParsedBook, ParsedChapter, TextChunk } from './types.js';
+import type { ParsedBook, ParsedChapter, TextChunk } from './types';
 
 // ============================================================================
 // Textbook parsing

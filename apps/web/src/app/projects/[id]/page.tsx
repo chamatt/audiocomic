@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getProjectAction, getProjectDetail } from '@/lib/actions';
 import { ProjectDetail } from '@/components/ProjectDetail';
+export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: Promise<{ id: string }>;

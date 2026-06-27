@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { SettingsForm } from '@/components/SettingsForm';
 import { getSettingsAction } from '@/lib/actions';
+export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const settings = await getSettingsAction();

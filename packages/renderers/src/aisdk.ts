@@ -4,8 +4,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { getEnv } from '@audiocomic/shared';
 import type { Env } from '@audiocomic/shared';
 import type { PanelRenderRequest, PanelRenderResult, RenderPreset } from '@audiocomic/domain';
-import type { RendererAdapter } from './types.js';
-import { panelRenderKey, promptHash, writeLocalImage } from './util.js';
+import type { RendererAdapter } from './types';
+import { panelRenderKey, promptHash, writeLocalImage } from './util';
 
 /**
  * Map a {@link RenderPreset.qualityTier} to the OpenAI image `quality`

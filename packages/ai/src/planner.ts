@@ -22,7 +22,7 @@ import type {
   StoryPlannerAdapter,
   PanelHint,
   LLMProvider,
-} from './types.js';
+} from './types';
 
 // ============================================================================
 // Language model resolution

@@ -9,7 +9,7 @@ import type {
   TranscriptionOptions,
   TranscriptResult,
   TranscriptionProvider,
-} from './types.js';
+} from './types';
 
 // ============================================================================
 // OpenAI Whisper transcription adapter

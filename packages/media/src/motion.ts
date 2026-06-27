@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { NarrationSegment, NarrationTimeline } from '@audiocomic/domain';
 
-import type { ExportResult } from './types.js';
+import type { ExportResult } from './types';
 
 // ============================================================================
 // Motion-comic export via FFmpeg
