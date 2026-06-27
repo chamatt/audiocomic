@@ -171,10 +171,22 @@ function makeEntityRepo<
 
 type AnyRow = Record<string, unknown>;
 
-/** Strip DB-only columns (embedding) when materialising a domain object. */
+/** Strip DB-only columns (embedding) and convert null → undefined for Zod.
+ *  Also normalises Postgres timestamp strings to ISO format for Zod datetime validation. */
 function toDomain<T extends AnyRow>(row: T): Omit<T, 'embedding'> {
   const { embedding: _embedding, ...rest } = row;
-  return rest as Omit<T, 'embedding'>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === null) {
+      out[key] = undefined;
+    } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value)) {
+      // Postgres timestamp string → ISO format
+      out[key] = value.replace(' ', 'T').replace(/\+00$/, 'Z');
+    } else {
+      out[key] = value;
+    }
+  }
+  return out as Omit<T, 'embedding'>;
 }
 
 // ---------------------------------------------------------------------------

@@ -38,10 +38,58 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
   // Lazy import the db package
   const { createDb, createRepository } = await import('@audiocomic/db');
   const dbResult = createDb(env.DATABASE_URL);
-  const repo = createRepository(dbResult.db) as unknown as PipelineRepo & {
-    claimNextJob(): Promise<JobRecord | null>;
-    updateJob(id: string, patch: Partial<JobRecord>): Promise<void>;
-    updateProjectStage(projectId: string, stage: ProjectStage, state: StageState, error?: string): Promise<void>;
+  const raw = createRepository(dbResult.db);
+
+  // Adapt the db package's entity-per-repo structure to PipelineRepo's
+  // flat method interface. Also handles createMany via Promise.all and
+  // maps getByProjectId → get*ByProject naming.
+  const repo: PipelineRepo = {
+    getProject: (id) => raw.projects.getById(id),
+    updateProject: (id, patch) => raw.projects.patch(id, patch).then(() => undefined),
+    getAssetsByProject: (pid) => raw.sourceAssets.getByProjectId(pid),
+    createTranscriptChunks: (chunks) => Promise.all(chunks.map((c) => raw.transcriptChunks.create(c))).then(() => undefined),
+    getTranscriptChunks: (pid) => raw.transcriptChunks.getByProjectId(pid),
+    createSpeakerTurns: (turns) => Promise.all(turns.map((t) => raw.speakerTurns.create(t))).then(() => undefined),
+    createStorySections: (sections) => Promise.all(sections.map((s) => raw.storySections.create(s))).then(() => undefined),
+    getStorySections: (pid) => raw.storySections.getByProjectId(pid),
+    createCharacters: (chars) => Promise.all(chars.map((c) => raw.characterProfiles.create(c))).then(() => undefined),
+    getCharacters: (pid) => raw.characterProfiles.getByProjectId(pid),
+    createScenes: (scenes) => Promise.all(scenes.map((s) => raw.sceneProfiles.create(s))).then(() => undefined),
+    createObjects: (objects) => Promise.all(objects.map((o) => raw.objectProfiles.create(o))).then(() => undefined),
+    createWorldBible: (bible) => raw.worldBibles.create(bible).then(() => undefined),
+    getWorldBible: async (pid) => {
+      const bibles = await raw.worldBibles.getByProjectId(pid);
+      return bibles[0] ?? null;
+    },
+    createPages: (pages) => Promise.all(pages.map((p) => raw.pageSpecs.create(p))).then(() => undefined),
+    getPages: (pid) => raw.pageSpecs.getByProjectId(pid),
+    updatePage: (id, patch) => raw.pageSpecs.patch(id, patch).then(() => undefined),
+    createPanels: (panels) => Promise.all(panels.map((p) => raw.panelSpecs.create(p))).then(() => undefined),
+    getPanelsByPage: async (pageId) => {
+      const rows = await dbResult.sql`SELECT * FROM panel_specs WHERE page_id = ${pageId} ORDER BY index ASC`;
+      return rows as unknown as PanelSpec[];
+    },
+    getPanelsByProject: (pid) => raw.panelSpecs.getByProjectId(pid),
+    updatePanel: (id, patch) => raw.panelSpecs.patch(id, patch).then(() => undefined),
+    createRenderRequest: (req) => raw.panelRenderRequests.create(req).then(() => undefined),
+    createRenderResult: (result) => raw.panelRenderResults.create(result).then(() => undefined),
+    getRenderResultsByPanel: async (panelId) => {
+      const rows = await dbResult.sql`SELECT * FROM panel_render_results WHERE panel_id = ${panelId} ORDER BY created_at DESC`;
+      return rows as unknown as PanelRenderResult[];
+    },
+    createComposite: (comp) => raw.pageComposites.create(comp).then(() => undefined),
+    getCompositesByProject: (pid) => raw.pageComposites.getByProjectId(pid),
+    createLettering: (spec) => raw.letteringSpecs.create(spec).then(() => undefined),
+    createTimeline: (timeline) => raw.narrationTimelines.create(timeline).then(() => undefined),
+    getTimeline: async (pid) => {
+      const timelines = await raw.narrationTimelines.getByProjectId(pid);
+      return timelines[0] ?? null;
+    },
+    createExport: (bundle) => raw.exportBundles.create(bundle).then(() => undefined),
+    getRenderPreset: (id) => raw.renderPresets.getById(id),
+    claimNextJob: () => raw.claimNextJob(),
+    updateJob: (id, patch) => raw.jobs.patch(id, patch).then(() => undefined),
+    updateProjectStage: (pid, stage, state, error) => raw.updateProjectStage(pid, stage, state, error),
   };
 
   // Lazy import the ai package

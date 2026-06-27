@@ -17,6 +17,7 @@
     "db:migrate": "bun run --filter @audiocomic/db migrate",
     "db:push": "bun run --filter @audiocomic/db push",
     "seed": "bun run --filter @audiocomic/workflows seed",
+    "cli": "bun run --filter @audiocomic/workflows cli",
     "worker": "bun run --filter @audiocomic/workflows worker",
     "lint": "bun run --filter '*' lint"
   },
