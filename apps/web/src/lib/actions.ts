@@ -5,7 +5,7 @@ import { uuid, nowIso, defaultProviderSettings, getEnv } from '@audiocomic/share
 
 // These imports will resolve once the db and workflows packages are merged.
 // The actions layer is the bridge between the web app and the backend packages.
-import { getDb, repo } from '@/lib/db';
+import { getDb, getRepo } from '@/lib/db';
 
 export interface ProjectListItem {
   id: string;
@@ -16,6 +16,7 @@ export interface ProjectListItem {
 }
 
 export async function listProjects(): Promise<ProjectListItem[]> {
+  const repo = await getRepo();
   const projects = await repo.projects.list();
   return projects.map((p) => ({
     id: p.id,
@@ -25,8 +26,8 @@ export async function listProjects(): Promise<ProjectListItem[]> {
     modality: p.modality,
   }));
 }
-
 export async function getProjectAction(id: string): Promise<Project | null> {
+  const repo = await getRepo();
   return repo.projects.getById(id);
 }
 
@@ -39,8 +40,8 @@ export interface ProjectDetailData {
   worldBible: WorldBible | null;
   exports: ExportBundle[];
 }
-
 export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
+  const repo = await getRepo();
   const project = await repo.projects.getById(id);
   if (!project) throw new Error('Project not found');
 
@@ -88,8 +89,8 @@ export interface CreateProjectInput {
   file?: File | null;
   text?: string;
 }
-
 export async function createProjectAction(input: CreateProjectInput): Promise<string> {
+  const repo = await getRepo();
   const projectId = uuid();
   const now = nowIso();
   const env = getEnv();
@@ -206,8 +207,7 @@ export async function getSettingsAction(): Promise<ProviderSettings> {
   const env = getEnv();
   return defaultProviderSettings(env);
 }
-
 export async function saveSettingsAction(settings: ProviderSettings): Promise<void> {
-  // For MVP, we persist to a settings table; the worker reads from there
+  const repo = await getRepo();
   await repo.settings.save(settings);
 }

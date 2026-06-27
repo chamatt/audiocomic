@@ -1,4 +1,3 @@
-import { repo } from '@/lib/db';
 import { getAssetStream } from '@/lib/storage';
 
 export async function GET(

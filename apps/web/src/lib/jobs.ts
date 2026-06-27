@@ -1,5 +1,5 @@
 import type { JobRecord } from '@audiocomic/domain';
-import { repo } from './db';
+import { getRepo } from './db';
 
 // The job queue is backed by the jobs table in Postgres.
 // The worker (in @audiocomic/workflows) polls this table and executes jobs.
@@ -7,6 +7,7 @@ import { repo } from './db';
 // use Temporal or a proper queue (LISTEN/NOTIFY, SKIP LOCKED, etc).
 
 export async function enqueueJob(job: JobRecord): Promise<void> {
+  const repo = await getRepo();
   await repo.jobs.create(job);
 }
 

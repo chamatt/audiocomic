@@ -1,4 +1,4 @@
-import { getDb, repo } from '@/lib/db';
+// getProjectDetail handles DB access internally via getRepo()
 
 export async function GET(
   _request: Request,

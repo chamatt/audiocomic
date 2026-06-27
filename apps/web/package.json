@@ -15,6 +15,7 @@
     "@audiocomic/domain": "workspace:*",
     "@audiocomic/shared": "workspace:*",
     "@audiocomic/workflows": "workspace:*",
+    "dotenv": "^17.4.2",
     "next": "^16.2.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

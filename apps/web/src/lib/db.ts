@@ -1,9 +1,15 @@
 // Bridge layer: connects the web app to @audiocomic/db.
-// The db package exports createDb() and a repository factory.
-// We initialize lazily so the app can boot even without a live DB connection
-// (e.g. during `next dev` before migrations are run).
+//
+// The repository is initialized eagerly on server boot. Callers use `getRepo()`
+// which returns the initialized repository or throws if init failed.
+
+import { config } from 'dotenv';
+// Load .env from monorepo root, overriding any pre-existing shell env vars
+// Next.js does not override existing process.env vars, so we do it explicitly
+config({ path: '../../.env', override: true });
 
 import { getEnv } from '@audiocomic/shared';
+import { createDb, createRepository } from '@audiocomic/db';
 
 import type { Project, SourceAsset, TranscriptChunk, SpeakerTurn, StorySection, CharacterProfile, SceneProfile, ObjectProfile, WorldBible, PageSpec, PanelSpec, RenderPreset, PanelRenderRequest, PanelRenderResult, PageComposite, LetteringSpec, NarrationTimeline, ExportBundle, JobRecord, ProviderSettings } from '@audiocomic/domain';
 
@@ -109,66 +115,107 @@ interface Repository {
 
 let _db: DbInstance | null = null;
 let _repo: Repository | null = null;
+let _initPromise: Promise<Repository> | null = null;
 
 async function ensureRepo(): Promise<Repository> {
   if (_repo) return _repo;
-  const env = getEnv();
-  const { createDb, createRepository } = await import('@audiocomic/db');
-  const dbResult = createDb(env.DATABASE_URL);
-  _db = dbResult;
-  _repo = createRepository(dbResult.db) as unknown as Repository; // db package returns its own type; we bridge to our interface
-  return _repo;
+  if (_initPromise) return _initPromise;
+
+  _initPromise = (async () => {
+    const env = getEnv();
+    const dbResult = createDb(env.DATABASE_URL);
+    _db = dbResult;
+    const raw = createRepository(dbResult.db);
+
+    // Map the db package's entity names and methods to the web app's interface.
+    // The db package uses sourceAssets/pageSpecs/panelSpecs and getByProjectId;
+    // the web app expects assets/pages/panels and getByProject.
+    const map = <T extends { getByProjectId?: (id: string) => Promise<unknown[]> }>(
+      entity: T,
+    ): T & { getByProject: (id: string) => Promise<unknown[]> } => ({
+      ...entity,
+      getByProject: entity.getByProjectId ?? (() => Promise.resolve([])),
+    });
+
+    // projects entity needs a `list` method (not in db package)
+    const projectsEntity = raw.projects as unknown as {
+      getById: (id: string) => Promise<Project | null>;
+      create: (input: unknown) => Promise<unknown>;
+      update: (id: string, input: unknown) => Promise<unknown>;
+      patch: (id: string, patch: Partial<Project>) => Promise<Project | null>;
+    };
+
+    _repo = {
+      projects: {
+        list: async () => {
+          const result = await dbResult.sql`SELECT * FROM projects ORDER BY created_at DESC`;
+          return result as unknown as Project[];
+        },
+        getById: projectsEntity.getById,
+        create: projectsEntity.create as (p: Project) => Promise<void>,
+        update: (id: string, patch: Partial<Project>) =>
+          projectsEntity.patch(id, patch).then(() => undefined),
+      },
+      assets: map(raw.sourceAssets as unknown as { getByProjectId: (id: string) => Promise<SourceAsset[]>; create: (a: SourceAsset) => Promise<void> }) as unknown as Repository['assets'],
+      transcripts: map(raw.transcriptChunks as unknown as { getByProjectId: (id: string) => Promise<TranscriptChunk[]>; create: (c: TranscriptChunk) => Promise<void>; createMany: (cs: TranscriptChunk[]) => Promise<void> }) as unknown as Repository['transcripts'],
+      speakers: map(raw.speakerTurns as unknown as { getByProjectId: (id: string) => Promise<SpeakerTurn[]>; create: (s: SpeakerTurn) => Promise<void> }) as unknown as Repository['speakers'],
+      sections: map(raw.storySections as unknown as { getByProjectId: (id: string) => Promise<StorySection[]>; create: (s: StorySection) => Promise<void>; createMany: (ss: StorySection[]) => Promise<void> }) as unknown as Repository['sections'],
+      characters: map(raw.characterProfiles as unknown as { getByProjectId: (id: string) => Promise<CharacterProfile[]>; getById: (id: string) => Promise<CharacterProfile | null>; create: (c: CharacterProfile) => Promise<void>; update: (id: string, patch: Partial<CharacterProfile>) => Promise<void> }) as unknown as Repository['characters'],
+      scenes: map(raw.sceneProfiles as unknown as { getByProjectId: (id: string) => Promise<SceneProfile[]>; create: (s: SceneProfile) => Promise<void> }) as unknown as Repository['scenes'],
+      objects: map(raw.objectProfiles as unknown as { getByProjectId: (id: string) => Promise<ObjectProfile[]>; create: (o: ObjectProfile) => Promise<void> }) as unknown as Repository['objects'],
+      worldBibles: map(raw.worldBibles as unknown as { getByProjectId: (id: string) => Promise<WorldBible[]>; create: (w: WorldBible) => Promise<void> }) as unknown as Repository['worldBibles'],
+      pages: map(raw.pageSpecs as unknown as { getByProjectId: (id: string) => Promise<PageSpec[]>; getById: (id: string) => Promise<PageSpec | null>; create: (p: PageSpec) => Promise<void>; update: (id: string, patch: Partial<PageSpec>) => Promise<void> }) as unknown as Repository['pages'],
+      panels: {
+        ...map(raw.panelSpecs as unknown as { getByProjectId: (id: string) => Promise<PanelSpec[]>; getById: (id: string) => Promise<PanelSpec | null>; create: (p: PanelSpec) => Promise<void>; update: (id: string, patch: Partial<PanelSpec>) => Promise<void> }),
+        getByPage: async (pageId: string) => {
+          const rows = await dbResult.sql`SELECT * FROM panel_specs WHERE page_id = ${pageId} ORDER BY index ASC`;
+          return rows as unknown as PanelSpec[];
+        },
+      } as unknown as Repository['panels'],
+      presets: map(raw.renderPresets as unknown as { getByProjectId: (id: string) => Promise<RenderPreset[]>; create: (p: RenderPreset) => Promise<void> }) as unknown as Repository['presets'],
+      renderRequests: raw.panelRenderRequests as unknown as Repository['renderRequests'],
+      renderResults: raw.panelRenderResults as unknown as Repository['renderResults'],
+      composites: map(raw.pageComposites as unknown as { getByProjectId: (id: string) => Promise<PageComposite[]>; getById: (id: string) => Promise<PageComposite | null>; create: (c: PageComposite) => Promise<void> }) as unknown as Repository['composites'],
+      lettering: {
+        ...map(raw.letteringSpecs as unknown as { getByProjectId: (id: string) => Promise<LetteringSpec[]>; create: (l: LetteringSpec) => Promise<void> }),
+        getByPage: async (pageId: string) => {
+          const rows = await dbResult.sql`SELECT * FROM lettering_specs WHERE page_id = ${pageId}`;
+          return rows as unknown as LetteringSpec[];
+        },
+      } as unknown as Repository['lettering'],
+      timelines: map(raw.narrationTimelines as unknown as { getByProjectId: (id: string) => Promise<NarrationTimeline[]>; create: (t: NarrationTimeline) => Promise<void> }) as unknown as Repository['timelines'],
+      exports: map(raw.exportBundles as unknown as { getByProjectId: (id: string) => Promise<ExportBundle[]>; getById: (id: string) => Promise<ExportBundle | null>; create: (e: ExportBundle) => Promise<void> }) as unknown as Repository['exports'],
+      jobs: {
+        getLatestByProject: raw.getLatestJobByProject as (id: string) => Promise<JobRecord | null>,
+        getByProject: (raw.jobs as unknown as { getByProjectId: (id: string) => Promise<JobRecord[]> }).getByProjectId,
+        create: (raw.jobs as unknown as { create: (j: JobRecord) => Promise<void> }).create,
+        update: (id: string, patch: Partial<JobRecord>) =>
+          (raw.jobs as unknown as { patch: (id: string, patch: Partial<JobRecord>) => Promise<unknown> }).patch(id, patch).then(() => undefined),
+      },
+      settings: {
+        get: raw.getSettings as () => Promise<ProviderSettings | null>,
+        save: raw.saveSettings as (s: ProviderSettings) => Promise<void>,
+      },
+    } as unknown as Repository;
+
+    return _repo;
+  })();
+
+  try {
+    return await _initPromise;
+  } catch (err) {
+    _initPromise = null; // allow retry on next call
+    throw err;
+  }
 }
 
-// Eager proxy that throws a helpful error if called before DB is ready
-function throwNotReady(method: string): never {
-  throw new Error(
-    `Repository.${method} called before DB initialization. Ensure DATABASE_URL is set and migrations are run.`,
-  );
+/**
+ * Get the initialized repository. Throws if the DB is not available.
+ * Callers should `await getRepo()` before accessing repo methods.
+ */
+export async function getRepo(): Promise<Repository> {
+  return ensureRepo();
 }
-
-const unreadyRepo: Repository = {
-  projects: {
-    list: () => throwNotReady('projects.list'),
-    getById: () => throwNotReady('projects.getById'),
-    create: () => throwNotReady('projects.create'),
-    update: () => throwNotReady('projects.update'),
-  },
-  assets: { getByProject: () => throwNotReady('assets.getByProject'), create: () => throwNotReady('assets.create') },
-  transcripts: { getByProject: () => throwNotReady('transcripts.getByProject'), create: () => throwNotReady('transcripts.create'), createMany: () => throwNotReady('transcripts.createMany') },
-  speakers: { getByProject: () => throwNotReady('speakers.getByProject'), create: () => throwNotReady('speakers.create') },
-  sections: { getByProject: () => throwNotReady('sections.getByProject'), create: () => throwNotReady('sections.create'), createMany: () => throwNotReady('sections.createMany') },
-  characters: { getByProject: () => throwNotReady('characters.getByProject'), getById: () => throwNotReady('characters.getById'), create: () => throwNotReady('characters.create'), update: () => throwNotReady('characters.update') },
-  scenes: { getByProject: () => throwNotReady('scenes.getByProject'), create: () => throwNotReady('scenes.create') },
-  objects: { getByProject: () => throwNotReady('objects.getByProject'), create: () => throwNotReady('objects.create') },
-  worldBibles: { getByProject: () => throwNotReady('worldBibles.getByProject'), create: () => throwNotReady('worldBibles.create') },
-  pages: { getByProject: () => throwNotReady('pages.getByProject'), getById: () => throwNotReady('pages.getById'), create: () => throwNotReady('pages.create'), update: () => throwNotReady('pages.update') },
-  panels: { getByPage: () => throwNotReady('panels.getByPage'), getByProject: () => throwNotReady('panels.getByProject'), getById: () => throwNotReady('panels.getById'), create: () => throwNotReady('panels.create'), update: () => throwNotReady('panels.update') },
-  presets: { getByProject: () => throwNotReady('presets.getByProject'), create: () => throwNotReady('presets.create') },
-  renderRequests: { create: () => throwNotReady('renderRequests.create'), getByPanel: () => throwNotReady('renderRequests.getByPanel') },
-  renderResults: { create: () => throwNotReady('renderResults.create'), getByPanel: () => throwNotReady('renderResults.getByPanel') },
-  composites: { getById: () => throwNotReady('composites.getById'), getByProject: () => throwNotReady('composites.getByProject'), create: () => throwNotReady('composites.create') },
-  lettering: { getByPage: () => throwNotReady('lettering.getByPage'), create: () => throwNotReady('lettering.create') },
-  timelines: { getByProject: () => throwNotReady('timelines.getByProject'), create: () => throwNotReady('timelines.create') },
-  exports: { getByProject: () => throwNotReady('exports.getByProject'), getById: () => throwNotReady('exports.getById'), create: () => throwNotReady('exports.create') },
-  jobs: { getLatestByProject: () => throwNotReady('jobs.getLatestByProject'), getByProject: () => throwNotReady('jobs.getByProject'), create: () => throwNotReady('jobs.create'), update: () => throwNotReady('jobs.update') },
-  settings: { get: () => throwNotReady('settings.get'), save: () => throwNotReady('settings.save') },
-};
-
-// We use a proxy that lazily resolves to the real repo, falling back to unready
-const repoProxy = new Proxy(unreadyRepo, {
-  get(_target, prop: string) {
-    // Repository is a known interface; the proxy needs indexed access to dispatch
-    const repoRecord = _repo as unknown as Record<string, unknown> | null;
-    const fallbackRecord = unreadyRepo as unknown as Record<string, unknown>;
-    if (repoRecord && prop in repoRecord) {
-      return repoRecord[prop];
-    }
-    return fallbackRecord[prop];
-  },
-});
-
-export const repo: Repository = repoProxy;
 
 export async function getDb(): Promise<DbInstance> {
   if (!_db) await ensureRepo();
@@ -177,7 +224,8 @@ export async function getDb(): Promise<DbInstance> {
 
 // Initialize eagerly on server boot
 if (typeof window === 'undefined') {
-  ensureRepo().catch(() => {
-    // DB not ready — the proxy will throw helpful errors on access
+  ensureRepo().catch((err) => {
+    console.error('[db] Failed to initialize database:', err);
   });
 }
+
