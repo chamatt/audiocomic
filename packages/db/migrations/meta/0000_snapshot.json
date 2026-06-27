@@ -1,0 +1,18 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "id": "0000_initial",
+  "prevId": "",
+  "tables": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
