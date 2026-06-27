@@ -23,7 +23,7 @@ import type {
   SourceAsset,
   RenderPreset,
 } from '@audiocomic/domain';
-import type { StoryPlanInput as AIStoryPlanInput, LLMProvider, TranscriptionProvider } from '@audiocomic/ai';
+import type { StoryPlanInput as AIStoryPlanInput, LLMProvider, TranscriptionProvider, TranscriptionAdapter, StoryPlannerAdapter, TTSAdapter } from '@audiocomic/ai';
 import { promises as fs } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Readable } from 'node:stream';
@@ -84,16 +84,32 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     },
   };
 
-  // Create adapters based on env config.
-  // When no API key is available, we still create adapters — they will throw
-  // at call time with a helpful error, allowing the worker to boot and the
-  // placeholder renderer to function without any API keys.
+  // Adapter creation is deferred to first use so the worker boots without
+  // API keys. Jobs that need a missing key fail at execution time with a
+  // helpful error, rather than crashing the worker at startup.
   const llmProvider: LLMProvider = env.OPENAI_API_KEY ? 'openai' : env.ANTHROPIC_API_KEY ? 'anthropic' : env.GOOGLE_GENERATIVE_AI_API_KEY ? 'google' : 'openai';
   const transcriptionProvider: TranscriptionProvider = env.OPENAI_API_KEY ? 'openai' : env.GROQ_API_KEY ? 'groq' : 'openai';
 
-  const transcriptionAdapter = ai.createTranscriptionAdapter(transcriptionProvider, env);
-  const storyPlanner = ai.createStoryPlanner(llmProvider, env.DEFAULT_LLM_MODEL, env);
-  const ttsAdapter = env.OPENAI_API_KEY ? ai.createTTSAdapter('openai', env) : undefined;
+  let transcriptionAdapter: TranscriptionAdapter | null = null;
+  function getTranscriptionAdapter(): TranscriptionAdapter {
+    if (!transcriptionAdapter) transcriptionAdapter = ai.createTranscriptionAdapter(transcriptionProvider, env);
+    return transcriptionAdapter;
+  }
+
+  let storyPlanner: StoryPlannerAdapter | null = null;
+  function getStoryPlanner(): StoryPlannerAdapter {
+    if (!storyPlanner) storyPlanner = ai.createStoryPlanner(llmProvider, env.DEFAULT_LLM_MODEL, env);
+    return storyPlanner;
+  }
+
+  let ttsAdapter: TTSAdapter | null | undefined = undefined; // undefined = not decided, null = disabled
+  function getTTSAdapter(): TTSAdapter | null {
+    if (ttsAdapter === undefined) {
+      ttsAdapter = env.OPENAI_API_KEY ? ai.createTTSAdapter('openai', env) : null;
+    }
+    return ttsAdapter;
+  }
+
   const renderer = renderers.createRenderer(env.DEFAULT_RENDERER, env);
 
   return {
@@ -104,7 +120,7 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     repo,
 
     async transcribe(audioPath: string) {
-      const result = await transcriptionAdapter.transcribe(audioPath, {
+      const result = await getTranscriptionAdapter().transcribe(audioPath, {
         projectId: '', // projectId is tracked by the pipeline, not the adapter
       });
       return {
@@ -125,7 +141,7 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
         projectId: input.projectId,
         text: input.text,
       };
-      const aiResult = await storyPlanner.planStory(aiInput);
+      const aiResult = await getStoryPlanner().planStory(aiInput);
       // Map the AI package's output back to our pipeline output format
       return {
         sections: aiResult.sections,
@@ -137,8 +153,9 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     },
 
     async synthesizeTTS(text: string, opts?: { voice?: string }) {
-      if (!ttsAdapter) throw new Error('TTS adapter not configured');
-      return ttsAdapter.synthesize(text, opts);
+      const adapter = getTTSAdapter();
+      if (!adapter) throw new Error('TTS adapter not configured (OPENAI_API_KEY required)');
+      return adapter.synthesize(text, opts);
     },
 
     async composePrompt(input: PromptComposeInput): Promise<string> {
