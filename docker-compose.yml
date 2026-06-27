@@ -1,0 +1,25 @@
+# Local development Postgres + pgvector
+# Usage: docker compose up -d
+# Connection string: postgres://audiocomic:audiocomic@localhost:5432/audiocomic
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: audiocomic-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: audiocomic
+      POSTGRES_PASSWORD: audiocomic
+      POSTGRES_DB: audiocomic
+    ports:
+      - "5432:5432"
+    volumes:
+      - audiocomic-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audiocomic -d audiocomic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  audiocomic-pgdata:

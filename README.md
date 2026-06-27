@@ -43,7 +43,7 @@ packages/evals        Evaluation metrics (layout adherence, consistency, timing 
 ### Prerequisites
 
 - [Bun](https://bun.sh) >= 1.3
-- [PostgreSQL](https://www.postgresql.org/) with [pgvector](https://github.com/pgvector/pgvector) extension
+- [Docker](https://www.docker.com/) (for local Postgres + pgvector)
 - [FFmpeg](https://ffmpeg.org/) (for motion-comic export)
 - An AI provider API key (OpenAI recommended for full pipeline)
 
@@ -53,20 +53,23 @@ packages/evals        Evaluation metrics (layout adherence, consistency, timing 
 # 1. Install dependencies
 bun install
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env — set DATABASE_URL and at least one API key
+# 2. Start Postgres + pgvector via Docker
+bun run db:up
 
-# 3. Run database migrations
+# 3. Configure environment
+cp .env.example .env
+# Edit .env — set at least OPENAI_API_KEY (DATABASE_URL already matches docker)
+
+# 4. Run database migrations
 bun run db:push
 
-# 4. Start the web app
+# 5. Start the web app
 bun run dev
 
-# 5. In another terminal, start the worker
+# 6. In another terminal, start the worker
 bun run worker
 
-# 6. (Optional) Seed a demo project
+# 7. (Optional) Seed a demo project
 bun run seed
 ```
 
