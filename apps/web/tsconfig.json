@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "plugins": [{ "name": "next" }],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@audiocomic/domain": ["../../packages/domain/src/index.ts"],
+      "@audiocomic/shared": ["../../packages/shared/src/index.ts"],
+      "@audiocomic/db": ["../../packages/db/src/index.ts"],
+      "@audiocomic/workflows": ["../../packages/workflows/src/index.ts"]
+    }
+  },
+  "include": ["src", "next-env.d.ts", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
