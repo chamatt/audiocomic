@@ -1,3 +1,7 @@
+import { config } from 'dotenv';
+// Load .env from monorepo root, overriding any pre-existing shell env vars
+config({ path: '../../.env', override: true });
+
 import { getEnv, uuid, nowIso } from '@audiocomic/shared';
 import type { Project, JobRecord } from '@audiocomic/domain';
 import { promises as fs } from 'node:fs';

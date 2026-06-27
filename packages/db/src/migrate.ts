@@ -6,6 +6,10 @@
 //
 // Usage: bun run migrate  (or `tsx src/migrate.ts`)
 
+import { config } from 'dotenv';
+// Load .env from monorepo root, overriding any pre-existing shell env vars
+config({ path: '../../.env', override: true });
+
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { resolve } from 'node:path';
 
