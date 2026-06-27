@@ -1,0 +1,25 @@
+{
+  "name": "@audiocomic/workflows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx src/worker.ts",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@audiocomic/domain": "workspace:*",
+    "@audiocomic/shared": "workspace:*",
+    "@audiocomic/db": "workspace:*",
+    "@audiocomic/ai": "workspace:*",
+    "@audiocomic/renderers": "workspace:*",
+    "@audiocomic/media": "workspace:*"
+  }
+}
