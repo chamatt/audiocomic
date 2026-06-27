@@ -18,6 +18,7 @@
   "dependencies": {
     "drizzle-orm": "^0.38.0",
     "postgres": "^3.4.0",
+    "zod": "^3.24.0",
     "@audiocomic/domain": "workspace:*",
     "@audiocomic/shared": "workspace:*"
   },

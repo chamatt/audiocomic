@@ -83,16 +83,15 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     },
   };
 
-  // Create adapters based on env config
-  const transcriptionAdapter = ai.createTranscriptionAdapter(
-    env.OPENAI_API_KEY ? 'openai' : 'placeholder',
-    env,
-  );
-  const storyPlanner = ai.createStoryPlanner(
-    env.OPENAI_API_KEY ? 'openai' : 'placeholder',
-    env.DEFAULT_LLM_MODEL,
-    env,
-  );
+  // Create adapters based on env config.
+  // When no API key is available, we still create adapters — they will throw
+  // at call time with a helpful error, allowing the worker to boot and the
+  // placeholder renderer to function without any API keys.
+  const llmProvider = (env.OPENAI_API_KEY ? 'openai' : env.ANTHROPIC_API_KEY ? 'anthropic' : env.GOOGLE_GENERATIVE_AI_API_KEY ? 'google' : 'openai') as ai.LLMProvider;
+  const transcriptionProvider = (env.OPENAI_API_KEY ? 'openai' : env.GROQ_API_KEY ? 'groq' : 'openai') as ai.TranscriptionProvider;
+
+  const transcriptionAdapter = ai.createTranscriptionAdapter(transcriptionProvider, env);
+  const storyPlanner = ai.createStoryPlanner(llmProvider, env.DEFAULT_LLM_MODEL, env);
   const ttsAdapter = env.OPENAI_API_KEY ? ai.createTTSAdapter('openai', env) : undefined;
   const renderer = renderers.createRenderer(env.DEFAULT_RENDERER, env);
 
@@ -104,22 +103,36 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
     repo,
 
     async transcribe(audioPath: string) {
-      const result = await transcriptionAdapter.transcribe(audioPath);
+      const result = await transcriptionAdapter.transcribe(audioPath, {
+        projectId: '', // projectId is tracked by the pipeline, not the adapter
+      });
       return {
         chunks: result.chunks,
         durationSec: result.durationSec ?? 0,
       };
     },
 
-    async diarize(audioPath: string, chunks: TranscriptChunk[]): Promise<SpeakerTurn[]> {
-      if (transcriptionAdapter.diarize) {
-        return transcriptionAdapter.diarize(audioPath, chunks);
-      }
+    async diarize(_audioPath: string, _chunks: TranscriptChunk[]): Promise<SpeakerTurn[]> {
+      // Diarization is optional and requires a separate adapter (pyannote etc.)
+      // For MVP, we skip diarization — the pipeline works without speaker attribution.
       return [];
     },
 
     async planStory(input: StoryPlanInput): Promise<StoryPlanOutput> {
-      return storyPlanner.planStory(input);
+      // Map our pipeline input to the AI package's input format
+      const aiInput: ai.StoryPlanInput = {
+        projectId: input.projectId,
+        text: input.text,
+      };
+      const aiResult = await storyPlanner.planStory(aiInput);
+      // Map the AI package's output back to our pipeline output format
+      return {
+        sections: aiResult.sections,
+        characters: aiResult.characters,
+        scenes: [], // AI planner doesn't produce separate scene profiles
+        objects: [], // AI planner doesn't produce separate object profiles
+        worldBible: aiResult.worldBible,
+      };
     },
 
     async synthesizeTTS(text: string, opts?: { voice?: string }) {
