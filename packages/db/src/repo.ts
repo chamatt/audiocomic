@@ -67,6 +67,16 @@ type Row<TTable extends PgTableWithColumns<any>> = InferSelectModel<TTable>;
 /** Payload shape accepted by drizzle `.insert()`. */
 type InsertPayload<TTable extends PgTableWithColumns<any>> = InferInsertModel<TTable>;
 
+/** Remove keys with `undefined` values — postgres.js rejects undefined. */
+function stripUndefined<T>(obj: T): T {
+  if (typeof obj !== 'object' || obj === null) return obj;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out as unknown as T;
+}
+
 
 
 /**
@@ -112,7 +122,7 @@ function makeEntityRepo<
   return {
     async create(input: unknown): Promise<TDomain> {
       const parsed = zodSchema.parse(input) as TDomain;
-      const [row] = await db.insert(table).values(toRow(parsed)).returning();
+      const [row] = await db.insert(table).values(stripUndefined(toRow(parsed))).returning();
       return fromRow(row as Row<TTable>);
     },
 
@@ -135,7 +145,7 @@ function makeEntityRepo<
 
     async update(id: string, input: unknown): Promise<TDomain | null> {
       const parsed = zodSchema.parse(input) as TDomain;
-      const setValues = toRow(parsed);
+      const setValues = stripUndefined(toRow(parsed));
       const [row] = await db
         .update(table)
         .set(setValues)
@@ -428,7 +438,19 @@ export function createRepository(db: Db): Repository {
     `);
     const row = (result as unknown[])[0] as Record<string, unknown> | undefined;
     if (!row) return null;
-    return toDomain(row) as unknown as JobRecordType;
+    // Raw SQL returns snake_case columns — convert to camelCase for domain
+    const camelRow: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+      if (value === null) {
+        camelRow[camelKey] = undefined;
+      } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value)) {
+        camelRow[camelKey] = value.replace(' ', 'T').replace(/\+00$/, 'Z');
+      } else {
+        camelRow[camelKey] = value;
+      }
+    }
+    return camelRow as unknown as JobRecordType;
   };
 
   const getLatestJobByProject: Repository['getLatestJobByProject'] = async (projectId) => {

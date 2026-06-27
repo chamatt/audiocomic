@@ -13,6 +13,23 @@ import { createDb, createRepository } from '@audiocomic/db';
 
 import type { Project, SourceAsset, TranscriptChunk, SpeakerTurn, StorySection, CharacterProfile, SceneProfile, ObjectProfile, WorldBible, PageSpec, PanelSpec, RenderPreset, PanelRenderRequest, PanelRenderResult, PageComposite, LetteringSpec, NarrationTimeline, ExportBundle, JobRecord, ProviderSettings } from '@audiocomic/domain';
 
+/** Convert snake_case keys to camelCase for raw SQL results. */
+function snakeToCamel<T>(row: T): T {
+  if (typeof row !== 'object' || row === null) return row;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+    if (value === null) {
+      out[camelKey] = undefined;
+    } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value)) {
+      out[camelKey] = value.replace(' ', 'T').replace(/\+00$/, 'Z');
+    } else {
+      out[camelKey] = value;
+    }
+  }
+  return out as unknown as T;
+}
+
 type DbInstance = unknown;
 
 interface Repository {
@@ -149,7 +166,7 @@ async function ensureRepo(): Promise<Repository> {
       projects: {
         list: async () => {
           const result = await dbResult.sql`SELECT * FROM projects ORDER BY created_at DESC`;
-          return result as unknown as Project[];
+          return (result as unknown[]).map(snakeToCamel) as unknown as Project[];
         },
         getById: projectsEntity.getById,
         create: projectsEntity.create as (p: Project) => Promise<void>,
@@ -163,24 +180,20 @@ async function ensureRepo(): Promise<Repository> {
       characters: map(raw.characterProfiles as unknown as { getByProjectId: (id: string) => Promise<CharacterProfile[]>; getById: (id: string) => Promise<CharacterProfile | null>; create: (c: CharacterProfile) => Promise<void>; update: (id: string, patch: Partial<CharacterProfile>) => Promise<void> }) as unknown as Repository['characters'],
       scenes: map(raw.sceneProfiles as unknown as { getByProjectId: (id: string) => Promise<SceneProfile[]>; create: (s: SceneProfile) => Promise<void> }) as unknown as Repository['scenes'],
       objects: map(raw.objectProfiles as unknown as { getByProjectId: (id: string) => Promise<ObjectProfile[]>; create: (o: ObjectProfile) => Promise<void> }) as unknown as Repository['objects'],
-      worldBibles: map(raw.worldBibles as unknown as { getByProjectId: (id: string) => Promise<WorldBible[]>; create: (w: WorldBible) => Promise<void> }) as unknown as Repository['worldBibles'],
-      pages: map(raw.pageSpecs as unknown as { getByProjectId: (id: string) => Promise<PageSpec[]>; getById: (id: string) => Promise<PageSpec | null>; create: (p: PageSpec) => Promise<void>; update: (id: string, patch: Partial<PageSpec>) => Promise<void> }) as unknown as Repository['pages'],
       panels: {
         ...map(raw.panelSpecs as unknown as { getByProjectId: (id: string) => Promise<PanelSpec[]>; getById: (id: string) => Promise<PanelSpec | null>; create: (p: PanelSpec) => Promise<void>; update: (id: string, patch: Partial<PanelSpec>) => Promise<void> }),
         getByPage: async (pageId: string) => {
           const rows = await dbResult.sql`SELECT * FROM panel_specs WHERE page_id = ${pageId} ORDER BY index ASC`;
-          return rows as unknown as PanelSpec[];
+          return (rows as unknown[]).map(snakeToCamel) as unknown as PanelSpec[];
         },
       } as unknown as Repository['panels'],
       presets: map(raw.renderPresets as unknown as { getByProjectId: (id: string) => Promise<RenderPreset[]>; create: (p: RenderPreset) => Promise<void> }) as unknown as Repository['presets'],
       renderRequests: raw.panelRenderRequests as unknown as Repository['renderRequests'],
       renderResults: raw.panelRenderResults as unknown as Repository['renderResults'],
       composites: map(raw.pageComposites as unknown as { getByProjectId: (id: string) => Promise<PageComposite[]>; getById: (id: string) => Promise<PageComposite | null>; create: (c: PageComposite) => Promise<void> }) as unknown as Repository['composites'],
-      lettering: {
-        ...map(raw.letteringSpecs as unknown as { getByProjectId: (id: string) => Promise<LetteringSpec[]>; create: (l: LetteringSpec) => Promise<void> }),
         getByPage: async (pageId: string) => {
           const rows = await dbResult.sql`SELECT * FROM lettering_specs WHERE page_id = ${pageId}`;
-          return rows as unknown as LetteringSpec[];
+          return (rows as unknown[]).map(snakeToCamel) as unknown as LetteringSpec[];
         },
       } as unknown as Repository['lettering'],
       timelines: map(raw.narrationTimelines as unknown as { getByProjectId: (id: string) => Promise<NarrationTimeline[]>; create: (t: NarrationTimeline) => Promise<void> }) as unknown as Repository['timelines'],

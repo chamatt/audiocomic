@@ -213,7 +213,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                         </pre>
                       </details>
                     )}
-                    {panel.dialogueLines.length > 0 && (
+                    {panel.dialogueLines?.length > 0 && (
                       <div className="mt-2">
                         <p className="text-sm font-bold mb-2">Dialogue:</p>
                         {panel.dialogueLines.map((d, i) => (

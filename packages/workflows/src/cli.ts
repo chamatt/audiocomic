@@ -21,15 +21,15 @@ import { join, dirname } from 'node:path';
 // ============================================================================
 // AudioComic CLI — direct pipeline control without the web UI
 //
-// Usage:
-//   bun run cli create-text "My Story" < text.txt    # create text project
-//   bun run cli create-audio "My Audiobook" file.m4b  # create audio project
-//   bun run cli run <projectId>                        # run full pipeline
-//   bun run cli status <projectId>                     # show project state
+//   bun run cli run <projectId>                        # enqueue pipeline job
+//   bun run cli run-inline <projectId>                 # run pipeline inline (blocking)
+//   bun run cli status <projectId> --watch             # live progress (polls every 2s)
 //   bun run cli panels <projectId>                     # list all panels
 //   bun run cli render-panel <projectId> <panelId>     # render single panel
 //   bun run cli list                                    # list all projects
-// ============================================================================
+//
+// Worker (processes enqueued jobs):
+//   bun run worker                                      # start background worker
 
 async function getRepo() {
   const { createDb, createRepository } = await import('@audiocomic/db');
@@ -212,6 +212,43 @@ async function cmdRun(projectId: string) {
     process.exit(1);
   }
 
+  // Enqueue a job for the background worker — does not execute inline.
+  const assets = await repo.sourceAssets.getByProjectId(projectId);
+  const asset = assets[0];
+  if (!asset) {
+    console.error('No source asset found for project');
+    process.exit(1);
+  }
+  const job: JobRecord = {
+    id: uuid(),
+    projectId,
+    type: 'full_pipeline',
+    state: 'pending',
+    progress: 0,
+    payload: { modality: project.modality, storageKey: asset.storageKey },
+    createdAt: nowIso(),
+    attempts: 0,
+  };
+  await repo.jobs.create(job);
+
+  console.log(`Job enqueued: ${job.id}`);
+  console.log(`Project: ${projectId}`);
+  console.log('');
+  console.log('The worker will pick this up automatically. To watch progress:');
+  console.log(`  bun run cli status ${projectId} --watch`);
+  console.log('');
+  console.log('No worker running? Start one with:');
+  console.log('  bun run worker');
+}
+
+async function cmdRunInline(projectId: string) {
+  const { repo } = await getRepo();
+  const project = await repo.projects.getById(projectId);
+  if (!project) {
+    console.error(`Project not found: ${projectId}`);
+    process.exit(1);
+  }
+
   // Find the pending/running job, or create one
   let jobs = await repo.jobs.getByProjectId(projectId);
   let job = jobs.find((j) => j.state === 'pending' || j.state === 'running');
@@ -279,7 +316,88 @@ async function cmdRun(projectId: string) {
   }
 }
 
-async function cmdStatus(projectId: string) {
+async function cmdStatus(projectId: string, watch = false) {
+  if (watch) {
+    await cmdWatch(projectId);
+    return;
+  }
+  await printStatus(projectId);
+}
+
+async function cmdWatch(projectId: string) {
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  let lastStageKey = '';
+  let stableCount = 0;
+  const STALL_THRESHOLD = 60; // 60 polls × 2s = 120s with no change = stall
+
+  // Create a single repo instance and reuse it for all polls
+  const { repo } = await getRepo();
+
+  while (true) {
+    const project = await repo.projects.getById(projectId);
+    if (!project) {
+      console.error(`Project not found: ${projectId}`);
+      process.exit(1);
+    }
+
+    const jobs = await repo.jobs.getByProjectId(projectId);
+    const job = jobs.find((j) => j.state === 'pending' || j.state === 'running') ?? jobs[0];
+    const runningStage = project.stages.find((s) => s.state === 'running');
+    const stageKey = project.stages.map((s) => `${s.stage}:${s.state}`).join('|');
+
+    // Detect stall: same stage state for too long while job is running
+    if (job?.state === 'running') {
+      if (stageKey === lastStageKey) {
+        stableCount++;
+      } else {
+        stableCount = 0;
+        lastStageKey = stageKey;
+      }
+    }
+
+    // Clear screen and print fresh status
+    process.stdout.write('\x1B[2J\x1B[H');
+    console.log(`Project: ${project.name} (${projectId})`);
+    console.log(`Status: ${project.status}`);
+    console.log('');
+    console.log('Stages:');
+    for (const s of project.stages) {
+      const icon = s.state === 'completed' ? '✓' : s.state === 'running' ? '▶' : s.state === 'failed' ? '✗' : '○';
+      console.log(`  ${icon} ${s.stage.padEnd(20)} ${s.state}${s.error ? ` — ${s.error}` : ''}`);
+    }
+    console.log('');
+    if (job) {
+      const pct = Math.round((job.progress ?? 0) * 100);
+      const bar = '█'.repeat(Math.floor(pct / 5)) + '░'.repeat(20 - Math.floor(pct / 5));
+      console.log(`Job [${job.id.slice(0, 8)}] ${job.type} — ${job.state} ${bar} ${pct}%`);
+      if (job.error) console.log(`  Error: ${job.error}`);
+    }
+
+    // Stall warning
+    if (stableCount >= STALL_THRESHOLD) {
+      console.log('');
+      console.log(`⚠ STALL DETECTED: no stage change for ${stableCount * 2}s while job is running.`);
+      console.log(`  Stuck on: ${runningStage?.stage ?? 'unknown'}`);
+      console.log('  The worker may be waiting on an API call or has crashed.');
+      console.log('  Check: bun run worker logs, or kill and restart the worker.');
+    }
+
+    // Exit when job reaches terminal state
+    if (job && (job.state === 'completed' || job.state === 'failed')) {
+      console.log('');
+      if (job.state === 'completed') {
+        console.log('✓ Pipeline completed!');
+      } else {
+        console.log(`✗ Pipeline failed: ${job.error ?? 'unknown'}`);
+      }
+      break;
+    }
+
+    await sleep(2000);
+  }
+}
+
+async function printStatus(projectId: string) {
   const { repo } = await getRepo();
   const project = await repo.projects.getById(projectId);
   if (!project) {
@@ -428,12 +546,19 @@ async function main() {
       }
       await cmdRun(args[0]);
       break;
-    case 'status':
+    case 'run-inline':
       if (!args[0]) {
-        console.error('Usage: cli status <projectId>');
+        console.error('Usage: cli run-inline <projectId>');
         process.exit(1);
       }
-      await cmdStatus(args[0]);
+      await cmdRunInline(args[0]);
+      break;
+    case 'status':
+      if (!args[0]) {
+        console.error('Usage: cli status <projectId> [--watch]');
+        process.exit(1);
+      }
+      await cmdStatus(args[0], args.includes('--watch') || args.includes('-w'));
       break;
     case 'panels':
       if (!args[0]) {
@@ -455,8 +580,9 @@ async function main() {
 Usage:
   cli create-text "Name" [textfile.txt]        Create a text project (file or stdin)
   cli create-audio "Name" /path/to/file.m4b   Create an audio project
-  cli run <projectId>                         Run the full pipeline
-  cli status <projectId>                      Show project state
+  cli run <projectId>                         Enqueue pipeline job for worker
+  cli run-inline <projectId>                  Run pipeline inline (blocking)
+  cli status <projectId> [--watch]            Show project state (live watch mode)
   cli panels <projectId>                      List all panels with status
   cli render-panel <projectId> <panelId>      Re-render a single panel
 `);

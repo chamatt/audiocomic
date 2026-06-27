@@ -98,6 +98,7 @@ export class JobWorker {
 
     try {
       await this.deps.markJobRunning(job.id);
+      this.deps.log(`Claimed job ${job.id} for project ${job.projectId}`);
       const result = await handler.execute(job, context);
 
       if (result.success) {
@@ -112,6 +113,8 @@ export class JobWorker {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : '';
+      this.deps.log(`Job ${job.id} failed: ${message}\n${stack}`);
       await this.handleFailure(job, message);
     }
   }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { experimental_transcribe as transcribe } from 'ai';
 import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai';
-import type { TranscriptChunk, WordTiming } from '@audiocomic/domain';
+import type { TranscriptChunk } from '@audiocomic/domain';
 import type { Env } from '@audiocomic/shared';
 import { uuid } from '@audiocomic/shared';
 import type {
@@ -19,50 +19,38 @@ const DEFAULT_MODEL = 'whisper-1';
 /** Roughly how many words to pack into a single TranscriptChunk */
 const WORDS_PER_CHUNK = 40;
 
-const SENTENCE_END = /[.!?。！？]$/;
 
 type TranscriptionModel = Parameters<typeof transcribe>[0]['model'];
 
 /**
- * Group flat word timings into TranscriptChunks. A chunk boundary is forced at
- * sentence terminators or when WORDS_PER_CHUNK is reached, whichever comes
- * first, so chunks stay readable and align with narration pauses.
+ * Split raw transcript text into ~40-word chunks at sentence boundaries,
+ * producing TranscriptChunks without timings (sufficient for story planning).
  */
-function chunkWords(words: WordTiming[], projectId: string): TranscriptChunk[] {
+function chunkPlainText(text: string, projectId: string): TranscriptChunk[] {
+  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
   const chunks: TranscriptChunk[] = [];
-  let bucket: WordTiming[] = [];
+  let bucket: string[] = [];
+  let wordCount = 0;
 
   const flush = (index: number) => {
     if (bucket.length === 0) return;
-    const text = bucket
-      .map((w) => w.word)
-      .join(' ')
-      .replace(/\s+([.,;:!?])/g, '$1');
-    const start = bucket[0]?.start ?? 0;
-    const end = bucket[bucket.length - 1]?.end ?? start;
-    const confidences = bucket
-      .map((w) => w.confidence)
-      .filter((c): c is number => c != null);
-    const confidence =
-      confidences.length > 0
-        ? confidences.reduce((a, b) => a + b, 0) / confidences.length
-        : undefined;
     chunks.push({
       id: uuid(),
       projectId,
       index,
-      text,
-      start,
-      end,
-      words: bucket,
-      confidence,
+      text: bucket.join(' ').trim(),
     });
     bucket = [];
+    wordCount = 0;
   };
 
-  for (const w of words) {
-    bucket.push(w);
-    if (SENTENCE_END.test(w.word) || bucket.length >= WORDS_PER_CHUNK) {
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    if (!trimmed) continue;
+    const wordsInSentence = trimmed.split(/\s+/).length;
+    bucket.push(trimmed);
+    wordCount += wordsInSentence;
+    if (wordCount >= WORDS_PER_CHUNK) {
       flush(chunks.length);
     }
   }
@@ -97,9 +85,6 @@ export class OpenAITranscriptionAdapter implements TranscriptionAdapter {
       audio,
       providerOptions: {
         openai: {
-          // Request word-level timestamps; the OpenAI provider surfaces these
-          // as the `segments` array on the result.
-          timestampGranularities: ['word'],
           ...(opts.language ? { language: opts.language } : {}),
           ...(opts.prompt ? { prompt: opts.prompt } : {}),
           ...(opts.temperature != null ? { temperature: opts.temperature } : {}),
@@ -109,19 +94,13 @@ export class OpenAITranscriptionAdapter implements TranscriptionAdapter {
       abortSignal: opts.signal,
     });
 
-    // The OpenAI provider maps word-level results into `segments` where each
-    // segment is a single word with startSecond/endSecond.
-    const words: WordTiming[] = result.segments.map((seg) => ({
-      word: seg.text,
-      start: seg.startSecond,
-      end: seg.endSecond,
-    }));
-
-    const chunks = chunkWords(words, opts.projectId);
+    // Use the full text response directly — word-level segments are unreliable
+    // across provider versions and unnecessary for story planning.
+    const chunks = chunkPlainText(result.text ?? '', opts.projectId);
 
     return {
       chunks,
-      words,
+      words: [],
       language: result.language,
       durationSec: result.durationInSeconds,
     };
