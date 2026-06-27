@@ -404,11 +404,11 @@ export function createRepository(db: Db): Repository {
     // Atomically claim a pending job using FOR UPDATE SKIP LOCKED
     const result = await db.execute(sql`
       UPDATE ${schema.jobs} AS j
-      SET state = 'running', "startedAt" = NOW()
+      SET state = 'running', started_at = NOW()
       WHERE id = (
         SELECT id FROM ${schema.jobs}
         WHERE state = 'pending'
-        ORDER BY "createdAt"
+        ORDER BY created_at
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
