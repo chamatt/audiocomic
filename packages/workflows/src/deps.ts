@@ -205,7 +205,7 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
         imageMap,
         audioPath ? localPath(audioPath) : undefined,
         outputPath,
-        env,
+        { ffmpegBin: env.FFMPEG_BIN },
       );
       return { sizeBytes: result.sizeBytes, durationSec: result.durationSec };
     },
