@@ -34,7 +34,7 @@ export async function seed(): Promise<void> {
   console.log('[seed] creating demo project...');
 
   const { createDb, createRepository } = await import('@audiocomic/db');
-  const db = createDb(env.DATABASE_URL);
+  const db = createDb(env.DATABASE_URL).db;
   const repo = createRepository(db) as unknown as {
     projects: {
       create(p: Project): Promise<void>;
@@ -82,7 +82,7 @@ export async function seed(): Promise<void> {
   const project: Project = {
     id: projectId,
     name: 'The Lighthouse Keeper',
-    description: 'A demo project — a short story about a woman returning to her grandfather's lighthouse.',
+    description: "A demo project — a short story about a woman returning to her grandfather's lighthouse.",
     status: 'created',
     modality: 'text',
     createdAt: now,

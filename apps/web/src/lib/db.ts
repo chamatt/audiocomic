@@ -114,8 +114,9 @@ async function ensureRepo(): Promise<Repository> {
   if (_repo) return _repo;
   const env = getEnv();
   const { createDb, createRepository } = await import('@audiocomic/db');
-  _db = createDb(env.DATABASE_URL);
-  _repo = createRepository(_db) as unknown as Repository; // db package returns its own type; we bridge to our interface
+  const dbResult = createDb(env.DATABASE_URL);
+  _db = dbResult;
+  _repo = createRepository(dbResult.db) as unknown as Repository; // db package returns its own type; we bridge to our interface
   return _repo;
 }
 

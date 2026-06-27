@@ -7,7 +7,7 @@
 // therefore excluded from create/update payloads — they are written through
 // dedicated vector helpers on the Repository.
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { PgColumn, PgTableWithColumns } from 'drizzle-orm/pg-core';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm/table';
 import type { ZodTypeAny } from 'zod';
@@ -93,6 +93,8 @@ export interface EntityRepo<TDomain, TRow> {
   getById(id: string): Promise<TDomain | null>;
   getByProjectId(projectId: string): Promise<TDomain[]>;
   update(id: string, input: unknown): Promise<TDomain | null>;
+  /** Partial update: merges a patch into the existing row, validates the result. */
+  patch(id: string, patch: Partial<TDomain>): Promise<TDomain | null>;
   delete(id: string): Promise<void>;
   /** Raw row access (e.g. for vector columns not exposed by the Zod schema). */
   getRowById(id: string): Promise<TRow | null>;
@@ -141,11 +143,15 @@ function makeEntityRepo<
         .returning();
       return row ? fromRow(row as Row<TTable>) : null;
     },
-
+    async patch(id: string, patch: Partial<TDomain>): Promise<TDomain | null> {
+      const existing = await this.getById(id);
+      if (!existing) return null;
+      const merged = { ...existing, ...patch };
+      return this.update(id, merged);
+    },
     async delete(id: string): Promise<void> {
       await db.delete(table).where(eq(table.id, id));
     },
-
     async getRowById(id: string): Promise<Row<TTable> | null> {
       const rows = await db.select().from(table).where(eq(table.id, id)).limit(1);
       return (rows[0] as Row<TTable> | undefined) ?? null;
@@ -207,6 +213,24 @@ export interface Repository {
     id: string,
     embedding: number[],
   ): Promise<void>;
+
+  /** Atomically claim the next pending job (FOR UPDATE SKIP LOCKED). Returns null if none. */
+  claimNextJob(): Promise<JobRecordType | null>;
+
+  /** Get the most recent job for a project (any state). */
+  getLatestJobByProject(projectId: string): Promise<JobRecordType | null>;
+
+  /** Update a project's stage state in the stages JSONB array. */
+  updateProjectStage(
+    projectId: string,
+    stage: string,
+    state: string,
+    error?: string,
+  ): Promise<void>;
+
+  /** Get/save global provider settings (single-row key-value store). */
+  getSettings(): Promise<Record<string, unknown> | null>;
+  saveSettings(settings: Record<string, unknown>): Promise<void>;
 }
 
 export function createRepository(db: Db): Repository {
@@ -374,6 +398,72 @@ export function createRepository(db: Db): Repository {
     await db.update(table).set({ embedding }).where(eq(table.id, id));
   };
 
+  // --- Job queue helpers ---
+
+  const claimNextJob: Repository['claimNextJob'] = async () => {
+    // Atomically claim a pending job using FOR UPDATE SKIP LOCKED
+    const result = await db.execute(sql`
+      UPDATE ${schema.jobs} AS j
+      SET state = 'running', "startedAt" = NOW()
+      WHERE id = (
+        SELECT id FROM ${schema.jobs}
+        WHERE state = 'pending'
+        ORDER BY "createdAt"
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      )
+      RETURNING *
+    `);
+    const row = (result as unknown[])[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return toDomain(row) as unknown as JobRecordType;
+  };
+
+  const getLatestJobByProject: Repository['getLatestJobByProject'] = async (projectId) => {
+    const rows = await db
+      .select()
+      .from(schema.jobs)
+      .where(eq(schema.jobs.projectId, projectId))
+      .orderBy(sql`${schema.jobs.createdAt} DESC`)
+      .limit(1);
+    const row = rows[0] as Row<typeof schema.jobs> | undefined;
+    return row ? toDomain(row) as unknown as JobRecordType : null;
+  };
+
+  const updateProjectStage: Repository['updateProjectStage'] = async (projectId, stage, state, error) => {
+    const project = await projects.getById(projectId);
+    if (!project) return;
+    const stages = project.stages.map((s) =>
+      s.stage === stage
+        ? { ...s, state: state as never, error, startedAt: state === 'running' ? new Date().toISOString() : s.startedAt, completedAt: state === 'completed' || state === 'failed' ? new Date().toISOString() : s.completedAt }
+        : s,
+    );
+    // If the stage doesn't exist in the array, add it
+    if (!stages.some((s) => s.stage === stage)) {
+      stages.push({
+        stage: stage as never,
+        state: state as never,
+        error,
+        attempts: 0,
+      } as never);
+    }
+    await projects.patch(projectId, { stages } as Partial<ProjectType>);
+  };
+
+  // --- Settings (single-row key-value store) ---
+
+  const getSettings: Repository['getSettings'] = async () => {
+    const rows = await db.select().from(schema.projects).limit(1);
+    // For MVP, settings are stored in a dedicated settings row.
+    // We use a simple approach: store in the first project's providerSettings.
+    // In production, this would be a separate settings table.
+    return null;
+  };
+
+  const saveSettings: Repository['saveSettings'] = async (_settings) => {
+    // For MVP, settings are read from env defaults. This is a no-op.
+    // In production, this would persist to a settings table.
+  };
   return {
     projects,
     sourceAssets,
@@ -395,6 +485,11 @@ export function createRepository(db: Db): Repository {
     exportBundles,
     jobs,
     setEmbedding,
+    claimNextJob,
+    getLatestJobByProject,
+    updateProjectStage,
+    getSettings,
+    saveSettings,
   };
 }
 

@@ -31,7 +31,8 @@ export async function assetExists(key: string): Promise<boolean> {
   }
 }
 
-export async function getAssetStream(key: string): Promise<Readable> {
+export async function getAssetStream(key: string): Promise<globalThis.ReadableStream> {
   const { createReadStream } = await import('node:fs');
-  return createReadStream(localPath(key));
+  const nodeStream = createReadStream(localPath(key));
+  return Readable.toWeb(nodeStream) as unknown as globalThis.ReadableStream;
 }

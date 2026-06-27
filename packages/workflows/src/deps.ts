@@ -23,6 +23,7 @@ import type {
   SourceAsset,
   RenderPreset,
 } from '@audiocomic/domain';
+import type { StoryPlanInput as AIStoryPlanInput, LLMProvider, TranscriptionProvider } from '@audiocomic/ai';
 import { promises as fs } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Readable } from 'node:stream';
@@ -36,8 +37,8 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
 
   // Lazy import the db package
   const { createDb, createRepository } = await import('@audiocomic/db');
-  const db = createDb(env.DATABASE_URL);
-  const repo = createRepository(db) as unknown as PipelineRepo & {
+  const dbResult = createDb(env.DATABASE_URL);
+  const repo = createRepository(dbResult.db) as unknown as PipelineRepo & {
     claimNextJob(): Promise<JobRecord | null>;
     updateJob(id: string, patch: Partial<JobRecord>): Promise<void>;
     updateProjectStage(projectId: string, stage: ProjectStage, state: StageState, error?: string): Promise<void>;
@@ -87,8 +88,8 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
   // When no API key is available, we still create adapters — they will throw
   // at call time with a helpful error, allowing the worker to boot and the
   // placeholder renderer to function without any API keys.
-  const llmProvider = (env.OPENAI_API_KEY ? 'openai' : env.ANTHROPIC_API_KEY ? 'anthropic' : env.GOOGLE_GENERATIVE_AI_API_KEY ? 'google' : 'openai') as ai.LLMProvider;
-  const transcriptionProvider = (env.OPENAI_API_KEY ? 'openai' : env.GROQ_API_KEY ? 'groq' : 'openai') as ai.TranscriptionProvider;
+  const llmProvider: LLMProvider = env.OPENAI_API_KEY ? 'openai' : env.ANTHROPIC_API_KEY ? 'anthropic' : env.GOOGLE_GENERATIVE_AI_API_KEY ? 'google' : 'openai';
+  const transcriptionProvider: TranscriptionProvider = env.OPENAI_API_KEY ? 'openai' : env.GROQ_API_KEY ? 'groq' : 'openai';
 
   const transcriptionAdapter = ai.createTranscriptionAdapter(transcriptionProvider, env);
   const storyPlanner = ai.createStoryPlanner(llmProvider, env.DEFAULT_LLM_MODEL, env);
@@ -120,7 +121,7 @@ export async function createPipelineDeps(): Promise<PipelineDeps> {
 
     async planStory(input: StoryPlanInput): Promise<StoryPlanOutput> {
       // Map our pipeline input to the AI package's input format
-      const aiInput: ai.StoryPlanInput = {
+      const aiInput: AIStoryPlanInput = {
         projectId: input.projectId,
         text: input.text,
       };

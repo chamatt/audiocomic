@@ -1,7 +1,6 @@
 import type {
   JobRecord,
   Project,
-  ProjectStage,
   StageState,
   StorySection,
   CharacterProfile,
@@ -25,9 +24,8 @@ import {
   validatePageLayout,
   validatePanelSectionRefs,
   ProjectStage,
-  BoundingBox,
 } from '@audiocomic/domain';
-import { uuid, nowIso, getEnv, storageKey, panelImageKey, pageImageKey, letteringKey, exportKey } from '@audiocomic/shared';
+import { uuid, nowIso, getEnv, panelImageKey, pageImageKey, letteringKey, exportKey } from '@audiocomic/shared';
 import type { JobHandler, JobResult, JobContext } from './engine.js';
 import { STAGE_ORDER, computeProgress } from './stages.js';
 
@@ -48,7 +46,7 @@ export interface PipelineDeps {
   transcribe(audioPath: string): Promise<{ chunks: TranscriptChunk[]; durationSec: number }>;
   diarize?(audioPath: string, chunks: TranscriptChunk[]): Promise<SpeakerTurn[]>;
   planStory(input: StoryPlanInput): Promise<StoryPlanOutput>;
-  synthesizeTTS?(text: string, opts?: { voice?: string }): Promise<{ audio: Buffer; durationSec: number }>;
+  synthesizeTTS?(text: string, opts?: { voice?: string }): Promise<{ audio: Uint8Array; durationSec?: number }>;
   composePrompt(input: PromptComposeInput): Promise<string>;
 
   // Renderer
@@ -95,6 +93,9 @@ export interface PipelineRepo {
   getTimeline(projectId: string): Promise<NarrationTimeline | null>;
   createExport(bundle: ExportBundle): Promise<void>;
   getRenderPreset(id: string): Promise<RenderPreset | null>;
+  claimNextJob(): Promise<JobRecord | null>;
+  updateJob(id: string, patch: Partial<JobRecord>): Promise<void>;
+  updateProjectStage(projectId: string, stage: ProjectStage, state: StageState, error?: string): Promise<void>;
 }
 
 export interface StoryPlanInput {
@@ -387,6 +388,7 @@ export class FullPipelineHandler implements JobHandler {
           storageKey: key,
           createdAt: nowIso(),
           sizeBytes: result.sizeBytes,
+          metadata: {},
         };
         await this.deps.repo.createExport(bundle);
       }
@@ -627,6 +629,7 @@ export class RegeneratePanelHandler implements JobHandler {
       height: 1024,
       version: nextVersion,
       createdAt: nowIso(),
+      referenceImageKeys: [],
     };
     await this.deps.repo.createRenderRequest(renderReq);
     const result = await this.deps.renderPanel(renderReq);
@@ -670,6 +673,7 @@ export class RegeneratePageHandler implements JobHandler {
         height: 1024,
         version: (await this.deps.repo.getRenderResultsByPanel(panel.id)).length,
         createdAt: nowIso(),
+        referenceImageKeys: [],
       };
       await this.deps.repo.createRenderRequest(renderReq);
       const result = await this.deps.renderPanel(renderReq);
@@ -740,6 +744,7 @@ export class ExportHandler implements JobHandler {
         storageKey: key,
         createdAt: nowIso(),
         sizeBytes: result.sizeBytes,
+        metadata: {},
       });
       return { success: true };
     } else {
