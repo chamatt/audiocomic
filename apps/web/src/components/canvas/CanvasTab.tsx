@@ -398,8 +398,12 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     if (unrenderedPanels.length === 0) return;
     setIsRenderingAll(true);
     try {
-      for (const panel of unrenderedPanels) {
-        await handlePanelRender(panel.id);
+      for (let i = 0; i < unrenderedPanels.length; i++) {
+        await handlePanelRender(unrenderedPanels[i]!.id);
+        // Delay between renders to avoid Pollinations 429 rate limit.
+        if (i < unrenderedPanels.length - 1) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
       }
     } finally {
       setIsRenderingAll(false);

@@ -86,9 +86,6 @@ export function useCanvasData(projectId: string): CanvasData {
       prev.map((page) => ({
         ...page,
         panelImages: { ...page.panelImages, [panelId]: imageUrl },
-        panels: page.panels.map((p) =>
-          p.id === panelId ? { ...p, renderResultId: "updated" } : p,
-        ),
       })),
     );
   }, []);

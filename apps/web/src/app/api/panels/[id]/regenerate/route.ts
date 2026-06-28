@@ -46,8 +46,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
 
-    // Determine version: 0 for first render, increment for re-renders.
-    const version = panel.renderResultId ? 1 : 0;
+    // Determine version: count existing render results for this panel.
+    const existingResults = await repo.panelRenderResults.getByProjectId(panel.projectId);
+    const version = existingResults.filter((r) => r.panelId === panelId).length;
 
     // Compute render dimensions from the panel's bbox aspect ratio.
     // bbox is normalized (0-1) relative to the page; we derive pixel

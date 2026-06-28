@@ -58,15 +58,27 @@ export class PollinationsRenderer implements RendererAdapter {
 
     const url = `${POLLINATIONS_BASE}/${encodedPrompt}?${params.toString()}`;
     // Fetch the image — Pollinations returns binary image data directly.
+    // Retry on 429 (rate limit) with exponential backoff.
     const headers: Record<string, string> = {};
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
 
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
+    const MAX_RETRIES = 3;
+    let response: Response | null = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      response = await fetch(url, { headers });
+      if (response.ok) break;
+      if (response.status === 429 && attempt < MAX_RETRIES) {
+        const delayMs = 5000 * (attempt + 1); // 5s, 10s, 15s
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
       const body = await response.text().catch(() => "unknown");
       throw new Error(`Pollinations render failed (${response.status}): ${body}`);
+    }
+    if (!response || !response.ok) {
+      throw new Error("Pollinations render failed: exhausted retries");
     }
 
     const imageBuffer = new Uint8Array(await response.arrayBuffer());
@@ -89,7 +101,7 @@ export class PollinationsRenderer implements RendererAdapter {
       height: req.height,
       seed: req.seed,
       durationMs: Date.now() - start,
-      modelUsed: this.model,
+      modelUsed: req.model ?? this.model,
       promptHash: promptHash(req.prompt),
       createdAt: new Date().toISOString(),
       accepted: false,
