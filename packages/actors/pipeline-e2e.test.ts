@@ -54,7 +54,7 @@ async function getState(key: string): Promise<PipelineState> {
   return run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    return yield* handle.GetStatus({});
+    return yield* handle.GetStatus(undefined);
   }));
 }
 
@@ -70,7 +70,7 @@ async function startPipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Start({});
+    yield* handle.Start(undefined);
   }));
 }
 
@@ -78,7 +78,7 @@ async function pausePipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Pause({});
+    yield* handle.Pause(undefined);
   }));
 }
 
@@ -86,7 +86,7 @@ async function resumePipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Resume({});
+    yield* handle.Resume(undefined);
   }));
 }
 

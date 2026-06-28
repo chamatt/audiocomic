@@ -34,7 +34,7 @@ export async function createProjectActor(name: string, description: string): Pro
       const handle = accessor.getOrCreate("main");
       yield* handle.UpdateName({ name });
       yield* handle.UpdateDescription({ description });
-      const config = yield* handle.GetConfig({});
+      const config = yield* handle.GetConfig(undefined);
       return { key: "main", config };
     }),
   );
@@ -45,7 +45,7 @@ export async function getProjectConfigActor(key: string): Promise<ActorResult<Pr
     Effect.gen(function* () {
       const accessor = yield* projectClient;
       const handle = accessor.getOrCreate(key);
-      return yield* handle.GetConfig({});
+      return yield* handle.GetConfig(undefined);
     }),
   );
 }
@@ -109,7 +109,7 @@ export async function createBibleActor(title: string, lore: string): Promise<Act
       const accessor = yield* bibleClient;
       const handle = accessor.getOrCreate("main");
       yield* handle.UpdateLore({ lore });
-      const content = yield* handle.GetContent({});
+      const content = yield* handle.GetContent(undefined);
       return { key: "main", content };
     }),
   );
@@ -120,7 +120,7 @@ export async function getBibleContentActor(key: string): Promise<ActorResult<Bib
     Effect.gen(function* () {
       const accessor = yield* bibleClient;
       const handle = accessor.getOrCreate(key);
-      return yield* handle.GetContent({});
+      return yield* handle.GetContent(undefined);
     }),
   );
 }
@@ -176,7 +176,7 @@ export async function startPipelineActor(pipelineKey: string): Promise<ActorResu
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
       const handle = accessor.getOrCreate(pipelineKey);
-      return yield* handle.Start({});
+      return yield* handle.Start(undefined);
     }),
   );
 }
@@ -186,7 +186,7 @@ export async function pausePipelineActor(pipelineKey: string): Promise<ActorResu
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
       const handle = accessor.getOrCreate(pipelineKey);
-      return yield* handle.Pause({});
+      return yield* handle.Pause(undefined);
     }),
   );
 }
@@ -196,7 +196,7 @@ export async function resumePipelineActor(pipelineKey: string): Promise<ActorRes
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
       const handle = accessor.getOrCreate(pipelineKey);
-      return yield* handle.Resume({});
+      return yield* handle.Resume(undefined);
     }),
   );
 }
@@ -230,7 +230,7 @@ export async function getPipelineStatusActor(pipelineKey: string): Promise<Actor
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
       const handle = accessor.getOrCreate(pipelineKey);
-      return yield* handle.GetStatus({});
+      return yield* handle.GetStatus(undefined);
     }),
   );
 }
@@ -250,7 +250,7 @@ export async function cancelScheduleActor(pipelineKey: string): Promise<ActorRes
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
       const handle = accessor.getOrCreate(pipelineKey);
-      return yield* handle.CancelSchedule({});
+      return yield* handle.CancelSchedule(undefined);
     }),
   );
 }

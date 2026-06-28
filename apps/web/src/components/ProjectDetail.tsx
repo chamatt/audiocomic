@@ -17,6 +17,9 @@ import {
   schedulePipelineActor,
   cancelScheduleActor,
   addPipelineStepActor,
+  createProjectActor,
+  createBibleActor,
+  linkBibleActor,
   type ActorResult,
   type AddStepInput,
 } from '@/lib/actor-actions';
@@ -91,6 +94,26 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     return () => clearInterval(interval);
   }, [jobRunning, refreshDetail]);
 
+  // --- Lazy actor initialization (on first visit) --------------------------
+  const [actorsReady, setActorsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Create Project + Bible actors lazily; link bible to project.
+      // These are fire-and-forget — errors are non-fatal since actors
+      // may already exist from a prior visit.
+      const projectRes = await createProjectActor(project.name, project.description ?? '');
+      if (projectRes.ok) {
+        const bibleRes = await createBibleActor(project.name, `Story bible for ${project.name}`);
+        if (bibleRes.ok) {
+          await linkBibleActor(projectRes.data.key, bibleRes.data.content.id);
+        }
+      }
+      if (!cancelled) setActorsReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, [project.name, project.description]);
+
   // --- Pipeline actor refresh ----------------------------------------------
   const refreshPipeline = useCallback(async () => {
     const res = await getPipelineStatusActor(pipelineKey);
@@ -103,8 +126,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   }, [pipelineKey]);
 
   useEffect(() => {
-    refreshPipeline();
-  }, [refreshPipeline]);
+    if (actorsReady) refreshPipeline();
+  }, [actorsReady, refreshPipeline]);
 
   const actorRunning = pipelineState?.status === 'running';
   useEffect(() => {

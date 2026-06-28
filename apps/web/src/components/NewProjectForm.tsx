@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProjectAction } from '@/lib/actions';
-import { createProjectActor, createBibleActor, linkBibleActor } from '@/lib/actor-actions';
 
 export function NewProjectForm() {
   const router = useRouter();
@@ -24,7 +23,6 @@ export function NewProjectForm() {
 
     setLoading(true);
     try {
-      // 1. Create project in DB
       const fileDataBase64 = file
         ? btoa(String.fromCharCode(...new Uint8Array(await file.arrayBuffer())))
         : undefined;
@@ -37,15 +35,8 @@ export function NewProjectForm() {
         textContent: text,
       });
 
-      // 2. Create project actor + bible actor
-      const projectRes = await createProjectActor(name, description);
-      if (projectRes.ok) {
-        const bibleRes = await createBibleActor(name, `Story bible for ${name}`);
-        if (bibleRes.ok) {
-          await linkBibleActor(projectRes.data.key, bibleRes.data.content.id);
-        }
-      }
-
+      // Actors (Project, Bible, Pipeline) are created lazily on first access
+      // from the project detail page — no need to block project creation.
       router.push(`/projects/${projectId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');

@@ -38,7 +38,6 @@ const ActorsLayer = Layer.mergeAll(
 // even though the TS type doesn't expose it.
 const MainLayer = Registry.serve(ActorsLayer).pipe(
 	Layer.provide(Registry.layer({
-		endpoint,
 		...({ sqlite: "local" } as unknown as Record<string, unknown>),
 	})),
 );
