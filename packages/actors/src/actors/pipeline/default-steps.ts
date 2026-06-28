@@ -1,12 +1,15 @@
 import type { StepDefinition, StepState } from "../../lib/schemas.ts";
 
 /**
- * The 13 default pipeline steps with their DAG dependencies.
+ * The 14 default pipeline steps with their DAG dependencies.
  *
  * normalize and transcribe are NOT included — those happen per-chapter
  * on upload via ChapterActor. This pipeline starts with ingest_knowledge
  * (the "rebuild index" step) which builds embeddings + wiki from all
  * transcribed chapters, then proceeds to story planning and rendering.
+ *
+ * The pipeline auto-pauses after compose_prompts (pauseAfter: true) so
+ * the user can review planned panels on the canvas before rendering.
  *
  * This is the single source of truth for the default pipeline —
  * the web app's `default-steps.ts` mirrors this for UI rendering.
@@ -19,7 +22,7 @@ export const DEFAULT_STEP_DEFINITIONS: StepDefinition[] = [
 	{ id: "section_memory", name: "Section Memory", type: "section_memory", config: {}, dependsOn: ["plan_story"] },
 	{ id: "plan_pages", name: "Plan Pages", type: "plan_pages", config: {}, dependsOn: ["plan_story"] },
 	{ id: "validate_layout", name: "Validate Layout", type: "validate_layout", config: {}, dependsOn: ["plan_pages", "plan_story"] },
-	{ id: "compose_prompts", name: "Compose Prompts", type: "compose_prompts", config: {}, dependsOn: ["plan_pages", "plan_story"] },
+	{ id: "compose_prompts", name: "Compose Prompts", type: "compose_prompts", config: {}, dependsOn: ["plan_pages", "plan_story"], pauseAfter: true },
 	{ id: "render_panels", name: "Render Panels", type: "render_panels", config: {}, dependsOn: ["compose_prompts", "plan_pages", "plan_story"] },
 	{ id: "panel_qa", name: "Panel QA", type: "panel_qa", config: {}, dependsOn: ["render_panels", "plan_pages"] },
 	{ id: "compose_pages", name: "Compose Pages", type: "compose_pages", config: {}, dependsOn: ["plan_pages", "render_panels"] },
@@ -28,7 +31,7 @@ export const DEFAULT_STEP_DEFINITIONS: StepDefinition[] = [
 	{ id: "export_motion", name: "Export Motion", type: "export_motion", config: {}, dependsOn: ["compose_pages", "plan_pages"] },
 ];
 
-/** Default initial steps — all 13, each in "pending" status. */
+/** Default initial steps — all 14, each in "pending" status. */
 export function createDefaultSteps(): StepState[] {
 	return DEFAULT_STEP_DEFINITIONS.map((definition) => ({
 		definition,

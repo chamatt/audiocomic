@@ -30,7 +30,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Play, Pause, RotateCcw, SkipForward, RefreshCw, Plus,
-  AlertCircle, CheckCircle2, Clock, Loader2, Ban, ZapOff, Zap,
+  AlertCircle, CheckCircle2, Clock, Loader2, Ban, ZapOff, Zap, ExternalLink,
 } from 'lucide-react';
 import { PipelineFlow } from '@/components/PipelineFlow';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -603,6 +603,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const [actorsReady, setActorsReady] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<{ id: string; title: string; index: number; status: string }[]>([]);
+  const [activeTab, setActiveTab] = useState<string>(detail.pages.length > 0 ? 'canvas' : 'chapters');
   const project = detail.project;
 
   // --- Data refresh ---
@@ -691,6 +692,9 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
   const steps = pipelineState?.steps ?? [];
   const pipelineStatus = pipelineState?.status ?? 'idle';
+  const composePromptsDone = steps.some((s) => s.definition.id === 'compose_prompts' && s.status === 'completed');
+  const renderPanelsStarted = steps.some((s) => s.definition.id === 'render_panels' && s.status !== 'pending');
+  const atReviewCheckpoint = pipelineStatus === 'paused' && composePromptsDone && !renderPanelsStarted;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -718,8 +722,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
         </Card>
       )}
 
-      {/* Tabs */}
-      <Tabs defaultValue={detail.pages.length > 0 ? 'canvas' : 'chapters'}>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="canvas">Canvas</TabsTrigger>
           <TabsTrigger value="chapters">Chapters</TabsTrigger>
@@ -792,6 +795,42 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
               </Button>
             </div>
           </div>
+
+          {/* Review checkpoint banner */}
+          {atReviewCheckpoint && (
+            <Card className="border-primary/50 bg-primary/5">
+              <CardContent className="flex items-center justify-between gap-4 py-4">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold">Review checkpoint</p>
+                    <p className="text-sm text-muted-foreground">
+                      Panels are planned and prompts are ready. Review them on the Canvas tab,
+                      render individual panels, or click Resume to render all and continue.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setActiveTab('canvas')}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                    Go to Canvas
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={onResume}
+                    disabled={pipelineBusy}
+                  >
+                    <Play className="h-3.5 w-3.5 mr-1.5" />
+                    Render All & Continue
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Flow chart + step list */}
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">

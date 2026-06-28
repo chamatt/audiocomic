@@ -148,6 +148,7 @@ export type AddStepInput = {
   type: string;
   config: Record<string, unknown>;
   dependsOn: string[];
+  pauseAfter?: boolean;
 };
 
 export async function addPipelineStepActor(pipelineKey: string, step: AddStepInput): Promise<ActorResult<readonly StepState[]>> {

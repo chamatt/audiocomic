@@ -415,6 +415,19 @@ export const PipelineLive = Pipeline.toLayer(
 
 				if (Exit.isSuccess(exit)) {
 					yield* markCompleted(stepId, exit.value);
+					// Auto-pause if this step has pauseAfter flag.
+					if (step.definition.pauseAfter === true) {
+						const pausedState = yield* State.updateAndGet(state, (s) => ({
+							...s,
+							status: "paused" as const,
+						})).pipe(Effect.orDie);
+						rawRivetkitContext.broadcast("pipelinePaused", pausedState);
+						yield* Effect.logInfo(
+							`Pipeline auto-paused after step: ${stepId} — review output then click Resume`,
+						);
+						return "paused";
+					}
+
 				} else {
 					const squashed = Cause.squash(exit.cause);
 					const errorMsg = squashed instanceof Error

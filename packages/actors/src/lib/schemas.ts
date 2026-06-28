@@ -23,6 +23,8 @@ export const StepDefinition = Schema.Struct({
 	config: Schema.Record(Schema.String, Schema.Unknown),
 	dependsOn: Schema.Array(Schema.String),
 	retryPolicy: Schema.optional(RetryPolicy),
+	/** If true, the pipeline auto-pauses after this step completes. */
+	pauseAfter: Schema.optional(Schema.Boolean),
 });
 export type StepDefinition = Schema.Schema.Type<typeof StepDefinition>;
 
