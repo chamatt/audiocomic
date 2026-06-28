@@ -14,14 +14,11 @@ import {
   getPipelineStatusActor,
   schedulePipelineActor,
   cancelScheduleActor,
-  addPipelineStepActor,
   createProjectActor,
   createBibleActor,
   linkBibleActor,
   type ActorResult,
-  type AddStepInput,
 } from '@/lib/actor-actions';
-import { DEFAULT_PIPELINE_STEPS } from '@/lib/default-steps';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -699,26 +696,10 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const onRunStep = (stepId: string) => doAction(`Run ${stepId}`, () => runStepActor(pipelineKey, stepId));
   const onInvalidate = (stepId: string) => doAction(`Invalidate ${stepId}`, () => invalidateStepActor(pipelineKey, stepId));
 
-  const onAddAllSteps = async () => {
-    setPipelineBusy(true);
-    setPipelineError(null);
-    const existingIds = new Set((pipelineState?.steps ?? []).map((s) => s.definition.id));
-    const toAdd = DEFAULT_PIPELINE_STEPS.filter((s) => !existingIds.has(s.id));
-    for (const step of toAdd) {
-      const res = await addPipelineStepActor(pipelineKey, step);
-      if (!res.ok) {
-        setPipelineError(`Add ${step.id}: ${res.error}`);
-        break;
-      }
-    }
-    await refreshPipeline();
-    setPipelineBusy(false);
-  };
 
 
   const steps = pipelineState?.steps ?? [];
   const pipelineStatus = pipelineState?.status ?? 'idle';
-  const hasSteps = steps.length > 0;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -826,75 +807,47 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 Refresh
               </Button>
-              {!hasSteps && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onAddAllSteps}
-                  disabled={pipelineBusy}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Add All 15 Steps
-                </Button>
-              )}
             </div>
           </div>
 
           {/* Flow chart + step list */}
-          {hasSteps ? (
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-              {/* Flow chart */}
-              <Card className="overflow-hidden">
-                <div className="h-[600px] w-full">
-                  <PipelineFlow
-                    pipelineKey={pipelineKey}
-                    state={pipelineState}
-                    onRunStep={onRunStep}
-                    onRetryStep={onRetry}
-                    onSkipStep={onSkip}
-                    onInvalidateStep={onInvalidate}
-                    onRunAll={onStart}
-                    onPause={onPause}
-                    onResume={onResume}
-                    onSelectStep={setSelectedStepId}
-                    selectedStepId={selectedStepId}
-                  />
-                </div>
-              </Card>
-
-              {/* Step list sidebar */}
-              <ScrollArea className="h-[600px] pr-4">
-                <div className="flex flex-col gap-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Steps ({steps.length})
-                  </p>
-                  {steps.map((step) => (
-                    <StepCard
-                      key={step.definition.id}
-                      step={step}
-                      busy={pipelineBusy}
-                      onRun={onRunStep}
-                      onRetry={onRetry}
-                      onSkip={onSkip}
-                      onInvalidate={onInvalidate}
-                    />
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="py-16 text-center">
-                <p className="text-muted-foreground mb-4">
-                  No pipeline steps yet. Add steps to start processing.
-                </p>
-                <Button onClick={onAddAllSteps} disabled={pipelineBusy}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add All 15 Steps
-                </Button>
-              </CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+            <Card className="overflow-hidden">
+              <div className="h-[600px] w-full">
+                <PipelineFlow
+                  pipelineKey={pipelineKey}
+                  state={pipelineState}
+                  onRunStep={onRunStep}
+                  onRetryStep={onRetry}
+                  onSkipStep={onSkip}
+                  onInvalidateStep={onInvalidate}
+                  onRunAll={onStart}
+                  onPause={onPause}
+                  onResume={onResume}
+                  onSelectStep={setSelectedStepId}
+                  selectedStepId={selectedStepId}
+                />
+              </div>
             </Card>
-          )}
+            <ScrollArea className="h-[600px] pr-4">
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Steps ({steps.length})
+                </p>
+                {steps.map((step) => (
+                  <StepCard
+                    key={step.definition.id}
+                    step={step}
+                    busy={pipelineBusy}
+                    onRun={onRunStep}
+                    onRetry={onRetry}
+                    onSkip={onSkip}
+                    onInvalidate={onInvalidate}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
         </TabsContent>
 
         {/* Knowledge tab */}

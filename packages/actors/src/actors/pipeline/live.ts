@@ -2,7 +2,10 @@ import { Actor, State } from "@rivetkit/effect";
 import { Cause, Duration, Effect, Exit, Schedule } from "effect";
 import { Pipeline, PipelineState } from "./api.ts";
 import { getStepExecutor, type StepContext, type StepOutput } from "./steps/types.ts";
+// Side-effect import: registers all 15 step executors in the global registry.
+import "./steps/index.ts";
 import type { RetryPolicy, StepState } from "../../lib/schemas.ts";
+import { createDefaultSteps } from "./default-steps.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -743,7 +746,7 @@ export const PipelineLive = Pipeline.toLayer(
 			schema: PipelineState,
 			initialValue: () => ({
 				status: "idle" as const,
-				steps: [],
+				steps: createDefaultSteps(),
 				schedule: undefined,
 			}),
 		},
