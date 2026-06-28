@@ -23,9 +23,11 @@ export const PlanStoryStep: StepExecutor = {
 
 			yield* Effect.logInfo(`plan_story: planning story for project ${ctx.projectId} (${fullText.length} chars)`);
 
-			const planner = bridge.getStoryPlanner();
+		// Use the Mastra story planner agent (tool-calling for cross-chapter consistency)
+		// Falls back to the direct adapter if the agent fails
+		const agent = bridge.getStoryPlannerAgent(ctx.projectId);
 		const result = yield* Effect.tryPromise({
-			try: () => planner.planStory({
+			try: () => agent.planStory({
 				projectId: ctx.projectId,
 				text: fullText,
 				emit: ctx.emit,

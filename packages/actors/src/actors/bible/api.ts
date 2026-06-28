@@ -86,6 +86,7 @@ export const Bible = Actor.make("bible", {
 		Action.make("MergeChapterKnowledge", {
 			payload: {
 				chapterId: Schema.String,
+				chapterIndex: Schema.optional(Schema.Number),
 				characters: Schema.Array(Schema.Struct({
 					name: Schema.String,
 					description: Schema.String,

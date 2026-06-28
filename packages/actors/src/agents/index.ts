@@ -3,14 +3,131 @@
 // and character bible, enabling cross-chapter consistency.
 
 import { Agent } from '@mastra/core/agent';
+import { z } from 'zod';
 import { createProjectTools, type ToolContext } from './tools.ts';
+import type { StorySection, CharacterProfile, WorldBible } from '@audiocomic/domain';
+import type { ProgressEvent } from '@audiocomic/ai';
+import { uuid, nowIso } from '@audiocomic/shared';
+import type { Repository } from '@audiocomic/db';
+
+// ============================================================================
+// Structured output schemas for agent.generate()
+// ============================================================================
+
+const storyPlanSchema = z.object({
+  world: z.object({
+    setting: z.string(),
+    genre: z.array(z.string()),
+    tone: z.string(),
+    artStyle: z.string(),
+  }),
+  characters: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      role: z.string(),
+      aliases: z.array(z.string()),
+    }),
+  ),
+  sections: z.array(
+    z.object({
+      level: z.enum(['chapter', 'scene', 'beat']),
+      title: z.string(),
+      summary: z.string(),
+      charactersPresent: z.array(z.string()),
+      emotionalTone: z.string(),
+    }),
+  ),
+  characterStates: z.array(
+    z.object({
+      characterName: z.string(),
+      outfit: z.string(),
+      location: z.string(),
+      mood: z.string(),
+    }),
+  ),
+});
+
+const bibleBuildSchema = z.object({
+  characters: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      role: z.string(),
+      isNew: z.boolean(),
+    }),
+  ),
+  characterStates: z.array(
+    z.object({
+      characterName: z.string(),
+      outfit: z.string(),
+      location: z.string(),
+      mood: z.string(),
+      notes: z.string(),
+    }),
+  ),
+  worldUpdates: z.object({
+    setting: z.string().optional(),
+    newRules: z.array(z.string()),
+  }),
+  wikiPages: z.array(
+    z.object({
+      type: z.enum(['character', 'location', 'object', 'concept', 'event']),
+      title: z.string(),
+      content: z.string(),
+    }),
+  ),
+  contradictions: z.array(
+    z.object({
+      description: z.string(),
+      existingInfo: z.string(),
+      newInfo: z.string(),
+    }),
+  ),
+});
+
+// ============================================================================
+// Agent handle types — what the bridge exposes to step executors
+// ============================================================================
+
+export interface StoryPlannerAgentHandle {
+  /** Run the story planner agent with tool calls, returning structured plan output. */
+  planStory(input: {
+    projectId: string;
+    text: string;
+    emit?: (event: ProgressEvent) => void;
+  }): Promise<{
+    sections: StorySection[];
+    characters: CharacterProfile[];
+    worldBible: WorldBible;
+  }>;
+}
+
+export interface BibleBuilderAgentHandle {
+  /** Run the bible builder agent over a chapter transcription, persisting results. */
+  buildBible(input: {
+    projectId: string;
+    chapterId: string;
+    chapterIndex: number;
+    text: string;
+  }): Promise<{
+    newCharacters: number;
+    newStates: number;
+    newWikiPages: number;
+    contradictions: number;
+  }>;
+}
+
+// ============================================================================
+// Agent factory
+// ============================================================================
 
 /**
  * Create a story planner agent for a specific project.
  * The agent uses tool calls to retrieve character states, world context,
  * and cross-chapter information before planning the comic adaptation.
  */
-export function createStoryPlannerAgent(ctx: ToolContext): Agent {
+function makeStoryPlannerAgent(ctx: ToolContext): Agent {
   const tools = createProjectTools(ctx);
 
   return new Agent({
@@ -26,14 +143,7 @@ When planning a chapter:
 5. Plan the story with consistency: characters should look and act the same
    as in previous chapters unless there's a narrative reason for change
 
-Output: structured JSON with world, characters, scenes, beats, panels.
-The JSON should match this structure:
-{
-  "world": { "setting": string, "genre": string[], "tone": string, "artStyle": string },
-  "characters": [{ "name": string, "description": string, "role": string, "aliases": string[] }],
-  "sections": [{ "level": "chapter"|"scene"|"beat", "title": string, "summary": string, "charactersPresent": string[], "emotionalTone": string }],
-  "characterStates": [{ "characterName": string, "outfit": string, "location": string, "mood": string }]
-}`,
+Output: structured JSON with world, characters, sections, and character states.`,
     model: 'openrouter/mistralai/mistral-nemo',
     tools,
   });
@@ -44,7 +154,7 @@ The JSON should match this structure:
  * The agent extracts characters, locations, and events from chapter
  * transcriptions and maintains the story bible with temporal tracking.
  */
-export function createBibleBuilderAgent(ctx: ToolContext): Agent {
+function makeBibleBuilderAgent(ctx: ToolContext): Agent {
   const tools = createProjectTools(ctx);
 
   return new Agent({
@@ -60,15 +170,225 @@ When processing a new chapter:
 5. Use vector-query to find related context from other chapters
 6. Flag contradictions with previous chapters
 
-Output: structured JSON with knowledge updates:
-{
-  "characters": [{ "name": string, "description": string, "role": string, "isNew": boolean }],
-  "characterStates": [{ "characterName": string, "outfit": string, "location": string, "mood": string, "notes": string }],
-  "worldUpdates": { "setting": string, "newRules": string[] },
-  "wikiPages": [{ "type": "character"|"location"|"object"|"concept"|"event", "title": string, "content": string }],
-  "contradictions": [{ "description": string, "existingInfo": string, "newInfo": string }]
-}`,
+Output: structured JSON with knowledge updates.`,
     model: 'openrouter/mistralai/mistral-nemo',
     tools,
   });
+}
+
+// ============================================================================
+// Handle implementations — wrap Mastra Agent + persist results to DB
+// ============================================================================
+
+function makeStoryPlannerHandle(
+  agent: Agent,
+  projectId: string,
+): StoryPlannerAgentHandle {
+  return {
+    async planStory({ text, emit }) {
+      emit?.({ type: 'progress', label: 'Story planner agent started' });
+
+      const response = await agent.generate(
+        `Plan the comic adaptation for the following transcription. ` +
+          `Use the available tools to look up existing characters, world info, ` +
+          `and cross-chapter context before planning.\n\nTranscription:\n${text}`,
+        {
+          maxSteps: 15,
+          structuredOutput: { schema: storyPlanSchema },
+        },
+      );
+
+      const plan = response.object;
+      if (!plan) throw new Error('Story planner agent returned no structured output');
+
+      emit?.({ type: 'llm_done', label: 'Story planner agent completed', detail: `${plan.sections.length} sections planned` });
+
+      // Map agent output to domain types
+      const characters: CharacterProfile[] = plan.characters.map((c) => ({
+        id: uuid(),
+        projectId,
+        name: c.name,
+        description: c.description,
+        role: (['protagonist', 'antagonist', 'supporting', 'minor', 'narrator'] as const).includes(
+          c.role as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator',
+        )
+          ? (c.role as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator')
+          : 'supporting',
+        aliases: c.aliases,
+        outfitRefs: [],
+        paletteNotes: [],
+        negativeConstraints: [],
+        locked: false,
+      }));
+
+      const worldBible: WorldBible = {
+        id: uuid(),
+        projectId,
+        setting: plan.world.setting,
+        genre: plan.world.genre,
+        tone: plan.world.tone,
+        artStyle: plan.world.artStyle,
+        artStyleNegative: [],
+        colorPalette: [],
+        worldRules: [],
+      };
+
+      // Build hierarchical sections from the flat list
+      const sections: StorySection[] = [];
+      let chapterId: string | undefined;
+      let sceneId: string | undefined;
+
+      for (const s of plan.sections) {
+        const id = uuid();
+        if (s.level === 'chapter') {
+          chapterId = id;
+          sceneId = undefined;
+        } else if (s.level === 'scene') {
+          sceneId = id;
+        }
+        const parentId = s.level === 'chapter' ? undefined : s.level === 'scene' ? chapterId : sceneId;
+        const tone = ([
+          'neutral', 'tense', 'joyful', 'sad', 'angry', 'fearful',
+          'romantic', 'mysterious', 'epic', 'comedic', 'melancholic', 'hopeful',
+        ] as const).includes(s.emotionalTone as never)
+          ? (s.emotionalTone as never)
+          : 'neutral' as const;
+        sections.push({
+          id,
+          projectId,
+          parentId,
+          level: s.level,
+          index: sections.length,
+          title: s.title,
+          summary: s.summary,
+          charactersPresent: s.charactersPresent,
+          emotionalTone: tone,
+          objects: [],
+        });
+      }
+
+      return { sections, characters, worldBible };
+    },
+  };
+}
+
+function makeBibleBuilderHandle(
+  agent: Agent,
+  repo: Repository,
+  projectId: string,
+): BibleBuilderAgentHandle {
+  return {
+    async buildBible({ chapterId, chapterIndex, text }) {
+      const response = await agent.generate(
+        `Process this chapter transcription and extract knowledge updates. ` +
+          `Use the available tools to check existing characters and world info ` +
+          `before extracting.\n\nChapter ${chapterIndex} transcription:\n${text}`,
+        {
+          maxSteps: 10,
+          structuredOutput: { schema: bibleBuildSchema },
+        },
+      );
+
+      const result = response.object;
+      if (!result) throw new Error('Bible builder agent returned no structured output');
+
+      const now = nowIso();
+      let newCharacters = 0;
+      let newStates = 0;
+      let newWikiPages = 0;
+
+      // Persist new characters
+      const existingChars = await repo.characterProfiles.getByProjectId(projectId);
+      for (const c of result.characters) {
+        if (c.isNew) {
+          const exists = existingChars.some(
+            (e) => e.name.toLowerCase() === c.name.toLowerCase(),
+          );
+          if (!exists) {
+            await repo.characterProfiles.create({
+              id: uuid(),
+              projectId,
+              name: c.name,
+              description: c.description,
+              role: c.role,
+              aliases: [],
+              createdAt: now,
+            });
+            newCharacters++;
+          }
+        }
+      }
+
+      // Persist character states
+      const allChars = await repo.characterProfiles.getByProjectId(projectId);
+      for (const cs of result.characterStates) {
+        const char = allChars.find(
+          (c) =>
+            c.name.toLowerCase() === cs.characterName.toLowerCase() ||
+            c.aliases.some((a) => a.toLowerCase() === cs.characterName.toLowerCase()),
+        );
+        if (char) {
+          await repo.characterStates.create({
+            id: uuid(),
+            projectId,
+            characterId: char.id,
+            chapterId,
+            chapterIndex,
+            outfit: cs.outfit || undefined,
+            location: cs.location || undefined,
+            mood: cs.mood || undefined,
+            relationships: [],
+            notes: cs.notes || undefined,
+            provenance: `Extracted by bible builder agent from chapter ${chapterIndex}`,
+            createdAt: now,
+          });
+          newStates++;
+        }
+      }
+
+      // Persist wiki pages
+      for (const wp of result.wikiPages) {
+        await repo.knowledgePages.create({
+          id: uuid(),
+          projectId,
+          type: wp.type,
+          title: wp.title,
+          content: wp.content,
+          references: [],
+          crossReferences: [],
+          confidence: 1,
+          updatedAt: now,
+        });
+        newWikiPages++;
+      }
+
+      return {
+        newCharacters,
+        newStates,
+        newWikiPages,
+        contradictions: result.contradictions.length,
+      };
+    },
+  };
+}
+
+// ============================================================================
+// Factory — creates agent handles bound to a project's knowledge base
+// ============================================================================
+
+/**
+ * Create story planner and bible builder agent handles for a project.
+ * Agents are cached per-project after first creation.
+ */
+export function createAgentHandles(ctx: ToolContext): {
+  storyPlanner: StoryPlannerAgentHandle;
+  bibleBuilder: BibleBuilderAgentHandle;
+} {
+  const storyAgent = makeStoryPlannerAgent(ctx);
+  const bibleAgent = makeBibleBuilderAgent(ctx);
+
+  return {
+    storyPlanner: makeStoryPlannerHandle(storyAgent, ctx.projectId),
+    bibleBuilder: makeBibleBuilderHandle(bibleAgent, ctx.repo, ctx.projectId),
+  };
 }

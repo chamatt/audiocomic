@@ -7,6 +7,8 @@ import { promises as fs } from "node:fs";
 import { join, dirname } from "node:path";
 
 import { createMediaManagerFromEnv, type MediaManager } from "@audiocomic/storage";
+import { createAgentHandles, type StoryPlannerAgentHandle, type BibleBuilderAgentHandle } from "../agents/index.ts";
+import { createEmbeddingProvider } from "@audiocomic/knowledge";
 
 import { createRepository, type Repository, type CreateDbResult } from "@audiocomic/db";
 import type { Env } from "@audiocomic/shared";
@@ -51,6 +53,10 @@ export interface PipelineBridgeShape {
 	readonly mediaManager: MediaManager;
 	getTranscriptionAdapter(): TranscriptionAdapter;
 	getStoryPlanner(): StoryPlannerAdapter;
+	/** Get or create a Mastra story planner agent bound to a project's knowledge base. */
+	getStoryPlannerAgent(projectId: string): import("../agents/index.ts").StoryPlannerAgentHandle;
+	/** Get or create a Mastra bible builder agent bound to a project's knowledge base. */
+	getBibleBuilderAgent(projectId: string): import("../agents/index.ts").BibleBuilderAgentHandle;
 	getTTSAdapter(): TTSAdapter | null;
 	getRenderer(): RendererAdapter;
 	probeAudio(path: string): Promise<{ durationSec: number }>;
@@ -107,6 +113,10 @@ export function makePipelineBridgeLayer(dbResult: CreateDbResult, env: Env): Lay
 	let ttsAdapter: TTSAdapter | null | undefined = undefined;
 	const renderer = createRenderer(env.DEFAULT_RENDERER, env);
 
+	// Per-project agent cache — agents are created on first access and reused
+	const storyPlannerAgents = new Map<string, StoryPlannerAgentHandle>();
+	const bibleBuilderAgents = new Map<string, BibleBuilderAgentHandle>();
+
 	const bridge: PipelineBridgeShape = {
 		repo,
 		env,
@@ -119,6 +129,38 @@ export function makePipelineBridgeLayer(dbResult: CreateDbResult, env: Env): Lay
 		getStoryPlanner() {
 			if (!storyPlanner) storyPlanner = createStoryPlanner(llmProvider, env.DEFAULT_LLM_MODEL, env);
 			return storyPlanner;
+		},
+		getStoryPlannerAgent(projectId: string) {
+			let agent = storyPlannerAgents.get(projectId);
+			if (!agent) {
+				const embedder = createEmbeddingProvider(env);
+				const handles = createAgentHandles({
+					repo,
+					embedder,
+					db: dbResult.db,
+					projectId,
+				});
+				agent = handles.storyPlanner;
+				storyPlannerAgents.set(projectId, agent);
+				bibleBuilderAgents.set(projectId, handles.bibleBuilder);
+			}
+			return agent;
+		},
+		getBibleBuilderAgent(projectId: string) {
+			let agent = bibleBuilderAgents.get(projectId);
+			if (!agent) {
+				const embedder = createEmbeddingProvider(env);
+				const handles = createAgentHandles({
+					repo,
+					embedder,
+					db: dbResult.db,
+					projectId,
+				});
+				agent = handles.bibleBuilder;
+				bibleBuilderAgents.set(projectId, agent);
+				storyPlannerAgents.set(projectId, handles.storyPlanner);
+			}
+			return agent;
 		},
 		getTTSAdapter() {
 			if (ttsAdapter === undefined) {

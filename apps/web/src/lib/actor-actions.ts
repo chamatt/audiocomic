@@ -1,7 +1,7 @@
 'use server';
 
 import { Effect } from "effect";
-import { runWithClient, fileRegistryClient, bibleClient, projectClient, pipelineClient, chapterClient } from "@/lib/rivet-client";
+import { runWithClient, fileRegistryClient, bibleClient, projectClient, pipelineClient, chapterClient, knowledgeBaseClient } from "@/lib/rivet-client";
 import type {
   ProjectConfig,
   BibleContent,
@@ -404,6 +404,70 @@ export async function getCharacterTimelineActor(bibleKey: string, characterId: s
     Effect.gen(function* () {
       const accessor = yield* bibleClient;
       const handle = accessor.getOrCreate(bibleKey);
+      return yield* handle.GetCharacterTimeline({ characterId });
+    }),
+  );
+}
+
+// ============================================================================
+// KnowledgeBase actor — embeddings, RAG, wiki
+// ============================================================================
+
+export async function ingestChapterKnowledgeActor(projectKey: string, chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* knowledgeBaseClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.IngestChapter({ chapterId });
+    }),
+  );
+}
+
+export async function getKnowledgeBaseStatusActor(projectKey: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* knowledgeBaseClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.GetStatus(undefined);
+    }),
+  );
+}
+
+export async function queryKnowledgeBaseActor(projectKey: string, query: string, topK?: number): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* knowledgeBaseClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.Query({ query, topK });
+    }),
+  );
+}
+
+export async function getKnowledgeWikiActor(projectKey: string): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* knowledgeBaseClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.GetWiki(undefined);
+    }),
+  );
+}
+
+export async function lintKnowledgeWikiActor(projectKey: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* knowledgeBaseClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.Lint(undefined);
+    }),
+  );
+}
+
+export async function getKnowledgeCharacterTimelineActor(projectKey: string, characterId: string): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* knowledgeBaseClient;
+      const handle = accessor.getOrCreate(projectKey);
       return yield* handle.GetCharacterTimeline({ characterId });
     }),
   );

@@ -76,6 +76,7 @@ export const CharacterState = Schema.Struct({
 	location: Schema.optional(Schema.String),
 	mood: Schema.optional(Schema.String),
 	notes: Schema.optional(Schema.String),
+	confidence: Schema.optional(Schema.Number),
 });
 export type CharacterState = Schema.Schema.Type<typeof CharacterState>;
 

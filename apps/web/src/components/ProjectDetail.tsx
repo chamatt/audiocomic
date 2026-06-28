@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -794,6 +795,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [actorsReady, setActorsReady] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [chapters, setChapters] = useState<{ id: string; title: string; index: number; status: string }[]>([]);
+  const [selectedChapterId, setSelectedChapterId] = useState<string>('all');
 
   const project = detail.project;
 
@@ -838,6 +841,21 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   useEffect(() => {
     if (actorsReady) refreshPipeline();
   }, [actorsReady, refreshPipeline]);
+
+  // Fetch chapters for the chapter selector
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/chapters`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setChapters(data.chapters ?? []);
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   const actorRunning = pipelineState?.status === 'running';
   useEffect(() => {
@@ -941,6 +959,25 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
         {/* Pipeline tab */}
         <TabsContent value="pipeline" className="flex flex-col gap-6">
+          {/* Chapter selector */}
+          {chapters.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Chapter:</Label>
+              <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
+                <SelectTrigger className="w-[240px] h-8 text-sm">
+                  <SelectValue placeholder="All chapters" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All chapters</SelectItem>
+                  {chapters.map((ch) => (
+                    <SelectItem key={ch.id} value={ch.id}>
+                      Ch.{ch.index + 1}: {ch.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {/* Pipeline controls */}
           <div className="flex items-center gap-3 flex-wrap">
             <StatusBadge status={pipelineStatus} />
@@ -1057,7 +1094,25 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
         </TabsContent>
 
         {/* Artifacts tab */}
-        <TabsContent value="artifacts">
+        <TabsContent value="artifacts" className="flex flex-col gap-4">
+          {chapters.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Chapter:</Label>
+              <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
+                <SelectTrigger className="w-[240px] h-8 text-sm">
+                  <SelectValue placeholder="All chapters" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All chapters</SelectItem>
+                  {chapters.map((ch) => (
+                    <SelectItem key={ch.id} value={ch.id}>
+                      Ch.{ch.index + 1}: {ch.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <ArtifactsTab
             detail={detail}
             onRegeneratePanel={onRegeneratePanel}
