@@ -251,10 +251,18 @@ export const PlanChaptersStep: StepExecutor = {
             sections,
           );
           panel.renderPrompt = prompt;
+          panel.renderNegativePrompt = bridge.composeNegativePrompt(
+            panel,
+            panelCharacters,
+            worldBible,
+          );
 
           // Persist the prompt onto the panel spec.
           yield* Effect.tryPromise(() =>
-            bridge.repo.panelSpecs.patch(panel.id, { renderPrompt: prompt }),
+            bridge.repo.panelSpecs.patch(panel.id, {
+              renderPrompt: prompt,
+              renderNegativePrompt: panel.renderNegativePrompt,
+            }),
           ).pipe(Effect.catch(() => Effect.sync(() => {})));
         }
 

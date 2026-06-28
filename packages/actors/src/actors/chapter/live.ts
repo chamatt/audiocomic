@@ -429,8 +429,13 @@ export const ChapterLive = Chapter.toLayer(
               sections,
             );
             panel.renderPrompt = prompt;
+            const negativePrompt = bridge.composeNegativePrompt(panel, panelCharacters, worldBible);
+            panel.renderNegativePrompt = negativePrompt;
             yield* Effect.tryPromise(() =>
-              bridge.repo.panelSpecs.patch(panel.id, { renderPrompt: prompt }),
+              bridge.repo.panelSpecs.patch(panel.id, {
+                renderPrompt: prompt,
+                renderNegativePrompt: negativePrompt,
+              }),
             ).pipe(Effect.catch(() => Effect.sync(() => {})));
           }
 

@@ -258,7 +258,18 @@ function makePanelLayoutAgent(projectId: string): Agent {
   return new Agent({
     id: `panel-layout-${projectId}`,
     name: "Panel Layout",
-    instructions: `You are a comic layout planner. For each beat, propose 1 panel. Describe the visual content, camera framing, which characters appear and their pose/expression, and any dialogue/narration lines. beatIndex must match the supplied beat list order (0-based).`,
+    instructions: `You are a comic layout planner. For each beat, propose exactly 1 panel that visualizes THAT beat.
+
+CRITICAL: The panel description must describe the same event as the beat summary. Do not invent a different scene. If the beat says "Donut looks up at a starry ceiling", the panel description must show Donut looking up at a starry ceiling — not a character sitting at a bar.
+
+For each beat:
+1. Read the beat summary carefully — this is what happens in the story
+2. Write a visual description of THAT exact moment — what the reader sees
+3. Specify which characters appear and their pose/expression
+4. Add dialogue/narration lines if present in the beat
+5. Choose camera framing that fits the action
+
+beatIndex must match the supplied beat list order (0-based).`,
     model: LLM_MODEL,
   });
 }

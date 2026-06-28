@@ -29,6 +29,7 @@ import {
   createStoryPlanner,
   createTTSAdapter,
   composePanelPrompt,
+  composeNegativePrompt,
 } from "@audiocomic/ai";
 
 import type { RendererAdapter } from "@audiocomic/renderers";
@@ -93,6 +94,7 @@ export interface PipelineBridgeShape {
     worldBible: unknown,
     sectionMemoryOrAllSections?: string | unknown[],
   ): string;
+  composeNegativePrompt(panel: unknown, characters: unknown[], worldBible: unknown): string;
 }
 
 export const PipelineBridge = Context.Service<PipelineBridgeShape>("PipelineBridge");
@@ -277,6 +279,9 @@ export function makePipelineBridgeLayer(
         worldBible as never,
         sectionMemoryOrAllSections as never,
       );
+    },
+    composeNegativePrompt(panel: unknown, characters: unknown[], worldBible: unknown) {
+      return composeNegativePrompt(panel as never, characters as never, worldBible as never);
     },
   };
 

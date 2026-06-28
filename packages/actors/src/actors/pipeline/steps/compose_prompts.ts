@@ -98,10 +98,14 @@ export const ComposePromptsStep: StepExecutor = {
           worldBible,
           sections,
         );
+        const negativePrompt = bridge.composeNegativePrompt(panel, panelCharacters, worldBible);
 
         // Persist the prompt onto the panel spec
         yield* Effect.tryPromise(() =>
-          bridge.repo.panelSpecs.patch(panel.id, { renderPrompt: prompt }),
+          bridge.repo.panelSpecs.patch(panel.id, {
+            renderPrompt: prompt,
+            renderNegativePrompt: negativePrompt,
+          }),
         );
 
         panelPrompts.set(panel.id, prompt);

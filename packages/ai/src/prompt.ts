@@ -83,31 +83,49 @@ export function buildSectionMemory(
 // ============================================================================
 
 const CAMERA_LABEL: Record<CameraFraming, string> = {
-  wide: "wide establishing shot",
-  medium: "medium shot",
-  "close-up": "close-up shot",
-  "extreme-close-up": "extreme close-up shot",
-  overhead: "overhead/top-down shot",
-  "low-angle": "low-angle shot",
-  pov: "point-of-view shot",
-  establishing: "establishing shot",
+  wide: "wide establishing shot showing the full environment",
+  medium: "medium shot framing the character(s) from the waist up",
+  "close-up": "close-up shot focusing on the character's face and expression",
+  "extreme-close-up": "extreme close-up on a specific detail (eyes, hand, object)",
+  overhead: "overhead top-down shot looking down at the scene",
+  "low-angle": "low-angle shot looking up at the character(s), making them imposing",
+  pov: "first-person POV shot from a character's perspective",
+  establishing: "wide establishing shot showing the location and spatial layout",
+};
+
+/** Map abstract emotional tones to concrete visual cues the renderer can draw. */
+const TONE_VISUAL: Record<string, string> = {
+  neutral: "",
+  tense: "tense atmosphere: tight body language, narrowed eyes, clenched fists, sharp shadows",
+  joyful: "joyful energy: bright eyes, wide smiles, dynamic posing, warm lighting",
+  sad: "sadness: downcast eyes, slumped posture, muted colors, rain or tears",
+  angry: "anger: furrowed brow, gritted teeth, clenched fists, harsh red lighting",
+  fearful: "fear: wide eyes, trembling, recoiling posture, dark oppressive shadows",
+  romantic: "romantic mood: soft focus, warm golden light, gentle expressions, blush",
+  mysterious: "mystery: heavy shadows, fog, obscured faces, cool blue tones",
+  epic: "epic scale: dramatic perspective, sweeping vista, intense lighting from above",
+  comedic: "comedy: exaggerated expressions, dynamic poses, bright colors, motion lines",
+  melancholic: "melancholy: distant gaze, somber expression, fading light, autumn tones",
+  hopeful: "hope: upward gaze, soft warm light breaking through, gentle smile",
 };
 
 /**
- * Compose a single text-to-image render prompt for a panel by combining:
- *  - the world bible art style / palette / negative constraints
- *  - section memory (MangaFlow M_k: traverses beat → scene → chapter)
- *  - layout context (panel aspect ratio from bbox)
- *  - the panel's own visual description and camera framing
- *  - the characters appearing in the panel (with visual references)
- *  - key objects from the section
- *  - dialogue/narration lines (so the model leaves composition room)
+ * Compose a single text-to-image render prompt for a panel.
  *
- * This is a pure, side-effect-free function.
+ * Prompt ordering is deliberate: image models weight early tokens more
+ * heavily, so we put the most important visual elements (characters in
+ * action, emotional expression) first, then environment, then metadata.
  *
- * @param sectionMemoryOrAllSections - Either a pre-built memory string (legacy),
- *        or all story sections for parent traversal. If sections are passed,
- *        buildSectionMemory is called to build structured M_k.
+ * Structure:
+ *   1. Art style + color palette (sets the visual register)
+ *   2. Characters in action (who + what they're doing + expression)
+ *   3. Panel description (the specific visual moment)
+ *   4. Visual tone cues (concrete, not abstract labels)
+ *   5. Key objects described visually (placed in the scene)
+ *   6. Camera framing
+ *   7. Panel layout (aspect ratio)
+ *   8. Continuity context (world/scene/beat — background knowledge)
+ *   9. Speech bubble space
  */
 export function composePanelPrompt(
   panel: PanelSpec,
@@ -118,18 +136,73 @@ export function composePanelPrompt(
 ): string {
   const parts: string[] = [];
 
-  // --- Art direction from the world bible ---
+  // ── 1. Art direction ──
   if (worldBible.artStyle) {
     parts.push(`Art style: ${worldBible.artStyle}.`);
   }
   if (worldBible.colorPalette.length > 0) {
     parts.push(`Color palette: ${worldBible.colorPalette.join(", ")}.`);
   }
-  if (worldBible.tone) {
-    parts.push(`Overall tone: ${worldBible.tone}.`);
+
+  // ── 2. Characters in action (front-loaded — most important) ──
+  const refsById = new Map(characterRefs.map((c) => [c.id, c]));
+  const charBlocks: string[] = [];
+  for (const slot of panel.characters) {
+    const profile = refsById.get(slot.characterId);
+    if (!profile) continue;
+    const bits: string[] = [];
+    if (profile.description) {
+      bits.push(profile.description);
+    }
+    bits.push(profile.name);
+    if (slot.expression) bits.push(`expression: ${slot.expression}`);
+    if (slot.pose) bits.push(`pose: ${slot.pose}`);
+    if (slot.position) bits.push(`position: ${slot.position} of frame`);
+    if (profile.paletteNotes.length > 0) {
+      bits.push(`colors: ${profile.paletteNotes.join(", ")}`);
+    }
+    charBlocks.push(bits.join("; "));
+  }
+  if (charBlocks.length > 0) {
+    parts.push(`Characters in this panel:\n${charBlocks.map((b) => `  - ${b}`).join("\n")}`);
   }
 
-  // --- Section memory (MangaFlow M_k) ---
+  // ── 3. Panel visual description (the specific moment) ──
+  parts.push(`Scene: ${panel.description}`);
+
+  // ── 4. Visual tone cues (concrete, not abstract) ──
+  const tone = section.emotionalTone;
+  if (tone && tone !== "neutral" && TONE_VISUAL[tone]) {
+    parts.push(TONE_VISUAL[tone]!);
+  }
+  if (worldBible.tone && worldBible.tone !== "neutral") {
+    const worldToneVisual = TONE_VISUAL[worldBible.tone];
+    if (worldToneVisual) parts.push(worldToneVisual);
+  }
+
+  // ── 5. Key objects described visually (placed in the scene) ──
+  if (section.objects.length > 0) {
+    const objectDescs = section.objects.map((obj) => `${obj} visible in the scene`);
+    parts.push(`Key objects to include: ${objectDescs.join("; ")}.`);
+  }
+
+  // ── 6. Camera framing ──
+  const camera = panel.cameraFraming ?? section.cameraHint;
+  if (camera && CAMERA_LABEL[camera]) {
+    parts.push(`Camera: ${CAMERA_LABEL[camera]}.`);
+  }
+
+  // ── 7. Panel layout (aspect ratio) ──
+  const aspect = panel.bbox.w / panel.bbox.h;
+  if (aspect > 1.3) {
+    parts.push(`Panel shape: wide horizontal panel (aspect ~${aspect.toFixed(1)}:1).`);
+  } else if (aspect < 0.77) {
+    parts.push(`Panel shape: tall vertical panel (aspect ~1:${(1 / aspect).toFixed(1)}).`);
+  } else {
+    parts.push(`Panel shape: roughly square panel.`);
+  }
+
+  // ── 8. Continuity context (background knowledge, less weighted) ──
   let memoryStr: string | undefined;
   if (Array.isArray(sectionMemoryOrAllSections)) {
     memoryStr = buildSectionMemory(section, sectionMemoryOrAllSections, characterRefs, worldBible);
@@ -137,81 +210,41 @@ export function composePanelPrompt(
     memoryStr = sectionMemoryOrAllSections;
   }
   if (memoryStr && memoryStr.trim().length > 0) {
-    parts.push(`Continuity context:\n${memoryStr.trim()}`);
+    parts.push(`Continuity context (background):\n${memoryStr.trim()}`);
   }
 
-  // --- Layout context (panel bbox aspect ratio — MangaFlow L̃_i) ---
-  const aspect = panel.bbox.w / panel.bbox.h;
-  if (aspect > 1.3) {
-    parts.push(`Panel layout: wide horizontal panel (aspect ~${aspect.toFixed(1)}:1).`);
-  } else if (aspect < 0.77) {
-    parts.push(`Panel layout: tall vertical panel (aspect ~1:${(1 / aspect).toFixed(1)}).`);
-  } else {
-    parts.push(`Panel layout: roughly square panel.`);
-  }
-
-  // --- Scene / beat summary ---
-  const sectionLabel =
-    section.level === "beat" ? "Beat" : section.level === "scene" ? "Scene" : "Chapter";
-  parts.push(`${sectionLabel} summary: ${section.summary}`);
-  if (section.emotionalTone !== "neutral") {
-    parts.push(`Emotional tone: ${section.emotionalTone}.`);
-  }
-
-  // --- Key objects from the section (MangaFlow O_k) ---
-  if (section.objects.length > 0) {
-    parts.push(`Key objects: ${section.objects.join(", ")}.`);
-  }
-
-  // --- Camera framing (panel override wins) ---
-  const camera = panel.cameraFraming ?? section.cameraHint;
-  if (camera) {
-    parts.push(`Framing: ${CAMERA_LABEL[camera]}.`);
-  }
-
-  // --- Panel visual description ---
-  parts.push(`Panel description: ${panel.description}`);
-
-  // --- Characters present (with visual references — MangaFlow R_char) ---
-  const refsById = new Map(characterRefs.map((c) => [c.id, c]));
-  const charBlocks: string[] = [];
-  for (const slot of panel.characters) {
-    const profile = refsById.get(slot.characterId);
-    if (!profile) continue;
-    const bits: string[] = [profile.name];
-    if (profile.description) bits.push(profile.description);
-    if (slot.expression) bits.push(`expression: ${slot.expression}`);
-    if (slot.pose) bits.push(`pose: ${slot.pose}`);
-    if (slot.position) bits.push(`placed ${slot.position}`);
-    if (profile.paletteNotes.length > 0) {
-      bits.push(`palette: ${profile.paletteNotes.join(", ")}`);
-    }
-    if (profile.canonicalFaceRef) {
-      bits.push(`face ref: ${profile.canonicalFaceRef}`);
-    }
-    if (profile.outfitRefs.length > 0) {
-      bits.push(`outfit refs: ${profile.outfitRefs.join(", ")}`);
-    }
-    charBlocks.push(bits.join("; "));
-  }
-  if (charBlocks.length > 0) {
-    parts.push(`Characters: ${charBlocks.join(" | ")}`);
-  }
-
-  // --- Dialogue / narration (composition guidance, not rendered text) ---
+  // ── 9. Speech bubble space ──
   if (panel.dialogueLines.length > 0) {
     const lines = panel.dialogueLines.map((l) => `${l.speaker} (${l.type}): "${l.text}"`);
-    parts.push(`Leave speech-bubble/narration space for: ${lines.join(" ; ")}`);
+    parts.push(`Leave space for speech bubbles: ${lines.join(" ; ")}`);
   }
 
-  // --- Negative constraints ---
-  const negatives = [
+  return parts.join("\n\n");
+}
+
+/**
+ * Compose a negative prompt for a panel — things to avoid in the generated image.
+ */
+export function composeNegativePrompt(
+  panel: PanelSpec,
+  characterRefs: CharacterProfile[],
+  worldBible: WorldBible,
+): string {
+  const negatives: string[] = [
     ...worldBible.artStyleNegative,
     ...characterRefs.flatMap((c) => c.negativeConstraints),
   ];
-  if (negatives.length > 0) {
-    parts.push(`Avoid: ${negatives.join(", ")}`);
+
+  // If no human characters are in the panel, add "no humans"
+  const hasHuman = panel.characters.some((slot) => {
+    const profile = characterRefs.find((c) => c.id === slot.characterId);
+    return profile?.description?.toLowerCase().includes("human");
+  });
+  if (!hasHuman && panel.characters.length > 0) {
+    negatives.push("no human characters");
   }
 
-  return parts.join("\n");
+  negatives.push("no gibberish text", "no watermarks", "no extra borders");
+
+  return negatives.join(", ");
 }
