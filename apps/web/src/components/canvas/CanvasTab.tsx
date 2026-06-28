@@ -34,8 +34,17 @@ interface CanvasTabProps {
 }
 
 export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
-  const { pages, loading, error, refresh, addPage, updatePanel, updatePanelBbox, updateLettering } =
-    useCanvasData(projectId);
+  const {
+    pages,
+    loading,
+    error,
+    refresh,
+    addPage,
+    updatePanel,
+    updatePanelBbox,
+    updatePanelImage,
+    updateLettering,
+  } = useCanvasData(projectId);
   const {
     selectedPanelId,
     selectedPageId,
@@ -187,10 +196,13 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     },
     [projectId],
   );
+  // Per-panel rendering state (shared by handleRegenerate and handlePanelRender)
+  const [renderingPanelIds, setRenderingPanelIds] = useState<Set<string>>(new Set());
 
   // Regenerate handler (synchronous — render API returns when done)
   const handleRegenerate = useCallback(
     async (panelId: string) => {
+      setRenderingPanelIds((prev) => new Set(prev).add(panelId));
       try {
         const res = await fetch(`/api/panels/${panelId}/regenerate`, {
           method: "POST",
@@ -198,12 +210,22 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           body: JSON.stringify({ model: selectedModel }),
         });
         if (!res.ok) return;
-        await refresh();
+        const data = await res.json();
+        // Optimistically update the panel image with cache-busting.
+        if (data.imageUrl) {
+          updatePanelImage(panelId, `${data.imageUrl}?v=${Date.now()}`);
+        }
       } catch {
         /* ignore */
+      } finally {
+        setRenderingPanelIds((prev) => {
+          const next = new Set(prev);
+          next.delete(panelId);
+          return next;
+        });
       }
     },
-    [refresh, selectedModel],
+    [selectedModel, updatePanelImage],
   );
 
   // Throttled API save for bubble position (fires at most once per 150ms during drag)
@@ -323,8 +345,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     await addPage(selectedChapterId ?? undefined);
   }, [addPage, selectedChapterId]);
 
-  // Per-panel rendering state
-  const [renderingPanelIds, setRenderingPanelIds] = useState<Set<string>>(new Set());
+  // Per-panel render handler (used by canvas Render buttons + Render All)
   const handlePanelRender = useCallback(
     async (panelId: string) => {
       setRenderingPanelIds((prev) => new Set(prev).add(panelId));
@@ -339,8 +360,11 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           console.error("panel render failed", body);
           return;
         }
-        // Render is synchronous — refresh canvas to pick up the new image.
-        await refresh();
+        const data = await res.json();
+        // Optimistically update the panel image with cache-busting.
+        if (data.imageUrl) {
+          updatePanelImage(panelId, `${data.imageUrl}?v=${Date.now()}`);
+        }
       } catch (e) {
         console.error("panel render request failed", e);
       } finally {
@@ -351,7 +375,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
       }
     },
-    [refresh, selectedModel],
+    [selectedModel, updatePanelImage],
   );
 
   // The selected chapter's stage (for render button visibility)

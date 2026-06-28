@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type JSX } from 'react';
-import type { PanelSpec, BoundingBox } from '@audiocomic/domain';
-import { useCanvasStore } from '@/stores/canvas-store';
+import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type JSX } from "react";
+import type { PanelSpec, BoundingBox } from "@audiocomic/domain";
+import { useCanvasStore } from "@/stores/canvas-store";
 
 interface PanelBlockProps {
   panel: PanelSpec;
@@ -16,8 +16,14 @@ interface PanelBlockProps {
 }
 
 type DragState =
-  | { kind: 'move'; startX: number; startY: number; origBbox: BoundingBox }
-  | { kind: 'resize'; corner: 'nw' | 'ne' | 'sw' | 'se'; startX: number; startY: number; origBbox: BoundingBox }
+  | { kind: "move"; startX: number; startY: number; origBbox: BoundingBox }
+  | {
+      kind: "resize";
+      corner: "nw" | "ne" | "sw" | "se";
+      startX: number;
+      startY: number;
+      origBbox: BoundingBox;
+    }
   | null;
 
 const MIN_W = 0.05;
@@ -36,7 +42,7 @@ export function PanelBlock({
   const dragState = useRef<DragState>(null);
 
   const style: React.CSSProperties = {
-    position: 'absolute',
+    position: "absolute",
     left: `${panel.bbox.x * 100}%`,
     top: `${panel.bbox.y * 100}%`,
     width: `${panel.bbox.w * 100}%`,
@@ -45,17 +51,27 @@ export function PanelBlock({
   };
 
   const handlePointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>, kind: 'move' | 'resize', corner?: 'nw' | 'ne' | 'sw' | 'se') => {
-      if (mode === 'bubble') return;
+    (
+      e: ReactPointerEvent<HTMLDivElement>,
+      kind: "move" | "resize",
+      corner?: "nw" | "ne" | "sw" | "se",
+    ) => {
+      if (mode === "bubble") return;
       e.stopPropagation();
       e.preventDefault();
       selectPanel(panel.id);
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
       dragState.current =
-        kind === 'move'
-          ? { kind: 'move', startX: e.clientX, startY: e.clientY, origBbox: panel.bbox }
-          : { kind: 'resize', corner: corner!, startX: e.clientX, startY: e.clientY, origBbox: panel.bbox };
+        kind === "move"
+          ? { kind: "move", startX: e.clientX, startY: e.clientY, origBbox: panel.bbox }
+          : {
+              kind: "resize",
+              corner: corner!,
+              startX: e.clientX,
+              startY: e.clientY,
+              origBbox: panel.bbox,
+            };
     },
     [mode, panel.id, panel.bbox, selectPanel],
   );
@@ -69,22 +85,22 @@ export function PanelBlock({
       const dy = (e.clientY - ds.startY) / pageHeight;
       const orig = ds.origBbox;
 
-      if (ds.kind === 'move') {
+      if (ds.kind === "move") {
         const x = Math.max(0, Math.min(1 - orig.w, orig.x + dx));
         const y = Math.max(0, Math.min(1 - orig.h, orig.y + dy));
         onBboxChange(panel.id, { ...orig, x, y });
       } else {
         let { x, y, w, h } = orig;
-        if (ds.corner === 'nw') {
+        if (ds.corner === "nw") {
           x = Math.max(0, Math.min(orig.x + orig.w - MIN_W, orig.x + dx));
           y = Math.max(0, Math.min(orig.y + orig.h - MIN_H, orig.y + dy));
           w = orig.x + orig.w - x;
           h = orig.y + orig.h - y;
-        } else if (ds.corner === 'ne') {
+        } else if (ds.corner === "ne") {
           y = Math.max(0, Math.min(orig.y + orig.h - MIN_H, orig.y + dy));
           w = Math.max(MIN_W, Math.min(1 - orig.x, orig.w + dx));
           h = orig.y + orig.h - y;
-        } else if (ds.corner === 'sw') {
+        } else if (ds.corner === "sw") {
           x = Math.max(0, Math.min(orig.x + orig.w - MIN_W, orig.x + dx));
           w = orig.x + orig.w - x;
           h = Math.max(MIN_H, Math.min(1 - orig.y, orig.h + dy));
@@ -111,10 +127,10 @@ export function PanelBlock({
       style={style}
       className={`group relative cursor-pointer overflow-hidden rounded-sm border-2 transition-colors ${
         isSelected
-          ? 'border-primary ring-2 ring-primary/40'
-          : 'border-white/20 hover:border-white/50'
+          ? "border-primary ring-2 ring-primary/40"
+          : "border-white/20 hover:border-white/50"
       }`}
-      onPointerDown={(e) => handlePointerDown(e, 'move')}
+      onPointerDown={(e) => handlePointerDown(e, "move")}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onClick={(e) => {
@@ -145,9 +161,19 @@ export function PanelBlock({
               }}
               className="pointer-events-auto rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {isRendering ? 'Rendering…' : 'Render'}
+              {isRendering ? "Rendering…" : "Render"}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Rendering overlay — shows on top of everything while rendering */}
+      {isRendering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span className="text-xs font-medium text-white">Rendering…</span>
+          </div>
         </div>
       )}
 
@@ -157,24 +183,24 @@ export function PanelBlock({
       </div>
 
       {/* QA status badge */}
-      {panel.qaStatus === 'passed' && (
+      {panel.qaStatus === "passed" && (
         <div className="pointer-events-none absolute right-1 top-1 rounded bg-green-600/80 px-1 py-0.5 text-[10px] text-white">
           ✓
         </div>
       )}
-      {panel.qaStatus === 'failed' && (
+      {panel.qaStatus === "failed" && (
         <div className="pointer-events-none absolute right-1 top-1 rounded bg-red-600/80 px-1 py-0.5 text-[10px] text-white">
           ✗
         </div>
       )}
 
       {/* Resize handles (only in select mode and when selected) */}
-      {isSelected && mode === 'select' && (
+      {isSelected && mode === "select" && (
         <>
-          <ResizeHandle corner="nw" onPointerDown={(e) => handlePointerDown(e, 'resize', 'nw')} />
-          <ResizeHandle corner="ne" onPointerDown={(e) => handlePointerDown(e, 'resize', 'ne')} />
-          <ResizeHandle corner="sw" onPointerDown={(e) => handlePointerDown(e, 'resize', 'sw')} />
-          <ResizeHandle corner="se" onPointerDown={(e) => handlePointerDown(e, 'resize', 'se')} />
+          <ResizeHandle corner="nw" onPointerDown={(e) => handlePointerDown(e, "resize", "nw")} />
+          <ResizeHandle corner="ne" onPointerDown={(e) => handlePointerDown(e, "resize", "ne")} />
+          <ResizeHandle corner="sw" onPointerDown={(e) => handlePointerDown(e, "resize", "sw")} />
+          <ResizeHandle corner="se" onPointerDown={(e) => handlePointerDown(e, "resize", "se")} />
         </>
       )}
     </div>
@@ -182,16 +208,16 @@ export function PanelBlock({
 }
 
 interface ResizeHandleProps {
-  corner: 'nw' | 'ne' | 'sw' | 'se';
+  corner: "nw" | "ne" | "sw" | "se";
   onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
 }
 
 function ResizeHandle({ corner, onPointerDown }: ResizeHandleProps): JSX.Element {
   const positions: Record<string, string> = {
-    nw: 'left-0 top-0 cursor-nw-resize',
-    ne: 'right-0 top-0 cursor-ne-resize',
-    sw: 'left-0 bottom-0 cursor-sw-resize',
-    se: 'right-0 bottom-0 cursor-se-resize',
+    nw: "left-0 top-0 cursor-nw-resize",
+    ne: "right-0 top-0 cursor-ne-resize",
+    sw: "left-0 bottom-0 cursor-sw-resize",
+    se: "right-0 bottom-0 cursor-se-resize",
   };
   return (
     <div

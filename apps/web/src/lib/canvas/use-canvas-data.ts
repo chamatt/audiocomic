@@ -16,6 +16,7 @@ export interface CanvasData {
   addPage: (chapterId?: string) => Promise<void>;
   updatePanel: (panelId: string, patch: Partial<PanelSpec>) => void;
   updatePanelBbox: (panelId: string, bbox: { x: number; y: number; w: number; h: number }) => void;
+  updatePanelImage: (panelId: string, imageUrl: string) => void;
   updateLettering: (pageId: string, boxes: LetteringBox[]) => void;
 }
 
@@ -26,7 +27,6 @@ export function useCanvasData(projectId: string): CanvasData {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch(`/api/projects/${projectId}/pages`);
       if (!res.ok) throw new Error(`Failed to fetch pages: ${res.status}`);
       const data = (await res.json()) as { pages: CanvasPage[] };
@@ -34,14 +34,25 @@ export function useCanvasData(projectId: string): CanvasData {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
     }
   }, [projectId]);
 
+  // Initial load only — sets loading. Subsequent refresh() calls are silent.
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/pages`);
+        if (!res.ok) throw new Error(`Failed to fetch pages: ${res.status}`);
+        const data = (await res.json()) as { pages: CanvasPage[] };
+        setPages(data.pages ?? []);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [projectId]);
 
   const updatePanel = useCallback((panelId: string, patch: Partial<PanelSpec>) => {
     setPages((prev) =>
@@ -69,6 +80,18 @@ export function useCanvasData(projectId: string): CanvasData {
       prev.map((page) => (page.id === pageId ? { ...page, lettering: boxes } : page)),
     );
   }, []);
+
+  const updatePanelImage = useCallback((panelId: string, imageUrl: string) => {
+    setPages((prev) =>
+      prev.map((page) => ({
+        ...page,
+        panelImages: { ...page.panelImages, [panelId]: imageUrl },
+        panels: page.panels.map((p) =>
+          p.id === panelId ? { ...p, renderResultId: "updated" } : p,
+        ),
+      })),
+    );
+  }, []);
   const addPage = useCallback(
     async (chapterId?: string) => {
       try {
@@ -94,6 +117,7 @@ export function useCanvasData(projectId: string): CanvasData {
     addPage,
     updatePanel,
     updatePanelBbox,
+    updatePanelImage,
     updateLettering,
   };
 }
