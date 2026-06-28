@@ -1,6 +1,6 @@
-# Local development Postgres + pgvector
-# Usage: docker compose up -d
-# Connection string: postgres://audiocomic:audiocomic@localhost:5432/audiocomic
+# Local development stack: Postgres + pgvector, MinIO (S3-compatible storage)
+# Usage: docker-compose up -d
+# Full dev: ./dev.sh (starts Docker services + actor server + web app)
 
 services:
   postgres:
@@ -39,6 +39,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # Create the audiocomic bucket on first run
+  minio-init:
+    image: minio/mc:latest
+    container_name: audiocomic-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 audiocomic audiocomic-dev &&
+      mc mb local/audiocomic --ignore-existing &&
+      echo 'Bucket audiocomic created'
+      "
+    restart: "no"
 
 volumes:
   audiocomic-pgdata:

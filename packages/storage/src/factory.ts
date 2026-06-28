@@ -1,10 +1,9 @@
-// Factory — creates the appropriate MediaManager based on environment.
-// If STORAGE_ENDPOINT is set → S3MediaManager (MinIO or any S3).
-// Otherwise → LocalMediaManager (filesystem fallback).
-
 import type { MediaManager } from './types.ts';
 import { createLocalMediaManager } from './local.ts';
 import { createS3MediaManager } from './s3.ts';
+import { logger } from '@audiocomic/shared';
+
+const log = logger.scoped('storage');
 
 export interface MediaManagerConfig {
   /** S3 endpoint URL. If set, uses S3MediaManager. */
@@ -22,7 +21,6 @@ export interface MediaManagerConfig {
   /** Local filesystem base directory (for LocalMediaManager fallback). */
   localBaseDir: string;
 }
-
 export function createMediaManager(config: MediaManagerConfig): MediaManager {
   // Use S3 if endpoint + credentials are provided
   if (
@@ -30,6 +28,7 @@ export function createMediaManager(config: MediaManagerConfig): MediaManager {
     config.accessKeyId &&
     config.secretAccessKey
   ) {
+    log.info('using S3 storage', { endpoint: config.endpoint, bucket: config.bucket ?? 'audiocomic' });
     return createS3MediaManager({
       endpoint: config.endpoint,
       region: config.region ?? 'us-east-1',
@@ -41,6 +40,7 @@ export function createMediaManager(config: MediaManagerConfig): MediaManager {
   }
 
   // Fallback to local filesystem
+  log.warn('using local filesystem storage (no S3 endpoint configured)', { baseDir: config.localBaseDir });
   return createLocalMediaManager({
     baseDir: config.localBaseDir,
     bucket: config.bucket ?? 'local',
@@ -61,6 +61,7 @@ export function createMediaManagerFromEnv(env: {
 }): MediaManager {
   // If STORAGE_USE_LOCAL is explicitly true, skip S3 even if endpoint is set
   if (env.STORAGE_USE_LOCAL) {
+    log.warn('STORAGE_USE_LOCAL=true — using local filesystem, ignoring S3 endpoint', { endpoint: env.STORAGE_ENDPOINT });
     return createLocalMediaManager({
       baseDir: env.UPLOAD_DIR,
       bucket: env.STORAGE_BUCKET ?? 'local',

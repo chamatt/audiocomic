@@ -2,13 +2,14 @@
 // Provides backward-compatible writeAsset/readAsset/assetExists/getAssetStream
 // for existing web app code, while using S3-compatible storage under the hood.
 
-import { getEnv } from '@audiocomic/shared';
+import { getEnv, logger } from '@audiocomic/shared';
 import { createMediaManagerFromEnv, type MediaManager } from '@audiocomic/storage';
 
+const log = logger.scoped('web:storage');
 let _mediaManager: MediaManager | null = null;
-
 function getMediaManager(): MediaManager {
   if (!_mediaManager) {
+    log.info('initializing media manager from env');
     _mediaManager = createMediaManagerFromEnv(getEnv());
   }
   return _mediaManager;

@@ -75,7 +75,7 @@ export const sourceAssets = pgTable(
     durationSec: real('duration_sec'),
     checksum: text('checksum'),
     chapterId: uuid('chapter_id'),
-    uploadedAt: createdAtCol(),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   },
   (t) => [index('source_assets_project_id_idx').on(t.projectId)],
 );

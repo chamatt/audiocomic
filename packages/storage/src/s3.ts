@@ -2,6 +2,9 @@
 // Works with MinIO (local Docker), AWS S3, Cloudflare R2, or any S3-compatible provider.
 
 import type { MediaManager, UploadResult, FileInfo } from './types.ts';
+import { logger } from '@audiocomic/shared';
+
+const log = logger.scoped('storage:s3');
 
 export interface S3MediaManagerOptions {
   endpoint: string;
@@ -55,13 +58,10 @@ export function createS3MediaManager(opts: S3MediaManagerOptions): MediaManager 
     async upload(key: string, data: Buffer | ReadableStream<Uint8Array>, mimeType: string): Promise<UploadResult> {
       const client = await getClient();
       const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const size = Buffer.isBuffer(data) ? data.length : 0;
+      log.debug('uploading', { key, mimeType, size });
 
-      let body: Buffer | ReadableStream<Uint8Array>;
-      if (Buffer.isBuffer(data)) {
-        body = data;
-      } else {
-        body = data;
-      }
+      const body: Buffer | ReadableStream<Uint8Array> = data;
 
       const command = new PutObjectCommand({
         Bucket: opts.bucket,
@@ -72,8 +72,7 @@ export function createS3MediaManager(opts: S3MediaManagerOptions): MediaManager 
 
       const response = await (client as { send: (cmd: unknown) => Promise<{ ETag?: string }> }).send(command);
 
-      // Get size from the buffer if available, otherwise from the response
-      const size = Buffer.isBuffer(data) ? data.length : 0;
+      log.info('uploaded', { key, size, etag: response.ETag?.replace(/"/g, '') ?? '' });
 
       return {
         key,
@@ -85,6 +84,7 @@ export function createS3MediaManager(opts: S3MediaManagerOptions): MediaManager 
     },
 
     async download(key: string): Promise<ReadableStream<Uint8Array>> {
+      log.debug('downloading', { key });
       const client = await getClient();
       const { GetObjectCommand } = await import('@aws-sdk/client-s3');
 

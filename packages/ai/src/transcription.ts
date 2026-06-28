@@ -3,13 +3,15 @@ import { experimental_transcribe as transcribe } from 'ai';
 import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai';
 import type { TranscriptChunk } from '@audiocomic/domain';
 import type { Env } from '@audiocomic/shared';
-import { uuid } from '@audiocomic/shared';
+import { uuid, logger } from '@audiocomic/shared';
 import type {
   TranscriptionAdapter,
   TranscriptionOptions,
   TranscriptResult,
   TranscriptionProvider,
 } from './types';
+
+const log = logger.scoped('transcription');
 
 // ============================================================================
 // OpenAI Whisper transcription adapter
@@ -138,33 +140,59 @@ export class GroqTranscriptionAdapter implements TranscriptionAdapter {
     opts: TranscriptionOptions,
   ): Promise<TranscriptResult> {
     const audio = readFileSync(audioPath);
-    // Groq accepts: flac mp3 mp4 mpeg mpga m4a ogg opus wav webm
-    // Remap unsupported extensions (m4b → m4a) so audiobook files work.
     const rawExt = audioPath.slice(audioPath.lastIndexOf('.') + 1).toLowerCase() || 'mp3';
     const ext = rawExt === 'm4b' ? 'm4a' : rawExt;
+    log.info('starting Groq transcription', { audioPath, ext, size: audio.length, model: this.model });
 
-    const formData = new FormData();
-    formData.append('model', this.model);
-    formData.append('file', new File([audio], `audio.${ext}`, { type: `audio/${ext}` }));
-    formData.append('response_format', 'json');
-    if (opts.language) formData.append('language', opts.language);
-    if (opts.prompt) formData.append('prompt', opts.prompt);
-    if (opts.temperature != null) formData.append('temperature', String(opts.temperature));
+    // Use curl via child_process instead of fetch.
+    // Node.js's fetch/FormData inside the RivetKit engine produces a different
+    // multipart payload than standalone Node.js, causing Groq's Whisper to
+    // return incomplete transcriptions. curl produces consistent results.
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
 
-    const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body: formData,
-      signal: opts.signal ?? null,
+    const args = [
+      '-s',
+      'https://api.groq.com/openai/v1/audio/transcriptions',
+      '-H', `Authorization: Bearer ${this.apiKey}`,
+      '-F', `model=${this.model}`,
+      '-F', `file=@${audioPath};type=audio/${ext};filename=audio.${ext}`,
+      '-F', 'response_format=verbose_json',
+      '-F', `language=${opts.language ?? 'en'}`,
+      '-F', `prompt=${opts.prompt ?? 'This is an audiobook narration. Transcribe all speech including narration, dialogue, and announcements.'}`,
+      '-F', `temperature=${String(opts.temperature ?? 0)}`,
+    ];
+
+    log.debug('calling Groq API via curl', { model: this.model, ext, args: args.join(' ').replace(this.apiKey, 'REDACTED') });
+    const done = log.timer('groq transcription');
+    const { stdout } = await execFileAsync('curl', args, {
+      maxBuffer: 50 * 1024 * 1024,
+      signal: opts.signal ?? undefined,
     });
+    log.debug('raw Groq response', { response: stdout.slice(0, 1000) });
 
-    if (!response.ok) {
-      const body = await response.text();
- throw new Error(`Groq transcription failed (${response.status}): ${body}`);
+    const result = JSON.parse(stdout) as {
+      text?: string;
+      language?: string;
+      duration?: number;
+      segments?: Array<{ start: number; end: number; text: string }>;
+    };
+
+    if (result.text === undefined) {
+      log.error('Groq returned unexpected response', { response: stdout.slice(0, 500) });
+      throw new Error(`Groq transcription returned unexpected response: ${stdout.slice(0, 500)}`);
     }
 
-    const result = await response.json() as { text?: string; language?: string; duration?: number };
+    const segCount = result.segments?.length ?? 0;
+    log.info('Groq response received', { segments: segCount, duration: result.duration, textLen: result.text?.length ?? 0 });
+    if (segCount < 2 && (result.duration ?? 0) > 15) {
+      log.warn('suspiciously few segments for >15s audio', { segments: segCount, duration: result.duration, text: result.text?.slice(0, 200) });
+    }
+
     const chunks = chunkPlainText(result.text ?? '', opts.projectId);
+    log.info('transcription complete', { chunks: chunks.length, textPreview: result.text?.slice(0, 100) });
+    done();
 
     return {
       chunks,

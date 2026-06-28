@@ -2,6 +2,7 @@
 
 import { Effect } from "effect";
 import { runWithClient, fileRegistryClient, bibleClient, projectClient, pipelineClient, chapterClient, knowledgeBaseClient } from "@/lib/rivet-client";
+import { logger } from "@audiocomic/shared";
 import type {
   ProjectConfig,
   BibleContent,
@@ -12,14 +13,16 @@ import type {
   CronSchedule,
 } from "@audiocomic/actors";
 
+const log = logger.scoped("actor-actions");
 export type ActorResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
 async function run<T>(program: Effect.Effect<T, unknown, unknown>): Promise<ActorResult<T>> {
   try {
     const data = await runWithClient(program);
     return { ok: true, data };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const error = err instanceof Error ? err.message : String(err);
+    log.error("actor action failed", { error });
+    return { ok: false, error };
   }
 }
 
@@ -337,6 +340,7 @@ export async function linkChapterAssetActor(chapterId: string, sourceAssetId: st
 }
 
 export async function startChapterTranscriptionActor(chapterId: string, projectId?: string, index?: number): Promise<ActorResult<unknown>> {
+  log.info("starting transcription", { chapterId, projectId, index });
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
@@ -344,8 +348,10 @@ export async function startChapterTranscriptionActor(chapterId: string, projectI
       // Ensure identity is set (actor may have been created by an older
       // server version without the Init action).
       if (projectId && index !== undefined) {
+        log.debug("calling Init", { chapterId, projectId, index });
         yield* handle.Init({ id: chapterId, projectId, index }).pipe(Effect.ignore);
       }
+      log.debug("calling StartTranscription", { chapterId });
       return yield* handle.StartTranscription(undefined);
     }),
   );

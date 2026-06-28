@@ -15,7 +15,9 @@ import type {
   EmotionalTone,
 } from '@audiocomic/domain';
 import type { Env } from '@audiocomic/shared';
-import { uuid } from '@audiocomic/shared';
+import { uuid, logger } from '@audiocomic/shared';
+
+const log = logger.scoped('planner');
 import type {
   StoryPlanInput,
   StoryPlanOutput,
@@ -257,7 +259,7 @@ async function streamObjectWithProgress<T>(
         tokenCount++;
         if (tokenCount % 10 === 0) {
           const elapsed = elapsedStr();
-          console.error(`[planner] ${label}: ${tokenCount} tokens in ${elapsed}s...`);
+          log.info(`[planner] ${label}: ${tokenCount} tokens in ${elapsed}s...`);
           emit?.({ type: 'llm_chunk', label, chunkIndex: tokenCount, elapsed: Number(elapsed), partial: lastPartial });
         }
       } else if (event.type === 'object') {
@@ -275,19 +277,19 @@ async function streamObjectWithProgress<T>(
 
     const result = await object;
     const elapsed = elapsedStr();
-    console.error(`[planner] ${label}: done in ${elapsed}s (${tokenCount} tokens)`);
+    log.info(`[planner] ${label}: done in ${elapsed}s (${tokenCount} tokens)`);
     emit?.({ type: 'llm_done', label, chunkIndex: tokenCount, elapsed: Number(elapsed) });
     return result;
   } catch (err) {
     const elapsed = elapsedStr();
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[planner] ${label}: stream failed in ${elapsed}s (${msg}), falling back to generateObject`);
+    log.info(`[planner] ${label}: stream failed in ${elapsed}s (${msg}), falling back to generateObject`);
     emit?.({ type: 'llm_error', label, detail: msg, elapsed: Number(elapsed) });
 
     // Fallback: non-streaming generateObject
     const result = await generateObject(opts);
     const elapsed2 = elapsedStr();
-    console.error(`[planner] ${label}: generateObject fallback done in ${elapsed2}s`);
+    log.info(`[planner] ${label}: generateObject fallback done in ${elapsed2}s`);
     emit?.({ type: 'llm_done', label, detail: 'fallback: generateObject', elapsed: Number(elapsed2) });
     return result.object as T;
   }
@@ -308,7 +310,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     const projectId = input.projectId;
     const text = truncate(input.text, MAX_PASS1_CHARS);
 
-    console.error(`[planner] pass 1/3: world + characters + chapters...`);
+    log.info(`[planner] pass 1/3: world + characters + chapters...`);
     // ---- Pass 1: chapters + scenes + world + characters ----
     // Use generateObject with retry — streamObject can fail silently if the
     // model returns no valid JSON, giving "No object generated" errors.
@@ -338,7 +340,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
         }, input.emit);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        console.error(`[planner] pass 1 failed (attempt ${attempt + 1}/3): ${lastError.message}`);
+        log.info(`[planner] pass 1 failed (attempt ${attempt + 1}/3): ${lastError.message}`);
         if (attempt < 2) {
           // Brief pause before retry
           await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -427,7 +429,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
       chapterIndex++;
     }
 
-    console.error(`[planner] pass 2/3: beats for ${sceneSections.length} scene(s) (parallel)...`);
+    log.info(`[planner] pass 2/3: beats for ${sceneSections.length} scene(s) (parallel)...`);
     // ---- Pass 2: beats per scene (parallel) ----
     const beatSectionsByScene = await Promise.all(
       sceneSections.map(async ({ section, excerpt }) => {
@@ -473,7 +475,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     }
 
     const totalBeats = beatSectionsByScene.reduce((n, { beats }) => n + beats.length, 0);
-    console.error(`[planner] pass 3/3: panel hints for ${totalBeats} beat(s) across ${beatSectionsByScene.length} scene(s) (parallel)...`);
+    log.info(`[planner] pass 3/3: panel hints for ${totalBeats} beat(s) across ${beatSectionsByScene.length} scene(s) (parallel)...`);
     // ---- Pass 3: page/panel allocation hints per scene (parallel) ----
     const panelsPerBeat = input.panelsPerBeat ?? 1;
     const pass3Results = await Promise.all(
@@ -519,7 +521,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
       }
     }
 
-    console.error(`[planner] done: ${sections.length} sections, ${characters.length} characters, ${panelHints.length} panel hints`);
+    log.info(`[planner] done: ${sections.length} sections, ${characters.length} characters, ${panelHints.length} panel hints`);
     return { sections, characters, worldBible, panelHints };
   }
 }

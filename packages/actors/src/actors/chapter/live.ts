@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { Chapter, ChapterState } from "./api.ts";
 import type { TranscriptionOptions, TranscriptResult } from "@audiocomic/ai";
 import { PipelineBridge } from "../../lib/pipeline-bridge.ts";
-import { uuid } from "@audiocomic/shared";
+import { uuid, logger } from "@audiocomic/shared";
+
+const log = logger.scoped("chapter");
 
 /**
  * Fresh, empty chapter state. The actor is keyed, so the durable `id` is
@@ -83,6 +85,7 @@ export const ChapterLive = Chapter.toLayer(
 							new Error("StartTranscription: no sourceAssetId linked"),
 						);
 					}
+				log.info("transcription fiber started", { chapterId: current.id, assetId });
 
 					// 1. Resolve the linked SourceAsset row.
 					const asset = yield* Effect.tryPromise({
@@ -97,6 +100,7 @@ export const ChapterLive = Chapter.toLayer(
 							),
 						);
 					}
+				log.info("resolved source asset", { assetId, storageKey: asset!.storageKey });
 
 					// 2. Download the audio bytes from blob storage.
 					const buffer = yield* Effect.tryPromise({
@@ -104,6 +108,7 @@ export const ChapterLive = Chapter.toLayer(
 						catch: (e) =>
 							e instanceof Error ? e : new Error(String(e)),
 					});
+				log.info("downloaded audio from storage", { storageKey: asset!.storageKey, bytes: buffer.length });
 
 				// 3. Spill to a temp file, then convert to mp3 with ffmpeg.
 				//    Groq accepts mp3 natively; converting avoids format issues
@@ -115,6 +120,7 @@ export const ChapterLive = Chapter.toLayer(
 					catch: (e) =>
 						e instanceof Error ? e : new Error(String(e)),
 				});
+				log.debug("spilled audio to temp file", { rawTmpPath, bytes: buffer.length });
 
 				try {
 					yield* Effect.tryPromise({
@@ -130,6 +136,7 @@ export const ChapterLive = Chapter.toLayer(
 						catch: (e) =>
 							e instanceof Error ? e : new Error(String(e)),
 					});
+				log.info("ffmpeg conversion complete", { mp3Path });
 
 					// 4. Run the transcription adapter on the mp3 file.
 					const adapter = bridge.getTranscriptionAdapter();
@@ -142,6 +149,7 @@ export const ChapterLive = Chapter.toLayer(
 						catch: (e) =>
 							e instanceof Error ? e : new Error(String(e)),
 					});
+				log.info("transcription adapter returned", { chunks: result.chunks.length, durationSec: result.durationSec });
 
 						// 5. Persist each chunk, stamped with this chapter id.
 						yield* Effect.tryPromise({
@@ -159,6 +167,7 @@ export const ChapterLive = Chapter.toLayer(
 							catch: (e) =>
 								e instanceof Error ? e : new Error(String(e)),
 						});
+						log.info("persisted transcript chunks", { count: result.chunks.length, chapterId: current.id });
 
 						// 6. Flip to completed and broadcast.
 						const done = yield* update((s) => ({
@@ -167,6 +176,7 @@ export const ChapterLive = Chapter.toLayer(
 							status: "transcribed",
 							durationSec: result.durationSec ?? s.durationSec,
 						}));
+						log.info("chapter transcription completed", { chapterId: current.id, status: done.status });
 						rawRivetkitContext.broadcast("chapterTranscribed", done);
 
 					// 7. Sync status back to the chapters table.
@@ -191,22 +201,24 @@ export const ChapterLive = Chapter.toLayer(
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.gen(function* () {
-						const failed = yield* update((s) => ({
-							...s,
-							transcriptionStatus: "failed",
-							status: "failed",
-						}));
+						log.error("transcription fiber failed", { chapterId: current.id, error: cause.toString() });
+							const failed = yield* update((s) => ({
+								...s,
+								transcriptionStatus: "failed",
+								status: "failed",
+							}));
 
-						// Sync failure status back to the chapters table.
-						yield* Effect.tryPromise({
-							try: () =>
-								bridge.repo.chapters.patch(failed.id, {
-									status: "failed",
-									transcriptionStatus: "failed",
-								} as Partial<unknown>),
-							catch: (e) =>
-								e instanceof Error ? e : new Error(String(e)),
-						}).pipe(Effect.ignore);
+							// Sync failure status back to the chapters table.
+							yield* Effect.tryPromise({
+								try: () =>
+									bridge.repo.chapters.patch(failed.id, {
+										status: "failed",
+										transcriptionStatus: "failed",
+									} as Partial<unknown>),
+								catch: (e) =>
+									e instanceof Error ? e : new Error(String(e)),
+							}).pipe(Effect.ignore);
+
 							rawRivetkitContext.broadcast(
 								"chapterTranscriptionFailed",
 								{
