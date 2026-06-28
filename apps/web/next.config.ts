@@ -8,6 +8,9 @@ const nextConfig = {
     '@audiocomic/renderers',
     '@audiocomic/media',
     '@audiocomic/workflows',
+    '@audiocomic/actors',
+    '@rivetkit/effect',
+    'rivetkit',
   ],
   experimental: {
     serverActions: { bodySizeLimit: '100mb' },
