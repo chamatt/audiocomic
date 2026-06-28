@@ -115,7 +115,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
 export interface CreateProjectInput {
   name: string;
   description: string;
-  modality: 'audio' | 'text';
+  modality?: 'audio' | 'text';
   fileName?: string;
   fileDataBase64?: string;
   textContent?: string;
@@ -132,7 +132,7 @@ export async function createProjectAction(input: CreateProjectInput): Promise<st
     name: input.name,
     description: input.description,
     status: 'created',
-    modality: input.modality,
+    modality: input.modality ?? 'audio',
     createdAt: now,
     updatedAt: now,
     providerSettings: defaultProviderSettings(env),
