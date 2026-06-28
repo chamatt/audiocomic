@@ -14,115 +14,111 @@ import type { PanelSpec, StorySection, CharacterProfile } from "@audiocomic/doma
 
 /** Type guard: narrow an unknown to a PanelSpec (fields used by this step). */
 function isPanelSpec(v: unknown): v is PanelSpec {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		"id" in v &&
-		typeof (v as Record<string, unknown>).id === "string" &&
-		"storySectionId" in v &&
-		typeof (v as Record<string, unknown>).storySectionId === "string" &&
-		"characters" in v &&
-		Array.isArray((v as Record<string, unknown>).characters)
-	);
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "id" in v &&
+    typeof (v as Record<string, unknown>).id === "string" &&
+    "storySectionId" in v &&
+    typeof (v as Record<string, unknown>).storySectionId === "string" &&
+    "characters" in v &&
+    Array.isArray((v as Record<string, unknown>).characters)
+  );
 }
 
 /** Type guard: narrow an unknown to a StorySection. */
 function isStorySection(v: unknown): v is StorySection {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		"id" in v &&
-		typeof (v as Record<string, unknown>).id === "string"
-	);
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "id" in v &&
+    typeof (v as Record<string, unknown>).id === "string"
+  );
 }
 
 /** Type guard: narrow an unknown to a CharacterProfile. */
 function isCharacterProfile(v: unknown): v is CharacterProfile {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		"id" in v &&
-		typeof (v as Record<string, unknown>).id === "string"
-	);
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "id" in v &&
+    typeof (v as Record<string, unknown>).id === "string"
+  );
 }
 
 export interface ComposePromptsResult {
-	step: "compose_prompts";
-	status: "completed";
-	panelPrompts: Map<string, string>;
+  step: "compose_prompts";
+  status: "completed";
+  panelPrompts: Map<string, string>;
 }
 
 export const ComposePromptsStep: StepExecutor = {
-	type: "compose_prompts",
-	inputs: ["plan_pages", "plan_story"] as const,
-	outputs: ["compose_prompts"] as const,
-	execute: (ctx: StepContext) =>
-		Effect.gen(function* () {
-			const bridge = yield* PipelineBridge;
-			yield* Effect.logInfo("compose_prompts: composing render prompts for panels");
+  type: "compose_prompts",
+  inputs: ["plan_pages", "plan_story"] as const,
+  outputs: ["compose_prompts"] as const,
+  execute: (ctx: StepContext) =>
+    Effect.gen(function* () {
+      const bridge = yield* PipelineBridge;
+      yield* Effect.logInfo("compose_prompts: composing render prompts for panels");
 
-			// Read previous step results
-			const planPages = getPrevResult(ctx, "plan_pages", isPlanPagesResult);
-			const planStory = getPrevResult(ctx, "plan_story", isPlanStoryResult);
+      // Read previous step results
+      const planPages = getPrevResult(ctx, "plan_pages", isPlanPagesResult);
+      const planStory = getPrevResult(ctx, "plan_story", isPlanStoryResult);
 
-			// Narrow the untyped arrays from the guards into typed values
-			const panels = planPages.panels.filter(isPanelSpec);
-			const sections = planStory.sections.filter(isStorySection);
-			const characters = planStory.characters.filter(isCharacterProfile);
-			const worldBible = planStory.worldBible;
+      // Narrow the untyped arrays from the guards into typed values
+      const panels = planPages.panels.filter(isPanelSpec);
+      const sections = planStory.sections.filter(isStorySection);
+      const characters = planStory.characters.filter(isCharacterProfile);
+      const worldBible = planStory.worldBible;
 
-			// Build section lookup: sectionId -> StorySection
-			const sectionMap = new Map<string, StorySection>(
-				sections.map((s) => [s.id, s]),
-			);
+      // Build section lookup: sectionId -> StorySection
+      const sectionMap = new Map<string, StorySection>(sections.map((s) => [s.id, s]));
 
-			const panelPrompts = new Map<string, string>();
+      const panelPrompts = new Map<string, string>();
 
-			for (const panel of panels) {
-				const section = sectionMap.get(panel.storySectionId);
-				if (!section) {
-					yield* Effect.logWarning(
-						`compose_prompts: panel ${panel.id} references missing section ${panel.storySectionId}; skipping`,
-					);
-					continue;
-				}
+      for (const panel of panels) {
+        const section = sectionMap.get(panel.storySectionId);
+        if (!section) {
+          yield* Effect.logWarning(
+            `compose_prompts: panel ${panel.id} references missing section ${panel.storySectionId}; skipping`,
+          );
+          continue;
+        }
 
-				// Characters present in this panel
-				const panelCharacters = characters.filter((c) =>
-					panel.characters.some((pc) => pc.characterId === c.id),
-				);
+        // Characters present in this panel
+        const panelCharacters = characters.filter((c) =>
+          panel.characters.some((pc) => pc.characterId === c.id),
+        );
 
-			// Compose the render prompt with full section memory (MangaFlow M_k)
-			const prompt = bridge.composePanelPrompt(
-				panel,
-				section,
-				panelCharacters,
-				worldBible,
-				sections,
-			);
+        // Compose the render prompt with full section memory (MangaFlow M_k)
+        const prompt = bridge.composePanelPrompt(
+          panel,
+          section,
+          panelCharacters,
+          worldBible,
+          sections,
+        );
 
-				// Persist the prompt onto the panel spec
-				yield* Effect.tryPromise(() =>
-					bridge.repo.panelSpecs.patch(panel.id, { renderPrompt: prompt }),
-				);
+        // Persist the prompt onto the panel spec
+        yield* Effect.tryPromise(() =>
+          bridge.repo.panelSpecs.patch(panel.id, { renderPrompt: prompt }),
+        );
 
-				panelPrompts.set(panel.id, prompt);
-			}
+        panelPrompts.set(panel.id, prompt);
+      }
 
-			yield* Effect.logInfo(
-				`compose_prompts: composed ${panelPrompts.size} panel prompts`,
-			);
+      yield* Effect.logInfo(`compose_prompts: composed ${panelPrompts.size} panel prompts`);
 
-			return {
-				inputHash: ctx.inputHash ?? "",
-				data: {
-					step: "compose_prompts" as const,
-					status: "completed" as const,
-					panelPrompts,
-				} satisfies ComposePromptsResult,
-				summary: `${panelPrompts.size} panel prompts`,
-			} satisfies StepOutput;
-		}),
+      return {
+        inputHash: ctx.inputHash ?? "",
+        data: {
+          step: "compose_prompts" as const,
+          status: "completed" as const,
+          panelPrompts,
+        } satisfies ComposePromptsResult,
+        summary: `${panelPrompts.size} panel prompts`,
+      } satisfies StepOutput;
+    }),
 };
 
 registerStep(ComposePromptsStep);

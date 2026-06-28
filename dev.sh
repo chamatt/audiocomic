@@ -64,7 +64,7 @@ echo "✓ Migrations done"
 # Start actor server (background, with STORAGE_USE_LOCAL unset so it uses MinIO)
 # dotenv-cli loads .env explicitly (tsx doesn't auto-load like Next.js does)
 echo "│ Starting actor server on :6420..."
-STORAGE_USE_LOCAL= RIVET_RUN_ENGINE=1 npx dotenv -e .env -- npx tsx packages/actors/src/server/main.ts > /tmp/audiocomic-actor.log 2>&1 &
+STORAGE_USE_LOCAL= RIVET_RUN_ENGINE=1 npx dotenv -e .env -o -- npx tsx packages/actors/src/server/main.ts > /tmp/audiocomic-actor.log 2>&1 &
 ACTOR_PID=$!
 echo "✓ Actor server started (PID $ACTOR_PID, logs: /tmp/audiocomic-actor.log)"
 

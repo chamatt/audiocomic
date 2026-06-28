@@ -1,8 +1,8 @@
 import { NodeRuntime } from "@effect/platform-node";
 import { Client, Registry } from "@rivetkit/effect";
 import { Effect, Layer } from "effect";
-import { config } from "dotenv";
-config({ path: "../../.env", override: true });
+// Env vars are loaded by dotenv-cli in dev.sh (npx dotenv -e .env -- npx tsx ...)
+// For standalone runs, set env vars directly or use: npx dotenv -e ../../.env -- npx tsx src/server/main.ts
 
 import { FileRegistryLive } from "../actors/file-registry/live.ts";
 import { BibleLive } from "../actors/bible/live.ts";
@@ -23,34 +23,38 @@ const dbResult = createDb(env.DATABASE_URL);
 const bridgeLayer = makePipelineBridgeLayer(dbResult, env);
 
 const ActorsLayer = Layer.mergeAll(
-	FileRegistryLive,
-	BibleLive,
-	ProjectLive,
-	PipelineLive,
-	ChapterLive,
-	KnowledgeBaseLive,
+  FileRegistryLive,
+  BibleLive,
+  ProjectLive,
+  PipelineLive,
+  ChapterLive,
+  KnowledgeBaseLive,
 ).pipe(
-	Layer.provide(FFmpegLive),
-	Layer.provide(bridgeLayer),
-	Layer.provide(Client.layer({ endpoint })),
+  Layer.provide(FFmpegLive),
+  Layer.provide(bridgeLayer),
+  Layer.provide(Client.layer({ endpoint })),
 );
 
 // Enable local SQLite persistence so actor state survives restarts.
 // The `sqlite` option is spread into Rivetkit.setup() by Registry.layer,
 // even though the TS type doesn't expose it.
 const MainLayer = Registry.serve(ActorsLayer).pipe(
-	Layer.provide(Registry.layer({
-		...({ sqlite: "local" } as unknown as Record<string, unknown>),
-	})),
+  Layer.provide(
+    Registry.layer({
+      ...({ sqlite: "local" } as unknown as Record<string, unknown>),
+    }),
+  ),
 );
 
 Effect.gen(function* () {
-	yield* Effect.log("Starting AudioComic actor server...");
-	yield* Effect.log(`Endpoint: ${endpoint}`);
-	yield* Effect.log("Actors: FileRegistry, Bible, Project, Pipeline, Chapter, KnowledgeBase");
-	yield* Effect.log("Steps: 9 registered (ingest_knowledge → export_motion)");
-	yield* Effect.log("Bridge: direct adapters (@audiocomic/ai, @audiocomic/renderers, @audiocomic/media)");
+  yield* Effect.log("Starting AudioComic actor server...");
+  yield* Effect.log(`Endpoint: ${endpoint}`);
+  yield* Effect.log("Actors: FileRegistry, Bible, Project, Pipeline, Chapter, KnowledgeBase");
+  yield* Effect.log("Steps: 9 registered (ingest_knowledge → export_motion)");
+  yield* Effect.log(
+    "Bridge: direct adapters (@audiocomic/ai, @audiocomic/renderers, @audiocomic/media)",
+  );
 }).pipe(
-	Effect.flatMap(() => Layer.launch(MainLayer)),
-	NodeRuntime.runMain,
+  Effect.flatMap(() => Layer.launch(MainLayer)),
+  NodeRuntime.runMain,
 );

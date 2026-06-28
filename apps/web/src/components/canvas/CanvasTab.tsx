@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import type { PanelSpec, BoundingBox, LetteringBox } from '@audiocomic/domain';
-import { ComicCanvas } from './ComicCanvas';
-import { PanelEditor } from './PanelEditor';
-import { CanvasToolbar } from './CanvasToolbar';
-import { PageThumbnailBar } from './PageThumbnailBar';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { useCanvasData } from '@/lib/canvas/use-canvas-data';
-import { throttle } from '@/lib/canvas/throttle';
-import type { CanvasPageData } from './types';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { KnowledgePanel } from './KnowledgePanel';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import type { PanelSpec, BoundingBox, LetteringBox } from "@audiocomic/domain";
+import { ComicCanvas } from "./ComicCanvas";
+import { PanelEditor } from "./PanelEditor";
+import { CanvasToolbar } from "./CanvasToolbar";
+import { PageThumbnailBar } from "./PageThumbnailBar";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasData } from "@/lib/canvas/use-canvas-data";
+import { throttle } from "@/lib/canvas/throttle";
+import type { CanvasPageData } from "./types";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { KnowledgePanel } from "./KnowledgePanel";
 
 interface CanvasTabProps {
   projectId: string;
@@ -21,7 +21,8 @@ interface CanvasTabProps {
 export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const { pages, loading, error, refresh, addPage, updatePanel, updatePanelBbox, updateLettering } =
     useCanvasData(projectId);
-  const { selectedPanelId, selectedPageId, selectPage, selectedChapterId, selectChapter } = useCanvasStore();
+  const { selectedPanelId, selectedPageId, selectPage, selectedChapterId, selectChapter } =
+    useCanvasStore();
 
   // Chapter metadata for the selector bar (id + title + stage)
   interface ChapterMeta {
@@ -37,13 +38,17 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       try {
         const res = await fetch(`/api/projects/${projectId}/chapters`);
         if (res.ok && !cancelled) {
-          const data = await res.json() as ChapterMeta[];
+          const data = (await res.json()) as ChapterMeta[];
           setChapters(data);
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
     void fetchChapters();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   // Convert pages to canvas format
@@ -99,8 +104,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const savePanelBbox = useRef(
     throttle((panelId: string, bbox: BoundingBox) => {
       void fetch(`/api/panels/${panelId}/bbox`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bbox),
       });
     }, 150),
@@ -120,8 +125,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     async (panelId: string, patch: Partial<PanelSpec>) => {
       updatePanel(panelId, patch);
       await fetch(`/api/panels/${panelId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
     },
@@ -129,32 +134,37 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   );
 
   // Regenerate handler
-  const handleRegenerate = useCallback(async (panelId: string) => {
-    try {
-      const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: 'POST' });
-      if (!res.ok) return;
-      const { jobId } = await res.json() as { jobId: string };
-      // Poll for job completion every 2s (max 120s)
-      for (let i = 0; i < 60; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const jobRes = await fetch(`/api/jobs/${jobId}`);
-        if (!jobRes.ok) break;
-        const job = await jobRes.json() as { state: string };
-        if (job.state === 'completed' || job.state === 'done') {
-          await refresh();
-          break;
+  const handleRegenerate = useCallback(
+    async (panelId: string) => {
+      try {
+        const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: "POST" });
+        if (!res.ok) return;
+        const { jobId } = (await res.json()) as { jobId: string };
+        // Poll for job completion every 2s (max 120s)
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const jobRes = await fetch(`/api/jobs/${jobId}`);
+          if (!jobRes.ok) break;
+          const job = (await jobRes.json()) as { state: string };
+          if (job.state === "completed" || job.state === "done") {
+            await refresh();
+            break;
+          }
+          if (job.state === "failed") break;
         }
-        if (job.state === 'failed') break;
+      } catch {
+        /* ignore */
       }
-    } catch { /* ignore */ }
-  }, [refresh]);
+    },
+    [refresh],
+  );
 
   // Throttled API save for bubble position (fires at most once per 150ms during drag)
   const saveBubblePosition = useRef(
     throttle((pageId: string, boxId: string, bbox: Partial<BoundingBox>) => {
       void fetch(`/api/lettering/${pageId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ boxId, bbox }),
       });
     }, 150),
@@ -179,13 +189,11 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     (pageId: string, boxId: string, text: string) => {
       const page = pages.find((p) => p.id === pageId);
       if (!page) return;
-      const newBoxes = page.lettering.map((b) =>
-        b.id === boxId ? { ...b, text } : b,
-      );
+      const newBoxes = page.lettering.map((b) => (b.id === boxId ? { ...b, text } : b));
       updateLettering(pageId, newBoxes);
       void fetch(`/api/lettering/${pageId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ boxId, text }),
       });
     },
@@ -200,7 +208,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       const newBoxes = page.lettering.filter((b) => b.id !== boxId);
       updateLettering(pageId, newBoxes);
       void fetch(`/api/lettering/${pageId}?boxId=${boxId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
     },
     [pages, updateLettering],
@@ -210,9 +218,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const handleBubbleAdd = useCallback(
     (pageId: string, bbox: BoundingBox, panelId?: string) => {
       void fetch(`/api/pages/${pageId}/lettering`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'speech', text: '', bbox, panelId }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "speech", text: "", bbox, panelId }),
       }).then(() => {
         void refresh();
       });
@@ -227,8 +235,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       newOrder.forEach((page, i) => {
         if (page.index !== i) {
           void fetch(`/api/pages/${page.id}/reorder`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ index: i }),
           });
         }
@@ -241,9 +249,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   // Page navigation
   const handlePageNavigate = useCallback(
-    (direction: 'prev' | 'next') => {
-      const targetIdx =
-        direction === 'prev' ? currentPageIndex - 1 : currentPageIndex + 1;
+    (direction: "prev" | "next") => {
+      const targetIdx = direction === "prev" ? currentPageIndex - 1 : currentPageIndex + 1;
       if (targetIdx >= 0 && targetIdx < pages.length) {
         const target = pages[targetIdx];
         if (target) selectPage(target.id);
@@ -254,10 +261,10 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   // Export handler
   const handleExport = useCallback(
-    (type: 'pages' | 'mp4') => {
+    (type: "pages" | "mp4") => {
       void fetch(`/api/projects/${projectId}/export`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type }),
       });
     },
@@ -271,38 +278,41 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   // Per-panel rendering state
   const [renderingPanelIds, setRenderingPanelIds] = useState<Set<string>>(new Set());
-  const handlePanelRender = useCallback(async (panelId: string) => {
-    setRenderingPanelIds((prev) => new Set(prev).add(panelId));
-    try {
-      const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: 'POST' });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        console.error('panel render failed', body);
-        return;
-      }
-      const { jobId } = await res.json() as { jobId: string };
-      // Poll for job completion every 2s (max 120s)
-      for (let i = 0; i < 60; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const jobRes = await fetch(`/api/jobs/${jobId}`);
-        if (!jobRes.ok) break;
-        const job = await jobRes.json() as { state: string };
-        if (job.state === 'completed' || job.state === 'done') {
-          await refresh();
-          break;
+  const handlePanelRender = useCallback(
+    async (panelId: string) => {
+      setRenderingPanelIds((prev) => new Set(prev).add(panelId));
+      try {
+        const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: "POST" });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.error("panel render failed", body);
+          return;
         }
-        if (job.state === 'failed') break;
+        const { jobId } = (await res.json()) as { jobId: string };
+        // Poll for job completion every 2s (max 120s)
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const jobRes = await fetch(`/api/jobs/${jobId}`);
+          if (!jobRes.ok) break;
+          const job = (await jobRes.json()) as { state: string };
+          if (job.state === "completed" || job.state === "done") {
+            await refresh();
+            break;
+          }
+          if (job.state === "failed") break;
+        }
+      } catch (e) {
+        console.error("panel render request failed", e);
+      } finally {
+        setRenderingPanelIds((prev) => {
+          const next = new Set(prev);
+          next.delete(panelId);
+          return next;
+        });
       }
-    } catch (e) {
-      console.error('panel render request failed', e);
-    } finally {
-      setRenderingPanelIds((prev) => {
-        const next = new Set(prev);
-        next.delete(panelId);
-        return next;
-      });
-    }
-  }, [refresh]);
+    },
+    [refresh],
+  );
 
   // The selected chapter's stage (for render button visibility)
   const selectedChapterStage = useMemo(() => {
@@ -324,9 +334,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center text-destructive">
-        Error: {error}
-      </div>
+      <div className="flex h-full items-center justify-center text-destructive">Error: {error}</div>
     );
   }
 
@@ -376,8 +384,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
             <Button
               key={ch.id}
               size="sm"
-              variant={selectedChapterId === ch.id ? 'default' : 'outline'}
-              className={cn('h-7 px-2.5 text-xs shrink-0')}
+              variant={selectedChapterId === ch.id ? "default" : "outline"}
+              className={cn("h-7 px-2.5 text-xs shrink-0")}
               onClick={() => selectChapter(ch.id)}
             >
               {ch.index}. {ch.title}
@@ -385,28 +393,28 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           ))}
           <Button
             size="sm"
-            variant={selectedChapterId === null ? 'default' : 'outline'}
-            className={cn('h-7 px-2.5 text-xs shrink-0')}
+            variant={selectedChapterId === null ? "default" : "outline"}
+            className={cn("h-7 px-2.5 text-xs shrink-0")}
             onClick={() => selectChapter(null)}
           >
             All
           </Button>
           <div className="flex-1" />
-          {selectedChapterStage === 'ready_for_review' && (
+          {selectedChapterStage === "ready_for_review" && (
             <span className="text-xs text-muted-foreground shrink-0">
               Click Render on any panel →
             </span>
           )}
           <Button
             size="sm"
-            variant={showKnowledge ? 'default' : 'outline'}
+            variant={showKnowledge ? "default" : "outline"}
             className="h-7 shrink-0"
             onClick={() => setShowKnowledge(!showKnowledge)}
           >
             📖 KB
           </Button>
           <span className="text-xs text-muted-foreground shrink-0">
-            {filteredPages.length} page{filteredPages.length !== 1 ? 's' : ''}
+            {filteredPages.length} page{filteredPages.length !== 1 ? "s" : ""}
           </span>
         </div>
         <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
@@ -414,4 +422,3 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     </div>
   );
 }
-

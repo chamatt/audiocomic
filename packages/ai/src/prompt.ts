@@ -5,7 +5,7 @@ import type {
   WorldBible,
   CameraFraming,
   BoundingBox,
-} from '@audiocomic/domain';
+} from "@audiocomic/domain";
 
 // ============================================================================
 // Section memory builder — MangaFlow M_k = (d_k, R_scene, R_char, R_obj, φ)
@@ -51,15 +51,13 @@ export function buildSectionMemory(
 
   // Walk chain from chapter down to beat
   for (const sec of chain) {
-    const label =
-      sec.level === 'chapter' ? 'Chapter' :
-      sec.level === 'scene' ? 'Scene' : 'Beat';
+    const label = sec.level === "chapter" ? "Chapter" : sec.level === "scene" ? "Scene" : "Beat";
     if (sec.title) {
       lines.push(`${label}: ${sec.title} — ${sec.summary}`);
     } else {
       lines.push(`${label}: ${sec.summary}`);
     }
-    if (sec.emotionalTone !== 'neutral') {
+    if (sec.emotionalTone !== "neutral") {
       lines.push(`  tone: ${sec.emotionalTone}`);
     }
     // Characters present in this section (R_char component)
@@ -68,16 +66,16 @@ export function buildSectionMemory(
         .map((id) => charById.get(id)?.name)
         .filter((n): n is string => n !== undefined);
       if (charNames.length > 0) {
-        lines.push(`  characters: ${charNames.join(', ')}`);
+        lines.push(`  characters: ${charNames.join(", ")}`);
       }
     }
     // Objects (R_obj component)
     if (sec.objects.length > 0) {
-      lines.push(`  objects: ${sec.objects.join(', ')}`);
+      lines.push(`  objects: ${sec.objects.join(", ")}`);
     }
   }
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 // ============================================================================
@@ -85,14 +83,14 @@ export function buildSectionMemory(
 // ============================================================================
 
 const CAMERA_LABEL: Record<CameraFraming, string> = {
-  wide: 'wide establishing shot',
-  medium: 'medium shot',
-  'close-up': 'close-up shot',
-  'extreme-close-up': 'extreme close-up shot',
-  overhead: 'overhead/top-down shot',
-  'low-angle': 'low-angle shot',
-  pov: 'point-of-view shot',
-  establishing: 'establishing shot',
+  wide: "wide establishing shot",
+  medium: "medium shot",
+  "close-up": "close-up shot",
+  "extreme-close-up": "extreme close-up shot",
+  overhead: "overhead/top-down shot",
+  "low-angle": "low-angle shot",
+  pov: "point-of-view shot",
+  establishing: "establishing shot",
 };
 
 /**
@@ -125,7 +123,7 @@ export function composePanelPrompt(
     parts.push(`Art style: ${worldBible.artStyle}.`);
   }
   if (worldBible.colorPalette.length > 0) {
-    parts.push(`Color palette: ${worldBible.colorPalette.join(', ')}.`);
+    parts.push(`Color palette: ${worldBible.colorPalette.join(", ")}.`);
   }
   if (worldBible.tone) {
     parts.push(`Overall tone: ${worldBible.tone}.`);
@@ -154,19 +152,15 @@ export function composePanelPrompt(
 
   // --- Scene / beat summary ---
   const sectionLabel =
-    section.level === 'beat'
-      ? 'Beat'
-      : section.level === 'scene'
-        ? 'Scene'
-        : 'Chapter';
+    section.level === "beat" ? "Beat" : section.level === "scene" ? "Scene" : "Chapter";
   parts.push(`${sectionLabel} summary: ${section.summary}`);
-  if (section.emotionalTone !== 'neutral') {
+  if (section.emotionalTone !== "neutral") {
     parts.push(`Emotional tone: ${section.emotionalTone}.`);
   }
 
   // --- Key objects from the section (MangaFlow O_k) ---
   if (section.objects.length > 0) {
-    parts.push(`Key objects: ${section.objects.join(', ')}.`);
+    parts.push(`Key objects: ${section.objects.join(", ")}.`);
   }
 
   // --- Camera framing (panel override wins) ---
@@ -190,28 +184,24 @@ export function composePanelPrompt(
     if (slot.pose) bits.push(`pose: ${slot.pose}`);
     if (slot.position) bits.push(`placed ${slot.position}`);
     if (profile.paletteNotes.length > 0) {
-      bits.push(`palette: ${profile.paletteNotes.join(', ')}`);
+      bits.push(`palette: ${profile.paletteNotes.join(", ")}`);
     }
     if (profile.canonicalFaceRef) {
       bits.push(`face ref: ${profile.canonicalFaceRef}`);
     }
     if (profile.outfitRefs.length > 0) {
-      bits.push(`outfit refs: ${profile.outfitRefs.join(', ')}`);
+      bits.push(`outfit refs: ${profile.outfitRefs.join(", ")}`);
     }
-    charBlocks.push(bits.join('; '));
+    charBlocks.push(bits.join("; "));
   }
   if (charBlocks.length > 0) {
-    parts.push(`Characters: ${charBlocks.join(' | ')}`);
+    parts.push(`Characters: ${charBlocks.join(" | ")}`);
   }
 
   // --- Dialogue / narration (composition guidance, not rendered text) ---
   if (panel.dialogueLines.length > 0) {
-    const lines = panel.dialogueLines.map(
-      (l) => `${l.speaker} (${l.type}): "${l.text}"`,
-    );
-    parts.push(
-      `Leave speech-bubble/narration space for: ${lines.join(' ; ')}`,
-    );
+    const lines = panel.dialogueLines.map((l) => `${l.speaker} (${l.type}): "${l.text}"`);
+    parts.push(`Leave speech-bubble/narration space for: ${lines.join(" ; ")}`);
   }
 
   // --- Negative constraints ---
@@ -220,8 +210,8 @@ export function composePanelPrompt(
     ...characterRefs.flatMap((c) => c.negativeConstraints),
   ];
   if (negatives.length > 0) {
-    parts.push(`Avoid: ${negatives.join(', ')}`);
+    parts.push(`Avoid: ${negatives.join(", ")}`);
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 }

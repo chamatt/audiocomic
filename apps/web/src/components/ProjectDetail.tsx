@@ -1,21 +1,35 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useEffect, useState, useCallback } from "react";
+import type {
+  Project,
+  PageSpec,
+  PanelSpec,
+  StorySection,
+  CharacterProfile,
+  WorldBible,
+  ExportBundle,
+  JobRecord,
+} from "@audiocomic/domain";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Pause, RefreshCw,
-  AlertCircle, CheckCircle2, Clock, Loader2, SkipForward,
-} from 'lucide-react';
-import { CanvasTab } from '@/components/canvas/CanvasTab';
-import { ChapterBoard } from '@/components/ChapterBoard';
-import { useCanvasStore } from '@/stores/canvas-store';
+  Pause,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  SkipForward,
+} from "lucide-react";
+import { CanvasTab } from "@/components/canvas/CanvasTab";
+import { ChapterBoard } from "@/components/ChapterBoard";
+import { useCanvasStore } from "@/stores/canvas-store";
 
 export interface ProjectDetailData {
   project: Project;
@@ -37,15 +51,18 @@ interface Props {
 // Status helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_CONFIG: Record<string, { variant: 'default' | 'destructive' | 'success' | 'warning' | 'outline'; icon: typeof Clock }> = {
-  pending: { variant: 'outline', icon: Clock },
-  running: { variant: 'warning', icon: Loader2 },
-  paused: { variant: 'default', icon: Pause },
-  completed: { variant: 'success', icon: CheckCircle2 },
-  failed: { variant: 'destructive', icon: AlertCircle },
-  skipped: { variant: 'outline', icon: SkipForward },
-  stale: { variant: 'warning', icon: RefreshCw },
-  idle: { variant: 'outline', icon: Clock },
+const STATUS_CONFIG: Record<
+  string,
+  { variant: "default" | "destructive" | "success" | "warning" | "outline"; icon: typeof Clock }
+> = {
+  pending: { variant: "outline", icon: Clock },
+  running: { variant: "warning", icon: Loader2 },
+  paused: { variant: "default", icon: Pause },
+  completed: { variant: "success", icon: CheckCircle2 },
+  failed: { variant: "destructive", icon: AlertCircle },
+  skipped: { variant: "outline", icon: SkipForward },
+  stale: { variant: "warning", icon: RefreshCw },
+  idle: { variant: "outline", icon: Clock },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -53,13 +70,11 @@ function StatusBadge({ status }: { status: string }) {
   const Icon = config.icon;
   return (
     <Badge variant={config.variant} className="gap-1.5">
-      <Icon className={cn('h-3 w-3', status === 'running' && 'animate-spin')} />
+      <Icon className={cn("h-3 w-3", status === "running" && "animate-spin")} />
       {status}
     </Badge>
   );
 }
-
-
 
 interface WikiPageEntry {
   id: string;
@@ -69,21 +84,20 @@ interface WikiPageEntry {
   confidence: number;
 }
 
-
 // ---------------------------------------------------------------------------
 // Knowledge tab
 // ---------------------------------------------------------------------------
 
 const WIKI_TYPE_LABELS: Record<string, string> = {
-  character: 'Characters',
-  location: 'Locations',
-  object: 'Objects',
-  concept: 'Concepts',
-  event: 'Events',
-  timeline: 'Timeline',
+  character: "Characters",
+  location: "Locations",
+  object: "Objects",
+  concept: "Concepts",
+  event: "Events",
+  timeline: "Timeline",
 };
 
-const WIKI_TYPE_ORDER = ['character', 'location', 'object', 'concept', 'event', 'timeline'];
+const WIKI_TYPE_ORDER = ["character", "location", "object", "concept", "event", "timeline"];
 
 function KnowledgeTab({
   projectId,
@@ -107,16 +121,18 @@ function KnowledgeTab({
         const data = await res.json();
         setWikiPages(data.wikiPages ?? []);
       } else {
-        setWikiError('Failed to load knowledge base');
+        setWikiError("Failed to load knowledge base");
       }
       setWikiLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   // Group wiki pages by type
   const grouped = wikiPages.reduce<Record<string, WikiPageEntry[]>>((acc, page) => {
-    const type = page.type in WIKI_TYPE_LABELS ? page.type : 'other';
+    const type = page.type in WIKI_TYPE_LABELS ? page.type : "other";
     (acc[type] ??= []).push(page);
     return acc;
   }, {});
@@ -130,7 +146,9 @@ function KnowledgeTab({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Characters</CardTitle>
-          <CardDescription>{characters.length} character{characters.length === 1 ? '' : 's'} in the bible</CardDescription>
+          <CardDescription>
+            {characters.length} character{characters.length === 1 ? "" : "s"} in the bible
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {characters.length === 0 ? (
@@ -140,10 +158,12 @@ function KnowledgeTab({
               <div key={c.id} className="flex flex-col gap-1 pb-3 border-b last:border-0 last:pb-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-sm">{c.name}</span>
-                  <Badge variant="outline" className="capitalize text-xs">{c.role}</Badge>
+                  <Badge variant="outline" className="capitalize text-xs">
+                    {c.role}
+                  </Badge>
                 </div>
                 {c.aliases.length > 0 && (
-                  <p className="text-xs text-muted-foreground">Aliases: {c.aliases.join(', ')}</p>
+                  <p className="text-xs text-muted-foreground">Aliases: {c.aliases.join(", ")}</p>
                 )}
                 <p className="text-sm text-muted-foreground">{c.description}</p>
               </div>
@@ -167,7 +187,7 @@ function KnowledgeTab({
             {worldBible.genre.length > 0 && (
               <div>
                 <span className="font-medium">Genre: </span>
-                <span className="text-muted-foreground">{worldBible.genre.join(', ')}</span>
+                <span className="text-muted-foreground">{worldBible.genre.join(", ")}</span>
               </div>
             )}
             {worldBible.tone && (
@@ -201,7 +221,9 @@ function KnowledgeTab({
         <CardHeader>
           <CardTitle className="text-base">Wiki Pages</CardTitle>
           <CardDescription>
-            {wikiLoading ? 'Loading…' : `${wikiPages.length} page${wikiPages.length === 1 ? '' : 's'} from the knowledge base`}
+            {wikiLoading
+              ? "Loading…"
+              : `${wikiPages.length} page${wikiPages.length === 1 ? "" : "s"} from the knowledge base`}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -209,7 +231,9 @@ function KnowledgeTab({
             <p className="text-sm text-destructive">Failed to load wiki: {wikiError}</p>
           )}
           {!wikiLoading && wikiPages.length === 0 && !wikiError && (
-            <p className="text-sm text-muted-foreground">No wiki pages yet. They appear after chapter knowledge is ingested.</p>
+            <p className="text-sm text-muted-foreground">
+              No wiki pages yet. They appear after chapter knowledge is ingested.
+            </p>
           )}
           {groupKeys.map((type) => (
             <div key={type} className="flex flex-col gap-2">
@@ -226,7 +250,9 @@ function KnowledgeTab({
                       </Badge>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{page.content}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {page.content}
+                  </p>
                 </div>
               ))}
             </div>
@@ -243,7 +269,7 @@ function KnowledgeTab({
 
 export function ProjectDetail({ projectId, initialProject, initialDetail }: Props) {
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
-  const [activeTab, setActiveTab] = useState<string>('canvas');
+  const [activeTab, setActiveTab] = useState<string>("canvas");
   const project = detail.project;
   const { selectChapter } = useCanvasStore();
 
@@ -255,19 +281,26 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
         const data = await res.json();
         setDetail(data.detail);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [projectId]);
 
   // --- Lazy actor init ---
   useEffect(() => {
-    fetch(`/api/projects/${projectId}/setup`, { method: 'POST' }).catch(() => { /* non-fatal */ });
+    fetch(`/api/projects/${projectId}/setup`, { method: "POST" }).catch(() => {
+      /* non-fatal */
+    });
   }, [projectId]);
 
   // --- Chapter review handler: switch to canvas tab + set selected chapter ---
-  const handleChapterReview = useCallback((chapterId: string) => {
-    selectChapter(chapterId);
-    setActiveTab('canvas');
-  }, [selectChapter]);
+  const handleChapterReview = useCallback(
+    (chapterId: string) => {
+      selectChapter(chapterId);
+      setActiveTab("canvas");
+    },
+    [selectChapter],
+  );
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -278,9 +311,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
             <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
             <StatusBadge status={project.status} />
           </div>
-          <p className="text-sm text-muted-foreground">
-            {project.description ?? 'No description'}
-          </p>
+          <p className="text-sm text-muted-foreground">{project.description ?? "No description"}</p>
           <p className="text-xs text-muted-foreground capitalize">{project.modality}</p>
         </div>
       </div>
@@ -303,12 +334,14 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           <CanvasTab projectId={projectId} />
         </TabsContent>
 
-
         {/* Knowledge tab */}
         <TabsContent value="knowledge">
-          <KnowledgeTab projectId={projectId} characters={detail.characters} worldBible={detail.worldBible} />
+          <KnowledgeTab
+            projectId={projectId}
+            characters={detail.characters}
+            worldBible={detail.worldBible}
+          />
         </TabsContent>
-
 
         {/* Settings tab */}
         <TabsContent value="settings">
@@ -324,7 +357,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Description</Label>
-                  <Input value={project.description ?? ''} readOnly />
+                  <Input value={project.description ?? ""} readOnly />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Modality</Label>
@@ -336,25 +369,33 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Provider Settings</CardTitle>
-                <CardDescription>LLM, transcription, and image rendering configuration</CardDescription>
+                <CardDescription>
+                  LLM, transcription, and image rendering configuration
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <Label>LLM Model</Label>
-                    <Input value={project.providerSettings?.llmModel ?? 'default'} readOnly />
+                    <Input value={project.providerSettings?.llmModel ?? "default"} readOnly />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label>Image Model</Label>
-                    <Input value={project.providerSettings?.imageModel ?? 'default'} readOnly />
+                    <Input value={project.providerSettings?.imageModel ?? "default"} readOnly />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label>Renderer</Label>
-                    <Input value={project.providerSettings?.rendererBackend ?? 'default'} readOnly />
+                    <Input
+                      value={project.providerSettings?.rendererBackend ?? "default"}
+                      readOnly
+                    />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label>Transcription</Label>
-                    <Input value={project.providerSettings?.transcriptionProvider ?? 'default'} readOnly />
+                    <Input
+                      value={project.providerSettings?.transcriptionProvider ?? "default"}
+                      readOnly
+                    />
                   </div>
                 </div>
               </CardContent>

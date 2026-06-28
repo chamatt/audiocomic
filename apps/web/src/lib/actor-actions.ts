@@ -1,7 +1,15 @@
-'use server';
+"use server";
 
 import { Effect } from "effect";
-import { runWithClient, fileRegistryClient, bibleClient, projectClient, pipelineClient, chapterClient, knowledgeBaseClient } from "@/lib/rivet-client";
+import {
+  runWithClient,
+  fileRegistryClient,
+  bibleClient,
+  projectClient,
+  pipelineClient,
+  chapterClient,
+  knowledgeBaseClient,
+} from "@/lib/rivet-client";
 import { logger } from "@audiocomic/shared";
 import type {
   ProjectConfig,
@@ -30,7 +38,10 @@ async function run<T>(program: Effect.Effect<T, unknown, unknown>): Promise<Acto
 // Project actor
 // ============================================================================
 
-export async function createProjectActor(name: string, description: string): Promise<ActorResult<{ key: string; config: ProjectConfig }>> {
+export async function createProjectActor(
+  name: string,
+  description: string,
+): Promise<ActorResult<{ key: string; config: ProjectConfig }>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -53,7 +64,10 @@ export async function getProjectConfigActor(key: string): Promise<ActorResult<Pr
   );
 }
 
-export async function linkBibleActor(projectKey: string, bibleId: string): Promise<ActorResult<ProjectConfig>> {
+export async function linkBibleActor(
+  projectKey: string,
+  bibleId: string,
+): Promise<ActorResult<ProjectConfig>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -63,7 +77,10 @@ export async function linkBibleActor(projectKey: string, bibleId: string): Promi
   );
 }
 
-export async function addPipelineToProjectActor(projectKey: string, pipelineId: string): Promise<ActorResult<ProjectConfig>> {
+export async function addPipelineToProjectActor(
+  projectKey: string,
+  pipelineId: string,
+): Promise<ActorResult<ProjectConfig>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -92,7 +109,10 @@ export async function registerFileActor(
   );
 }
 
-export async function listFilesActor(tag?: string, projectId?: string): Promise<ActorResult<readonly FileMetadata[]>> {
+export async function listFilesActor(
+  tag?: string,
+  projectId?: string,
+): Promise<ActorResult<readonly FileMetadata[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* fileRegistryClient;
@@ -106,7 +126,10 @@ export async function listFilesActor(tag?: string, projectId?: string): Promise<
 // Bible actor
 // ============================================================================
 
-export async function createBibleActor(title: string, lore: string): Promise<ActorResult<{ key: string; content: BibleContent }>> {
+export async function createBibleActor(
+  title: string,
+  lore: string,
+): Promise<ActorResult<{ key: string; content: BibleContent }>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* bibleClient;
@@ -128,7 +151,11 @@ export async function getBibleContentActor(key: string): Promise<ActorResult<Bib
   );
 }
 
-export async function addCharacterActor(bibleKey: string, name: string, description: string): Promise<ActorResult<BibleContent>> {
+export async function addCharacterActor(
+  bibleKey: string,
+  name: string,
+  description: string,
+): Promise<ActorResult<BibleContent>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* bibleClient;
@@ -151,7 +178,10 @@ export type AddStepInput = {
   pauseAfter?: boolean;
 };
 
-export async function addPipelineStepActor(pipelineKey: string, step: AddStepInput): Promise<ActorResult<readonly StepState[]>> {
+export async function addPipelineStepActor(
+  pipelineKey: string,
+  step: AddStepInput,
+): Promise<ActorResult<readonly StepState[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -161,7 +191,10 @@ export async function addPipelineStepActor(pipelineKey: string, step: AddStepInp
   );
 }
 
-export async function removePipelineStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<readonly StepState[]>> {
+export async function removePipelineStepActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<readonly StepState[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -175,7 +208,9 @@ export async function removePipelineStepActor(pipelineKey: string, stepId: strin
 // Pipeline actor — lifecycle
 // ============================================================================
 
-export async function startPipelineActor(pipelineKey: string): Promise<ActorResult<PipelineStatus>> {
+export async function startPipelineActor(
+  pipelineKey: string,
+): Promise<ActorResult<PipelineStatus>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -185,7 +220,9 @@ export async function startPipelineActor(pipelineKey: string): Promise<ActorResu
   );
 }
 
-export async function pausePipelineActor(pipelineKey: string): Promise<ActorResult<PipelineStatus>> {
+export async function pausePipelineActor(
+  pipelineKey: string,
+): Promise<ActorResult<PipelineStatus>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -195,7 +232,9 @@ export async function pausePipelineActor(pipelineKey: string): Promise<ActorResu
   );
 }
 
-export async function resumePipelineActor(pipelineKey: string): Promise<ActorResult<PipelineStatus>> {
+export async function resumePipelineActor(
+  pipelineKey: string,
+): Promise<ActorResult<PipelineStatus>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -205,7 +244,10 @@ export async function resumePipelineActor(pipelineKey: string): Promise<ActorRes
   );
 }
 
-export async function retryStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<StepState>> {
+export async function retryStepActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<StepState>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -215,7 +257,10 @@ export async function retryStepActor(pipelineKey: string, stepId: string): Promi
   );
 }
 
-export async function skipStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<StepState>> {
+export async function skipStepActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<StepState>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -229,7 +274,9 @@ export async function skipStepActor(pipelineKey: string, stepId: string): Promis
 // Pipeline actor — status + cron
 // ============================================================================
 
-export async function getPipelineStatusActor(pipelineKey: string): Promise<ActorResult<PipelineState>> {
+export async function getPipelineStatusActor(
+  pipelineKey: string,
+): Promise<ActorResult<PipelineState>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -239,7 +286,10 @@ export async function getPipelineStatusActor(pipelineKey: string): Promise<Actor
   );
 }
 
-export async function schedulePipelineActor(pipelineKey: string, intervalMs: number): Promise<ActorResult<CronSchedule>> {
+export async function schedulePipelineActor(
+  pipelineKey: string,
+  intervalMs: number,
+): Promise<ActorResult<CronSchedule>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* pipelineClient;
@@ -263,51 +313,69 @@ export async function cancelScheduleActor(pipelineKey: string): Promise<ActorRes
 // Pipeline actor — single-step operations
 // ============================================================================
 
-export async function runStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<StepState>> {
-	return run(
-		Effect.gen(function* () {
-			const accessor = yield* pipelineClient;
-			const handle = accessor.getOrCreate(pipelineKey);
-			return yield* handle.RunStep({ stepId });
-		}),
-	);
+export async function runStepActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<StepState>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* pipelineClient;
+      const handle = accessor.getOrCreate(pipelineKey);
+      return yield* handle.RunStep({ stepId });
+    }),
+  );
 }
 
-export async function getStepResultActor(pipelineKey: string, stepId: string): Promise<ActorResult<unknown>> {
-	return run(
-		Effect.gen(function* () {
-			const accessor = yield* pipelineClient;
-			const handle = accessor.getOrCreate(pipelineKey);
-			return yield* handle.GetStepResult({ stepId });
-		}),
-	);
+export async function getStepResultActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* pipelineClient;
+      const handle = accessor.getOrCreate(pipelineKey);
+      return yield* handle.GetStepResult({ stepId });
+    }),
+  );
 }
 
-export async function getStepLogsActor(pipelineKey: string, stepId: string): Promise<ActorResult<readonly unknown[]>> {
-	return run(
-		Effect.gen(function* () {
-			const accessor = yield* pipelineClient;
-			const handle = accessor.getOrCreate(pipelineKey);
-			return yield* handle.GetStepLogs({ stepId });
-		}),
-	);
+export async function getStepLogsActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* pipelineClient;
+      const handle = accessor.getOrCreate(pipelineKey);
+      return yield* handle.GetStepLogs({ stepId });
+    }),
+  );
 }
 
-export async function invalidateStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<readonly StepState[]>> {
-	return run(
-		Effect.gen(function* () {
-			const accessor = yield* pipelineClient;
-			const handle = accessor.getOrCreate(pipelineKey);
-			return yield* handle.InvalidateStep({ stepId });
-		}),
-	);
+export async function invalidateStepActor(
+  pipelineKey: string,
+  stepId: string,
+): Promise<ActorResult<readonly StepState[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* pipelineClient;
+      const handle = accessor.getOrCreate(pipelineKey);
+      return yield* handle.InvalidateStep({ stepId });
+    }),
+  );
 }
 
 // ============================================================================
 // Chapter actor
 // ============================================================================
 
-export async function createChapterActor(chapterId: string, projectId: string, index: number, title: string, description?: string): Promise<ActorResult<unknown>> {
+export async function createChapterActor(
+  chapterId: string,
+  projectId: string,
+  index: number,
+  title: string,
+  description?: string,
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
@@ -357,7 +425,10 @@ export async function getChapterStateActor(chapterId: string): Promise<ActorResu
   );
 }
 
-export async function linkChapterAssetActor(chapterId: string, sourceAssetId: string): Promise<ActorResult<unknown>> {
+export async function linkChapterAssetActor(
+  chapterId: string,
+  sourceAssetId: string,
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
@@ -367,7 +438,11 @@ export async function linkChapterAssetActor(chapterId: string, sourceAssetId: st
   );
 }
 
-export async function startChapterTranscriptionActor(chapterId: string, projectId?: string, index?: number): Promise<ActorResult<unknown>> {
+export async function startChapterTranscriptionActor(
+  chapterId: string,
+  projectId?: string,
+  index?: number,
+): Promise<ActorResult<unknown>> {
   log.info("starting transcription", { chapterId, projectId, index });
   return run(
     Effect.gen(function* () {
@@ -385,21 +460,38 @@ export async function startChapterTranscriptionActor(chapterId: string, projectI
   );
 }
 
-export async function startChapterIngestActor(chapterId: string): Promise<ActorResult<unknown>> {
+export async function startChapterIngestActor(
+  chapterId: string,
+  projectId?: string,
+  index?: number,
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
       const handle = accessor.getOrCreate(chapterId);
+      // Ensure actor state is initialized (id/projectId/index).
+      // On a fresh engine (no persisted state), getOrCreate returns an actor
+      // with empty state — Init must be called before StartIngest.
+      if (projectId && index !== undefined) {
+        yield* handle.Init({ id: chapterId, projectId, index }).pipe(Effect.ignore);
+      }
       return yield* handle.StartIngest(undefined);
     }),
   );
 }
 
-export async function startChapterPlanActor(chapterId: string): Promise<ActorResult<unknown>> {
+export async function startChapterPlanActor(
+  chapterId: string,
+  projectId?: string,
+  index?: number,
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
       const handle = accessor.getOrCreate(chapterId);
+      if (projectId && index !== undefined) {
+        yield* handle.Init({ id: chapterId, projectId, index }).pipe(Effect.ignore);
+      }
       return yield* handle.StartPlan(undefined);
     }),
   );
@@ -425,7 +517,11 @@ export async function startChapterComposeActor(chapterId: string): Promise<Actor
   );
 }
 
-export async function setChapterStageActor(chapterId: string, stage: string, progress?: { current: number; total: number; detail?: string }): Promise<ActorResult<unknown>> {
+export async function setChapterStageActor(
+  chapterId: string,
+  stage: string,
+  progress?: { current: number; total: number; detail?: string },
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
@@ -435,7 +531,12 @@ export async function setChapterStageActor(chapterId: string, stage: string, pro
   );
 }
 
-export async function addChapterToProjectActor(projectKey: string, chapterId: string, title: string, index: number): Promise<ActorResult<ProjectConfig>> {
+export async function addChapterToProjectActor(
+  projectKey: string,
+  chapterId: string,
+  title: string,
+  index: number,
+): Promise<ActorResult<ProjectConfig>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -445,7 +546,9 @@ export async function addChapterToProjectActor(projectKey: string, chapterId: st
   );
 }
 
-export async function listChaptersActor(projectKey: string): Promise<ActorResult<readonly unknown[]>> {
+export async function listChaptersActor(
+  projectKey: string,
+): Promise<ActorResult<readonly unknown[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -455,7 +558,10 @@ export async function listChaptersActor(projectKey: string): Promise<ActorResult
   );
 }
 
-export async function removeChapterFromProjectActor(projectKey: string, chapterId: string): Promise<ActorResult<ProjectConfig>> {
+export async function removeChapterFromProjectActor(
+  projectKey: string,
+  chapterId: string,
+): Promise<ActorResult<ProjectConfig>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -465,7 +571,10 @@ export async function removeChapterFromProjectActor(projectKey: string, chapterI
   );
 }
 
-export async function reorderChaptersActor(projectKey: string, chapterIds: string[]): Promise<ActorResult<ProjectConfig>> {
+export async function reorderChaptersActor(
+  projectKey: string,
+  chapterIds: string[],
+): Promise<ActorResult<ProjectConfig>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* projectClient;
@@ -479,7 +588,9 @@ export async function reorderChaptersActor(projectKey: string, chapterIds: strin
 // Bible actor — temporal tracking + wiki
 // ============================================================================
 
-export async function getBibleWikiActor(bibleKey: string): Promise<ActorResult<readonly unknown[]>> {
+export async function getBibleWikiActor(
+  bibleKey: string,
+): Promise<ActorResult<readonly unknown[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* bibleClient;
@@ -489,7 +600,10 @@ export async function getBibleWikiActor(bibleKey: string): Promise<ActorResult<r
   );
 }
 
-export async function getCharacterTimelineActor(bibleKey: string, characterId: string): Promise<ActorResult<readonly unknown[]>> {
+export async function getCharacterTimelineActor(
+  bibleKey: string,
+  characterId: string,
+): Promise<ActorResult<readonly unknown[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* bibleClient;
@@ -503,7 +617,10 @@ export async function getCharacterTimelineActor(bibleKey: string, characterId: s
 // KnowledgeBase actor — embeddings, RAG, wiki
 // ============================================================================
 
-export async function ingestChapterKnowledgeActor(projectKey: string, chapterId: string): Promise<ActorResult<unknown>> {
+export async function ingestChapterKnowledgeActor(
+  projectKey: string,
+  chapterId: string,
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* knowledgeBaseClient;
@@ -513,7 +630,9 @@ export async function ingestChapterKnowledgeActor(projectKey: string, chapterId:
   );
 }
 
-export async function getKnowledgeBaseStatusActor(projectKey: string): Promise<ActorResult<unknown>> {
+export async function getKnowledgeBaseStatusActor(
+  projectKey: string,
+): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* knowledgeBaseClient;
@@ -523,7 +642,11 @@ export async function getKnowledgeBaseStatusActor(projectKey: string): Promise<A
   );
 }
 
-export async function queryKnowledgeBaseActor(projectKey: string, query: string, topK?: number): Promise<ActorResult<readonly unknown[]>> {
+export async function queryKnowledgeBaseActor(
+  projectKey: string,
+  query: string,
+  topK?: number,
+): Promise<ActorResult<readonly unknown[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* knowledgeBaseClient;
@@ -533,7 +656,9 @@ export async function queryKnowledgeBaseActor(projectKey: string, query: string,
   );
 }
 
-export async function getKnowledgeWikiActor(projectKey: string): Promise<ActorResult<readonly unknown[]>> {
+export async function getKnowledgeWikiActor(
+  projectKey: string,
+): Promise<ActorResult<readonly unknown[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* knowledgeBaseClient;
@@ -553,7 +678,10 @@ export async function lintKnowledgeWikiActor(projectKey: string): Promise<ActorR
   );
 }
 
-export async function getKnowledgeCharacterTimelineActor(projectKey: string, characterId: string): Promise<ActorResult<readonly unknown[]>> {
+export async function getKnowledgeCharacterTimelineActor(
+  projectKey: string,
+  characterId: string,
+): Promise<ActorResult<readonly unknown[]>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* knowledgeBaseClient;

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { PanelSpec, PageSpec, LetteringBox } from '@audiocomic/domain';
+import { useCallback, useEffect, useState } from "react";
+import type { PanelSpec, PageSpec, LetteringBox } from "@audiocomic/domain";
 
 export interface CanvasPage extends PageSpec {
   panels: PanelSpec[];
@@ -33,7 +33,7 @@ export function useCanvasData(projectId: string): CanvasData {
       setPages(data.pages ?? []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -47,9 +47,7 @@ export function useCanvasData(projectId: string): CanvasData {
     setPages((prev) =>
       prev.map((page) => ({
         ...page,
-        panels: page.panels.map((p) =>
-          p.id === panelId ? { ...p, ...patch } : p,
-        ),
+        panels: page.panels.map((p) => (p.id === panelId ? { ...p, ...patch } : p)),
       })),
     );
   }, []);
@@ -59,9 +57,7 @@ export function useCanvasData(projectId: string): CanvasData {
       setPages((prev) =>
         prev.map((page) => ({
           ...page,
-          panels: page.panels.map((p) =>
-            p.id === panelId ? { ...p, bbox } : p,
-          ),
+          panels: page.panels.map((p) => (p.id === panelId ? { ...p, bbox } : p)),
         })),
       );
     },
@@ -70,25 +66,25 @@ export function useCanvasData(projectId: string): CanvasData {
 
   const updateLettering = useCallback((pageId: string, boxes: LetteringBox[]) => {
     setPages((prev) =>
-      prev.map((page) =>
-        page.id === pageId ? { ...page, lettering: boxes } : page,
-      ),
+      prev.map((page) => (page.id === pageId ? { ...page, lettering: boxes } : page)),
     );
   }, []);
-  const addPage = useCallback(async (chapterId?: string) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/pages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterId }),
-      });
-      if (!res.ok) throw new Error(`Failed to create page: ${res.status}`);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add page');
-    }
-  }, [projectId, refresh]);
-
+  const addPage = useCallback(
+    async (chapterId?: string) => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/pages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chapterId }),
+        });
+        if (!res.ok) throw new Error(`Failed to create page: ${res.status}`);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to add page");
+      }
+    },
+    [projectId, refresh],
+  );
 
   return {
     pages,

@@ -1,12 +1,9 @@
-import { getRepo } from '@/lib/db';
-import { logger } from '@audiocomic/shared';
+import { getRepo } from "@/lib/db";
+import { logger } from "@audiocomic/shared";
 
-const log = logger.scoped('api:pages');
+const log = logger.scoped("api:pages");
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
     const repo = await getRepo();
@@ -46,18 +43,15 @@ export async function GET(
 
     return Response.json({ pages: pagesWithPanels });
   } catch (err) {
-    log.error('Failed to list pages', { error: err instanceof Error ? err.message : String(err) });
-    return Response.json({ error: 'Failed to list pages' }, { status: 500 });
+    log.error("Failed to list pages", { error: err instanceof Error ? err.message : String(err) });
+    return Response.json({ error: "Failed to list pages" }, { status: 500 });
   }
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await params;
   try {
-    const body = await request.json().catch(() => ({})) as { chapterId?: string };
+    const body = (await request.json().catch(() => ({}))) as { chapterId?: string };
     const repo = await getRepo();
 
     // Determine the next page index
@@ -80,7 +74,7 @@ export async function POST(
 
     return Response.json({ page }, { status: 201 });
   } catch (err) {
-    log.error('Failed to create page', { error: err instanceof Error ? err.message : String(err) });
-    return Response.json({ error: 'Failed to create page' }, { status: 500 });
+    log.error("Failed to create page", { error: err instanceof Error ? err.message : String(err) });
+    return Response.json({ error: "Failed to create page" }, { status: 500 });
   }
 }

@@ -1,11 +1,11 @@
 {
   "name": "audiocomic",
   "private": true,
-  "type": "module",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
+  "type": "module",
   "scripts": {
     "db:up": "docker-compose up -d postgres",
     "db:down": "docker-compose down",
@@ -19,20 +19,22 @@
     "seed": "bun run --filter @audiocomic/workflows seed",
     "cli": "bun run --filter @audiocomic/workflows cli",
     "worker": "bun run --filter @audiocomic/workflows worker",
+    "format": "oxfmt --write .",
     "lint": "bun run --filter '*' lint"
   },
   "devDependencies": {
+    "@effect/platform-node": "4.0.0-beta.66",
+    "@rivetkit/effect": "^2.3.2",
     "@types/bun": "^1.3.14",
     "@types/node": "^22.10.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^11.0.0",
-    "prettier": "^3.4.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
     "effect": "4.0.0-beta.66",
-    "@rivetkit/effect": "^2.3.2",
-    "@effect/platform-node": "4.0.0-beta.66",
-    "rivetkit": "^2.3.2"
+    "oxfmt": "^0.56.0",
+    "prettier": "^3.4.0",
+    "rivetkit": "^2.3.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
   },
   "engines": {
     "bun": ">=1.3.0"
