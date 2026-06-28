@@ -1,61 +1,75 @@
 import { Effect } from "effect";
+import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
-import { getPrevResult, isNormalizeResult, isTranscribeResult } from "./helpers.ts";
-import type { TranscriptChunk } from "@audiocomic/domain";
 
 /**
- * Segment — joins per-chunk transcripts from the transcribe step into a single
- * text stream for downstream story planning. In text modality (transcribe
- * produced no chunks), falls back to the normalized text content.
+ * Segment — gathers all chapter transcriptions from the database and
+ * joins them into a single text stream for downstream story planning.
  *
- * Depends on: transcribe (audio) or normalize (text)
- * Output: `{ step, status, fullText, chunkCount }`
+ * Chapters are transcribed independently on upload (ChapterActor), so
+ * this step reads from the `transcript_chunks` table rather than from
+ * a preceding transcribe/normalize step.
+ *
+ * Depends on: ingest_knowledge (ensures embeddings/wiki are built first)
+ * Output: `{ step, status, fullText, chunkCount, chapterCount }`
  * No DB writes — pure text assembly.
  */
 
-/** Type guard: a transcribe chunk must carry a string `text` field. */
-function isTranscriptChunk(v: unknown): v is TranscriptChunk {
-	return typeof v === "object" && v !== null && "text" in v && typeof (v as Record<string, unknown>).text === "string";
+export interface SegmentResult {
+	step: "segment";
+	status: "completed";
+	fullText: string;
+	chunkCount: number;
+	chapterCount: number;
 }
 
 export const SegmentStep: StepExecutor = {
 	type: "segment",
-	inputs: ["transcribe", "normalize"],
+	inputs: ["ingest_knowledge"],
 	outputs: ["segment"],
 	execute: (ctx: StepContext): Effect.Effect<StepOutput, Error, unknown> =>
 		Effect.gen(function* () {
-			const transcribeResult = getPrevResult(ctx, "transcribe", isTranscribeResult);
-			const chunks = transcribeResult.chunks;
-			const chunkCount = chunks.length;
+			const bridge = yield* PipelineBridge;
 
-			let fullText: string;
+			// Fetch all transcript chunks for this project from DB.
+			const chunks = yield* Effect.tryPromise({
+				try: () => bridge.repo.transcriptChunks.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
 
-			if (chunkCount > 0) {
-				// Audio modality: join per-chunk transcripts into one text stream.
-				const texts: string[] = [];
-				for (const chunk of chunks) {
-					if (!isTranscriptChunk(chunk)) {
-						return yield* Effect.fail(
-							new Error("segment: transcribe chunk missing string 'text' field"),
-						);
-					}
-					texts.push(chunk.text);
-				}
-				fullText = texts.join(" ");
-			} else {
-				// Text modality: transcribe produced no chunks; fall back to the
-				// normalized text content from the normalize step.
-				const normalizeResult = getPrevResult(ctx, "normalize", isNormalizeResult);
-				if (!normalizeResult.textContent) {
-					return yield* Effect.fail(
-						new Error("segment: no chunks from transcribe and no textContent from normalize"),
-					);
-				}
-				fullText = normalizeResult.textContent;
+			if (chunks.length === 0) {
+				return yield* Effect.fail(
+					new Error("segment: no transcript chunks found — upload and transcribe chapters first"),
+				);
 			}
 
+			// Group chunks by chapter, sort by chapter index then chunk index.
+			const chapters = yield* Effect.tryPromise({
+				try: () => bridge.repo.chapters.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+
+			const chapterOrder = new Map(chapters.map((c) => [c.id, c.index]));
+
+			const sorted = [...chunks].sort((a, b) => {
+				const aOrder = chapterOrder.get(a.chapterId ?? "") ?? 0;
+				const bOrder = chapterOrder.get(b.chapterId ?? "") ?? 0;
+				if (aOrder !== bOrder) return aOrder - bOrder;
+				return (a.index ?? 0) - (b.index ?? 0);
+			});
+
+			const texts: string[] = [];
+			for (const chunk of sorted) {
+				if (typeof chunk.text === "string" && chunk.text.length > 0) {
+					texts.push(chunk.text);
+				}
+			}
+
+			const fullText = texts.join("\n\n");
+			const chapterCount = new Set(chunks.map((c) => c.chapterId)).size;
+
 			yield* Effect.logInfo(
-				`segment: joined ${chunkCount} chunks into ${fullText.length} chars of text`,
+				`segment: joined ${chunks.length} chunks from ${chapterCount} chapters into ${fullText.length} chars`,
 			);
 
 			return {
@@ -64,10 +78,11 @@ export const SegmentStep: StepExecutor = {
 					step: "segment" as const,
 					status: "completed" as const,
 					fullText,
-					chunkCount,
-				},
-				summary: `Segmented: ${chunkCount} chunks, ${fullText.length} chars`,
-			};
+					chunkCount: chunks.length,
+					chapterCount,
+				} satisfies SegmentResult,
+				summary: `${chunks.length} chunks, ${chapterCount} chapters, ${fullText.length} chars`,
+			} satisfies StepOutput;
 		}),
 };
 

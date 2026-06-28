@@ -5,8 +5,6 @@ import {
 	getPrevResult,
 	isComposePagesResult,
 	isPlanPagesResult,
-	isTranscribeResult,
-	isNormalizeResult,
 } from "./helpers.ts";
 import { uuid, nowIso, exportKey } from "@audiocomic/shared";
 import type {
@@ -53,7 +51,7 @@ const isPageLike = (v: unknown): v is PageSpec =>
 
 export const ExportMotionStep: StepExecutor = {
 	type: "export_motion",
-	inputs: ["compose_pages", "plan_pages", "transcribe", "normalize"],
+	inputs: ["compose_pages", "plan_pages"],
 	outputs: ["export_motion"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
@@ -69,15 +67,6 @@ export const ExportMotionStep: StepExecutor = {
 				try: async () => getPrevResult(ctx, "plan_pages", isPlanPagesResult),
 				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
 			});
-			// transcribe provides timing context; its chunks are read for
-			// duration data but the timeline itself is derived from panel specs.
-			const transcribe = yield* Effect.tryPromise({
-				try: async () => getPrevResult(ctx, "transcribe", isTranscribeResult),
-				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
-			});
-			// Reference chunks so the transcribe result is validated as consumed;
-			// timing is sourced from panel.startSec/endSec when present.
-			const _chunks = transcribe.chunks;
 
 			// Narrow the plan_pages pages/panels arrays safely.
 			const pages: PageSpec[] = [];
@@ -160,13 +149,10 @@ export const ExportMotionStep: StepExecutor = {
 				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
 			});
 
-			// Read the normalize result for the audio narration path (audio
-			// modality only). Text modality yields no audio track.
-			let audioPath: string | undefined = undefined;
-			const normalizeRaw = ctx.previousResults.get("normalize");
-			if (normalizeRaw !== undefined && isNormalizeResult(normalizeRaw)) {
-				audioPath = normalizeRaw.audioPath;
-			}
+			// Audio narration track: chapters store audio in blob storage.
+			// For now, motion export proceeds without a narration track;
+			// chapter audio download can be added when TTS/narration is wired.
+			const audioPath: string | undefined = undefined;
 
 			// Build the page image map by reading each composed page image from
 			// storage. Only pages present in compose_pages' pageImageKeys are

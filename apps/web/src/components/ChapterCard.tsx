@@ -1,7 +1,6 @@
 import {
   Upload,
   FileText,
-  Play,
   Clock,
   Loader2,
   CheckCircle2,
@@ -33,7 +32,6 @@ export interface ChapterCardProps {
   chapter: ChapterCardChapter;
   onUpload: (chapterId: string) => void;
   onViewTranscription: (chapterId: string) => void;
-  onRunPipeline: (chapterId: string) => void;
 }
 
 // mm:ss formatting for an audio duration in seconds.
@@ -58,7 +56,6 @@ export function ChapterCard({
   chapter,
   onUpload,
   onViewTranscription,
-  onRunPipeline,
 }: ChapterCardProps) {
   const { id, index, title, description, status, durationSec } = chapter;
 
@@ -137,14 +134,9 @@ export function ChapterCard({
               <FileText />
               View Transcription
             </Button>
-            <Button
-              variant="default"
-              className="w-full"
-              onClick={() => onRunPipeline(id)}
-            >
-              <Play />
-              Run Pipeline
-            </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              Ready for pipeline — see Pipeline tab
+            </p>
           </div>
         ) : null}
 
@@ -160,14 +152,6 @@ export function ChapterCard({
               <Button variant="outline" className="w-full" disabled>
                 <FileText />
                 View Artifacts
-              </Button>
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={() => onRunPipeline(id)}
-              >
-                <Play />
-                Re-run Pipeline
               </Button>
             </div>
           </div>

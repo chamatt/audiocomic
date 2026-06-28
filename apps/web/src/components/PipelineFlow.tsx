@@ -75,8 +75,7 @@ const PIPELINE_STATUS_COLORS: Record<PipelineState['status'], string> = {
 // ---------------------------------------------------------------------------
 
 const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
-  normalize: { x: 0, y: 220 },
-  transcribe: { x: 260, y: 220 },
+  ingest_knowledge: { x: 0, y: 220 },
   segment: { x: 520, y: 220 },
   plan_story: { x: 780, y: 220 },
   // Col 4: three parallel branches

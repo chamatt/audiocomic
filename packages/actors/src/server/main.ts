@@ -48,7 +48,7 @@ Effect.gen(function* () {
 	yield* Effect.log("Starting AudioComic actor server...");
 	yield* Effect.log(`Endpoint: ${endpoint}`);
 	yield* Effect.log("Actors: FileRegistry, Bible, Project, Pipeline, Chapter, KnowledgeBase");
-	yield* Effect.log("Steps: 15 registered (normalize → export_motion)");
+	yield* Effect.log("Steps: 14 registered (ingest_knowledge → export_motion)");
 	yield* Effect.log("Bridge: direct adapters (@audiocomic/ai, @audiocomic/renderers, @audiocomic/media)");
 }).pipe(
 	Effect.flatMap(() => Layer.launch(MainLayer)),

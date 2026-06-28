@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -304,11 +303,6 @@ function ChaptersTab({ projectId }: { projectId: string }) {
     }
   };
 
-  const onRunPipeline = (chapterId: string) => {
-    // Per-chapter pipeline will be wired later.
-    console.log('[ProjectDetail] run pipeline for chapter', chapterId);
-    alert(`Pipeline for chapter is not wired yet (chapter ${chapterId}).`);
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -350,7 +344,6 @@ function ChaptersTab({ projectId }: { projectId: string }) {
               chapter={chapter}
               onUpload={onUpload}
               onViewTranscription={onViewTranscription}
-              onRunPipeline={onRunPipeline}
             />
           ))}
         </div>
@@ -610,8 +603,6 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const [actorsReady, setActorsReady] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<{ id: string; title: string; index: number; status: string }[]>([]);
-  const [selectedChapterId, setSelectedChapterId] = useState<string>('all');
-
   const project = detail.project;
 
   // --- Data refresh ---
@@ -749,23 +740,15 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
         {/* Pipeline tab */}
         <TabsContent value="pipeline" className="flex flex-col gap-6">
-          {/* Chapter selector */}
+          {/* Chapter transcription status */}
           {chapters.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Chapter:</Label>
-              <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
-                <SelectTrigger className="w-[240px] h-8 text-sm">
-                  <SelectValue placeholder="All chapters" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All chapters</SelectItem>
-                  {chapters.map((ch) => (
-                    <SelectItem key={ch.id} value={ch.id}>
-                      Ch.{ch.index + 1}: {ch.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">
+                {chapters.filter((ch) => ch.status === 'transcribed' || ch.status === 'completed').length}
+                {' / '}
+                {chapters.length} chapters transcribed
+              </span>
             </div>
           )}
           {/* Pipeline controls */}

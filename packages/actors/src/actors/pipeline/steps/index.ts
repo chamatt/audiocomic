@@ -2,8 +2,7 @@
 // Each module calls `registerStep` at import time, populating the global registry
 // consulted by `getStepExecutor` / `listStepTypes`.
 
-import "./normalize.ts";
-import "./transcribe.ts";
+import "./ingest_knowledge.ts";
 import "./segment.ts";
 import "./plan_story.ts";
 import "./build_bibles.ts";
