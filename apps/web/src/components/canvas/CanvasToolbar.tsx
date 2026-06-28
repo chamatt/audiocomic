@@ -16,7 +16,7 @@ interface CanvasToolbarProps {
   currentPageIndex: number;
   onPageNavigate: (direction: 'prev' | 'next') => void;
   onAddPage?: () => void;
-  onExport?: (type: 'pages' | 'pdf' | 'mp4') => void;
+  onExport?: (type: 'pages' | 'mp4') => void;
 }
 
 const MODES: { value: CanvasMode; label: string; icon: string }[] = [
@@ -98,9 +98,6 @@ export function CanvasToolbar({
           <div className="flex items-center gap-1">
             <Button size="sm" variant="ghost" onClick={() => onExport('pages')}>
               Export ZIP
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onExport('pdf')}>
-              Export PDF
             </Button>
             <Button size="sm" variant="ghost" onClick={() => onExport('mp4')}>
               Export MP4

@@ -31,7 +31,7 @@ export function BubbleOverlay({
   onBubbleDelete,
   onBubbleAdd,
 }: BubbleOverlayProps): JSX.Element {
-  const { selectedBubbleId, selectBubble, selectPanel } = useCanvasStore();
+  const { selectedBubbleId, selectBubble } = useCanvasStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const dragState = useRef<BubbleDragState | null>(null);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, type JSX } from 'react';
+import { useCallback, useMemo, useRef, type JSX } from 'react';
 import type { PanelSpec, BoundingBox, LetteringBox } from '@audiocomic/domain';
 import { ComicCanvas } from './ComicCanvas';
 import { PanelEditor } from './PanelEditor';
@@ -8,6 +8,7 @@ import { CanvasToolbar } from './CanvasToolbar';
 import { PageThumbnailBar } from './PageThumbnailBar';
 import { useCanvasStore } from '@/stores/canvas-store';
 import { useCanvasData } from '@/lib/canvas/use-canvas-data';
+import { throttle } from '@/lib/canvas/throttle';
 import type { CanvasPageData } from './types';
 
 interface CanvasTabProps {
@@ -61,17 +62,24 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     return idx >= 0 ? idx : 0;
   }, [pages, selectedPageId]);
 
-  // Panel bbox change handler — optimistic + API
-  const handlePanelBboxChange = useCallback(
-    (panelId: string, bbox: BoundingBox) => {
-      updatePanelBbox(panelId, bbox);
+  // Throttled API save for panel bbox (fires at most once per 150ms during drag)
+  const savePanelBbox = useRef(
+    throttle((panelId: string, bbox: BoundingBox) => {
       void fetch(`/api/panels/${panelId}/bbox`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bbox),
       });
+    }, 150),
+  ).current;
+
+  // Panel bbox change handler — optimistic local + throttled API
+  const handlePanelBboxChange = useCallback(
+    (panelId: string, bbox: BoundingBox) => {
+      updatePanelBbox(panelId, bbox);
+      savePanelBbox(panelId, bbox);
     },
-    [updatePanelBbox],
+    [updatePanelBbox, savePanelBbox],
   );
 
   // Panel patch handler — optimistic + API
@@ -92,25 +100,29 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     await fetch(`/api/panels/${panelId}/regenerate`, { method: 'POST' });
   }, []);
 
-  // Bubble change handler
+  // Throttled API save for bubble position (fires at most once per 150ms during drag)
+  const saveBubblePosition = useRef(
+    throttle((pageId: string, boxId: string, bbox: Partial<BoundingBox>) => {
+      void fetch(`/api/lettering/${pageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boxId, bbox }),
+      });
+    }, 150),
+  ).current;
+
+  // Bubble change handler — optimistic local + throttled API
   const handleBubbleChange = useCallback(
     (pageId: string, boxId: string, patch: Partial<BoundingBox>) => {
-      // Find the page and update the box locally
       const page = pages.find((p) => p.id === pageId);
       if (!page) return;
       const newBoxes = page.lettering.map((b) =>
         b.id === boxId ? { ...b, bbox: { ...b.bbox, ...patch } } : b,
       );
       updateLettering(pageId, newBoxes);
-
-      // Save to API — PATCH the lettering
-      void fetch(`/api/lettering/${pageId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ boxId, bbox: { ...patch } }),
-      });
+      saveBubblePosition(pageId, boxId, patch);
     },
-    [pages, updateLettering],
+    [pages, updateLettering, saveBubblePosition],
   );
 
   // Bubble text change handler
@@ -193,7 +205,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   // Export handler
   const handleExport = useCallback(
-    (type: 'pages' | 'pdf' | 'mp4') => {
+    (type: 'pages' | 'mp4') => {
       void fetch(`/api/projects/${projectId}/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

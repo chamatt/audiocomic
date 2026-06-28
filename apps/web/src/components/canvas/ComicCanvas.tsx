@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useMemo, type CSSProperties, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, type CSSProperties, type JSX } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
   ReactFlowProvider,
+  useReactFlow,
   type Node,
   type Edge,
   type NodeTypes,
@@ -41,7 +42,18 @@ function ComicCanvasInner({
   onBubbleDelete,
   onBubbleAdd,
 }: ComicCanvasProps): JSX.Element {
-  const { selectPanel, selectPage, setZoom } = useCanvasStore();
+  const { selectPanel, selectPage, setZoom, selectedPageId } = useCanvasStore();
+  const { setCenter, getNode } = useReactFlow();
+
+  // Scroll canvas to selected page when selectedPageId changes
+  useEffect(() => {
+    if (!selectedPageId) return;
+    const node = getNode(selectedPageId);
+    if (!node) return;
+    const x = node.position.x + 400; // center of page (PAGE_WIDTH / 2)
+    const y = node.position.y + 565; // center of page (PAGE_HEIGHT / 2)
+    setCenter(x, y, { zoom: 0.5, duration: 400 });
+  }, [selectedPageId, getNode, setCenter]);
 
   const nodes: Node[] = useMemo(
     () =>
@@ -135,5 +147,3 @@ export function ComicCanvas(props: ComicCanvasProps): JSX.Element {
   );
 }
 
-// Re-export types for convenience
-export type { PanelSpec, LetteringBox } from '@audiocomic/domain';
