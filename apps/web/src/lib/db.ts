@@ -191,10 +191,12 @@ async function ensureRepo(): Promise<Repository> {
       renderRequests: raw.panelRenderRequests as unknown as Repository['renderRequests'],
       renderResults: raw.panelRenderResults as unknown as Repository['renderResults'],
       composites: map(raw.pageComposites as unknown as { getByProjectId: (id: string) => Promise<PageComposite[]>; getById: (id: string) => Promise<PageComposite | null>; create: (c: PageComposite) => Promise<void> }) as unknown as Repository['composites'],
+      lettering: {
         getByPage: async (pageId: string) => {
           const rows = await dbResult.sql`SELECT * FROM lettering_specs WHERE page_id = ${pageId}`;
           return (rows as unknown[]).map(snakeToCamel) as unknown as LetteringSpec[];
         },
+        create: (raw.letteringSpecs as unknown as { create: (l: LetteringSpec) => Promise<void> }).create,
       } as unknown as Repository['lettering'],
       timelines: map(raw.narrationTimelines as unknown as { getByProjectId: (id: string) => Promise<NarrationTimeline[]>; create: (t: NarrationTimeline) => Promise<void> }) as unknown as Repository['timelines'],
       exports: map(raw.exportBundles as unknown as { getByProjectId: (id: string) => Promise<ExportBundle[]>; getById: (id: string) => Promise<ExportBundle | null>; create: (e: ExportBundle) => Promise<void> }) as unknown as Repository['exports'],
