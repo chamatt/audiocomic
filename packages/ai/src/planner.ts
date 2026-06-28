@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   generateObject,
   streamObject,
+  streamText,
   type LanguageModelV1,
 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -204,12 +205,58 @@ function resolveCharacterIds(
   }
   return [...ids];
 }
+/**
+ * Extract a JSON object from an LLM text response that may contain
+ * markdown code fences, preamble text, or trailing commentary.
+ * Finds the first { and last } and extracts everything between.
+ */
+function extractJson(text: string): string {
+  // Try direct parse first
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    // Fall through to extraction
+  }
+
+  // Strip markdown code fences
+  const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+  if (fenceMatch?.[1]) {
+    try {
+      JSON.parse(fenceMatch[1]);
+      return fenceMatch[1];
+    } catch {
+      // Fall through
+    }
+  }
+
+  // Find first { and last } — handles preamble like "Sure! Here's the JSON:"
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const extracted = text.slice(firstBrace, lastBrace + 1);
+    try {
+      JSON.parse(extracted);
+      return extracted;
+    } catch {
+      // Fall through
+    }
+  }
+
+  // Last resort: return as-is and let JSON.parse throw
+  return text;
+}
 
 /**
- * Stream an object from the LLM with live progress logging.
- * Uses streamObject to show partial tokens as they arrive, then
- * resolves to the final object. Falls back to generateObject if
- * streaming fails.
+ * Stream an object from the LLM with live token-by-token progress.
+ *
+ * Uses streamText to get real SSE token streaming (streamObject buffers
+ * until it has enough JSON to parse into the zod schema, returning only
+ * 1-2 chunks). The full text is accumulated, then parsed with the zod
+ * schema at the end. Falls back to generateObject if streaming or parsing
+ * fails.
+ *
+ * Emits llm_chunk events every 10 tokens so the UI can show live progress.
  */
 async function streamObjectWithProgress<T>(
   label: string,
@@ -219,35 +266,58 @@ async function streamObjectWithProgress<T>(
   const start = Date.now();
   let tokenCount = 0;
   const elapsedStr = () => ((Date.now() - start) / 1000).toFixed(1);
+
+  // Extract the schema for post-stream parsing
+  const schema = opts.schema as z.ZodType<T>;
+
   try {
-    const { partialObjectStream, object } = streamObject<T>({
-      ...opts,
-      partialObjectStream: true,
-    } as Parameters<typeof streamObject>[0]);
-    // Consume the partial stream to log progress + emit events
-    for await (const partial of partialObjectStream) {
+    // Use streamText for real token-by-token streaming.
+    // mistral-nemo supports response_format (JSON mode) on OpenRouter —
+    // this constrains output to valid JSON, preventing markdown/preamble.
+    // Keep the system-prompt instruction as a belt-and-suspenders measure.
+    const jsonInstruction = '\n\nReturn ONLY a valid JSON object. No markdown, no code fences, no explanation.';
+    const { textStream } = streamText({
+      model: opts.model,
+      system: (typeof opts.system === 'string' ? opts.system : '') + jsonInstruction,
+      prompt: opts.prompt,
+      abortSignal: opts.abortSignal,
+      responseFormat: { type: 'json' },
+    });
+
+    let fullText = '';
+    for await (const delta of textStream) {
       tokenCount++;
+      fullText += delta;
       if (tokenCount % 10 === 0) {
         const elapsed = elapsedStr();
-        console.error(`[planner] ${label}: ${tokenCount} chunks in ${elapsed}s...`);
-        emit?.({ type: "llm_chunk", label, chunkIndex: tokenCount, elapsed: Number(elapsed), partial });
+        console.error(`[planner] ${label}: ${tokenCount} tokens in ${elapsed}s...`);
+        emit?.({ type: 'llm_chunk', label, chunkIndex: tokenCount, elapsed: Number(elapsed) });
       }
     }
-    const result = await object;
+
     const elapsed = elapsedStr();
-    console.error(`[planner] ${label}: done in ${elapsed}s (${tokenCount} chunks)`);
-    emit?.({ type: "llm_done", label, chunkIndex: tokenCount, elapsed: Number(elapsed) });
-    return result;
+    console.error(`[planner] ${label}: stream done in ${elapsed}s (${tokenCount} tokens, ${fullText.length} chars)`);
+    console.error(`[planner] ${label}: raw (first 300): ${fullText.slice(0, 300)}`);
+
+    // Extract JSON from the response — handle markdown fences, preamble text, etc.
+    const jsonText = extractJson(fullText);
+    console.error(`[planner] ${label}: extracted (first 200): ${jsonText.slice(0, 200)}`);
+    const parsed = JSON.parse(jsonText);
+    const validated = schema.parse(parsed);
+
+    emit?.({ type: 'llm_done', label, chunkIndex: tokenCount, elapsed: Number(elapsed) });
+    return validated;
   } catch (err) {
     const elapsed = elapsedStr();
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[planner] ${label}: stream failed in ${elapsed}s (${msg}), falling back to generateObject`);
-    emit?.({ type: "llm_error", label, detail: msg, elapsed: Number(elapsed) });
-    // Fallback: non-streaming
+    console.error(`[planner] ${label}: stream/parse failed in ${elapsed}s (${msg}), falling back to generateObject`);
+    emit?.({ type: 'llm_error', label, detail: msg, elapsed: Number(elapsed) });
+
+    // Fallback: non-streaming generateObject (uses structured output mode)
     const result = await generateObject(opts);
     const elapsed2 = elapsedStr();
     console.error(`[planner] ${label}: generateObject fallback done in ${elapsed2}s`);
-    emit?.({ type: "llm_done", label, detail: "fallback: generateObject", elapsed: Number(elapsed2) });
+    emit?.({ type: 'llm_done', label, detail: 'fallback: generateObject', elapsed: Number(elapsed2) });
     return result.object as T;
   }
 }
