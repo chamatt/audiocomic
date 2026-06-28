@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { storageKey } from '@audiocomic/shared';
 import type { Env } from '@audiocomic/shared';
+import { createMediaManagerFromEnv, type MediaManager } from '@audiocomic/storage';
 
 /**
  * Short stable hash of the prompt for provenance tracking on
@@ -12,16 +11,28 @@ export function promptHash(prompt: string): string {
   return createHash('sha256').update(prompt).digest('hex').slice(0, 16);
 }
 
+// Cached MediaManager instances per env — created lazily.
+const mediaManagerCache = new WeakMap<Env, MediaManager>();
+
+function getMediaManager(env: Env): MediaManager {
+  let mm = mediaManagerCache.get(env);
+  if (!mm) {
+    mm = createMediaManagerFromEnv(env);
+    mediaManagerCache.set(env, mm);
+  }
+  return mm;
+}
+
 /**
- * Persist image bytes to the local upload directory under a storage key.
- * The storage key is treated as a relative path beneath `UPLOAD_DIR`, which
- * matches the local-storage mode (`STORAGE_USE_LOCAL=true`).
+ * Persist image bytes to object storage under a storage key.
+ * Uses MediaManager (S3-compatible or local filesystem) under the hood.
+ * Returns the storage key (not a filesystem path).
  */
 export async function writeLocalImage(env: Env, key: string, data: Uint8Array): Promise<string> {
-  const path = join(env.UPLOAD_DIR, key);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, data);
-  return path;
+  const mm = getMediaManager(env);
+  const buf = data instanceof Buffer ? data : Buffer.from(data);
+  await mm.upload(key, buf, 'image/png');
+  return key;
 }
 
 /**

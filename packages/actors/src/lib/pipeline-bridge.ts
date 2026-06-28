@@ -6,6 +6,8 @@ import { Context, Effect, Layer } from "effect";
 import { promises as fs } from "node:fs";
 import { join, dirname } from "node:path";
 
+import { createMediaManagerFromEnv, type MediaManager } from "@audiocomic/storage";
+
 import { createRepository, type Repository, type CreateDbResult } from "@audiocomic/db";
 import type { Env } from "@audiocomic/shared";
 
@@ -41,7 +43,12 @@ export interface PipelineBridgeShape {
 		readAsset(key: string): Promise<Buffer>;
 		writeAsset(key: string, data: Buffer): Promise<void>;
 		assetExists(key: string): Promise<boolean>;
+		deleteAsset(key: string): Promise<void>;
+		downloadStream(key: string): Promise<ReadableStream<Uint8Array>>;
+		uploadStream(key: string, stream: ReadableStream<Uint8Array>, mimeType: string): Promise<void>;
+		size(key: string): Promise<number>;
 	};
+	readonly mediaManager: MediaManager;
 	getTranscriptionAdapter(): TranscriptionAdapter;
 	getStoryPlanner(): StoryPlannerAdapter;
 	getTTSAdapter(): TTSAdapter | null;
@@ -63,33 +70,32 @@ export const PipelineBridge = Context.Service<PipelineBridgeShape>("PipelineBrid
 
 export function makePipelineBridgeLayer(dbResult: CreateDbResult, env: Env): Layer.Layer<PipelineBridgeShape> {
 	const repo = createRepository(dbResult.db);
-	const uploadDir = env.UPLOAD_DIR;
 	const exportDir = env.EXPORT_DIR;
 
-	function localPath(key: string): string {
-		return join(uploadDir, key);
-	}
-
-	async function ensureDir(path: string): Promise<void> {
-		await fs.mkdir(dirname(path), { recursive: true });
-	}
+	// MediaManager — S3-compatible storage (MinIO or local filesystem fallback)
+	const mediaManager = createMediaManagerFromEnv(env);
 
 	const storage = {
 		async readAsset(key: string): Promise<Buffer> {
-			return fs.readFile(localPath(key));
+			return mediaManager.downloadBuffer(key);
 		},
 		async writeAsset(key: string, data: Buffer): Promise<void> {
-			const p = localPath(key);
-			await ensureDir(p);
-			await fs.writeFile(p, data);
+			await mediaManager.upload(key, data, "application/octet-stream");
 		},
 		async assetExists(key: string): Promise<boolean> {
-			try {
-				await fs.access(localPath(key));
-				return true;
-			} catch {
-				return false;
-			}
+			return mediaManager.exists(key);
+		},
+		async deleteAsset(key: string): Promise<void> {
+			await mediaManager.delete(key);
+		},
+		async downloadStream(key: string): Promise<ReadableStream<Uint8Array>> {
+			return mediaManager.download(key);
+		},
+		async uploadStream(key: string, stream: ReadableStream<Uint8Array>, mimeType: string): Promise<void> {
+			await mediaManager.upload(key, stream, mimeType);
+		},
+		async size(key: string): Promise<number> {
+			return mediaManager.size(key);
 		},
 	};
 
@@ -105,6 +111,7 @@ export function makePipelineBridgeLayer(dbResult: CreateDbResult, env: Env): Lay
 		repo,
 		env,
 		storage,
+		mediaManager,
 		getTranscriptionAdapter() {
 			if (!transcriptionAdapter) transcriptionAdapter = createTranscriptionAdapter(transcriptionProvider, env);
 			return transcriptionAdapter;

@@ -1,38 +1,44 @@
-import { promises as fs } from 'node:fs';
-import { join, dirname } from 'node:path';
+// Storage layer — delegates to @audiocomic/storage MediaManager.
+// Provides backward-compatible writeAsset/readAsset/assetExists/getAssetStream
+// for existing web app code, while using S3-compatible storage under the hood.
+
 import { getEnv } from '@audiocomic/shared';
-import { Readable } from 'node:stream';
+import { createMediaManagerFromEnv, type MediaManager } from '@audiocomic/storage';
 
-async function ensureDir(path: string): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-}
+let _mediaManager: MediaManager | null = null;
 
-function localPath(key: string): string {
-  const env = getEnv();
-  return join(env.UPLOAD_DIR, key);
+function getMediaManager(): MediaManager {
+  if (!_mediaManager) {
+    _mediaManager = createMediaManagerFromEnv(getEnv());
+  }
+  return _mediaManager;
 }
 
 export async function writeAsset(key: string, data: Buffer): Promise<void> {
-  const path = localPath(key);
-  await ensureDir(path);
-  await fs.writeFile(path, data);
+  await getMediaManager().upload(key, data, 'application/octet-stream');
 }
 
 export async function readAsset(key: string): Promise<Buffer> {
-  return fs.readFile(localPath(key));
+  return getMediaManager().downloadBuffer(key);
 }
 
 export async function assetExists(key: string): Promise<boolean> {
-  try {
-    await fs.access(localPath(key));
-    return true;
-  } catch {
-    return false;
-  }
+  return getMediaManager().exists(key);
 }
 
 export async function getAssetStream(key: string): Promise<globalThis.ReadableStream> {
-  const { createReadStream } = await import('node:fs');
-  const nodeStream = createReadStream(localPath(key));
-  return Readable.toWeb(nodeStream) as unknown as globalThis.ReadableStream;
+  return getMediaManager().download(key);
+}
+
+export async function deleteAsset(key: string): Promise<void> {
+  await getMediaManager().delete(key);
+}
+
+export async function assetSize(key: string): Promise<number> {
+  return getMediaManager().size(key);
+}
+
+/** Get the underlying MediaManager for direct S3 operations. */
+export function getStorageManager(): MediaManager {
+  return getMediaManager();
 }

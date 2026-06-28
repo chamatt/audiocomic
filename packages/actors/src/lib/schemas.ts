@@ -58,7 +58,7 @@ export type CronSchedule = Schema.Schema.Type<typeof CronSchedule>;
 export const FileMetadata = Schema.Struct({
 	id: Schema.String,
 	originalName: Schema.String,
-	storedPath: Schema.String,
+	storageKey: Schema.String,
 	mimeType: Schema.String,
 	sizeBytes: Schema.Number,
 	uploadedAt: Schema.Number,

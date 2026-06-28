@@ -15,6 +15,7 @@
     "@audiocomic/db": "workspace:*",
     "@audiocomic/domain": "workspace:*",
     "@audiocomic/shared": "workspace:*",
+    "@audiocomic/storage": "workspace:*",
     "@audiocomic/workflows": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-dropdown-menu": "^2.1.18",

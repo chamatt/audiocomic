@@ -1,8 +1,11 @@
 import { State } from "@rivetkit/effect";
 import { Effect, Schema } from "effect";
 import { FileMetadata } from "../../lib/schemas.ts";
-import { Storage, StorageLive } from "../../lib/services.ts";
 import { FileRegistry } from "./api.ts";
+import { createMediaManagerFromEnv, type MediaManager } from "@audiocomic/storage";
+import { getEnv } from "@audiocomic/shared";
+import { promises as fs } from "node:fs";
+import { extname } from "node:path";
 
 // --- State schema ---------------------------------------------------------
 
@@ -34,6 +37,8 @@ const mimeFromName = (name: string): string => {
 		case "m4a":
 		case "aac":
 			return "audio/aac";
+		case "m4b":
+			return "audio/mp4";
 		case "flac":
 			return "audio/flac";
 		case "ogg":
@@ -55,26 +60,31 @@ const mimeFromName = (name: string): string => {
 			return "application/json";
 		case "txt":
 			return "text/plain";
+		case "svg":
+			return "image/svg+xml";
 		default:
 			return "application/octet-stream";
 	}
 };
+
+/** Build a storage key from file id and original extension. */
+function storageKeyFor(id: string, originalName: string): string {
+	const ext = extname(originalName);
+	return `registry/${id}${ext}`;
+}
 
 // --- Live implementation --------------------------------------------------
 
 /**
  * Live `FileRegistry` layer. Wakes into a set of action handlers that
  * read/write the persisted state record and delegate byte storage to
- * the `Storage` service.
- *
- * `StorageLive` is provided on the wake Effect so the service is
- * available to every action handler regardless of how the layer is
- * composed by the host.
+ * the `MediaManager` service (S3-compatible or local filesystem).
  */
 export const FileRegistryLive = FileRegistry.toLayer(
 	(wakeOptions) =>
 		Effect.gen(function* () {
-			const storage = yield* Storage;
+			const env = getEnv();
+			const mediaManager: MediaManager = createMediaManagerFromEnv(env);
 			const { rawRivetkitContext, state } = wakeOptions;
 
 			const upload = ({ payload }: { payload: {
@@ -86,18 +96,19 @@ export const FileRegistryLive = FileRegistry.toLayer(
 				Effect.gen(function* () {
 					const id = newFileId();
 					const data = Buffer.from(payload.base64Data, "base64");
-					const storedPath = yield* storage
-						.store(id, payload.originalName, data)
-						.pipe(Effect.orDie);
-					const sizeBytes = yield* storage
-						.size(storedPath)
-						.pipe(Effect.orDie);
+					const storageKey = storageKeyFor(id, payload.originalName);
+					const mimeType = mimeFromName(payload.originalName);
+
+					const result = yield* Effect.tryPromise(() =>
+						mediaManager.upload(storageKey, data, mimeType),
+					).pipe(Effect.orDie);
+
 					const metadata: FileMetadata = {
 						id,
 						originalName: payload.originalName,
-						storedPath,
-						mimeType: mimeFromName(payload.originalName),
-						sizeBytes,
+						storageKey: result.key,
+						mimeType,
+						sizeBytes: result.size,
 						uploadedAt: Date.now(),
 						tags: [...payload.tags],
 						projectId: payload.projectId,
@@ -117,18 +128,24 @@ export const FileRegistryLive = FileRegistry.toLayer(
 			} }) =>
 				Effect.gen(function* () {
 					const id = newFileId();
-					const storedPath = yield* storage
-						.storeFromPath(id, payload.sourcePath)
-						.pipe(Effect.orDie);
-					const sizeBytes = yield* storage
-						.size(storedPath)
-						.pipe(Effect.orDie);
+					const storageKey = storageKeyFor(id, payload.originalName);
+					const mimeType = mimeFromName(payload.originalName);
+
+					// Read the source file and upload it to MediaManager
+					const data = yield* Effect.tryPromise(() =>
+						fs.readFile(payload.sourcePath),
+					).pipe(Effect.orDie);
+
+					const result = yield* Effect.tryPromise(() =>
+						mediaManager.upload(storageKey, data, mimeType),
+					).pipe(Effect.orDie);
+
 					const metadata: FileMetadata = {
 						id,
 						originalName: payload.originalName,
-						storedPath,
-						mimeType: mimeFromName(payload.originalName),
-						sizeBytes,
+						storageKey: result.key,
+						mimeType,
+						sizeBytes: result.size,
 						uploadedAt: Date.now(),
 						tags: [...payload.tags],
 						projectId: payload.projectId,
@@ -171,7 +188,9 @@ export const FileRegistryLive = FileRegistry.toLayer(
 					const s = yield* State.get(state).pipe(Effect.orDie);
 					const existing = s.files[payload.id];
 					if (!existing) return false;
-					yield* storage.delete(existing.storedPath).pipe(Effect.orDie);
+					yield* Effect.tryPromise(() =>
+						mediaManager.delete(existing.storageKey),
+					).pipe(Effect.orDie);
 					yield* State.updateAndGet(state, (prev) => {
 						const files = { ...prev.files };
 						delete files[payload.id];
@@ -187,7 +206,7 @@ export const FileRegistryLive = FileRegistry.toLayer(
 				ListFiles: listFiles,
 				DeleteFile: deleteFile,
 			};
-		}).pipe(Effect.provide(StorageLive)),
+		}),
 	{
 		state: {
 			schema: FileRegistryState,
