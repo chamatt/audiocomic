@@ -24,7 +24,8 @@
       "@audiocomic/renderers": ["./packages/renderers/src/index.ts"],
       "@audiocomic/media": ["./packages/media/src/index.ts"],
       "@audiocomic/workflows": ["./packages/workflows/src/index.ts"],
-      "@audiocomic/evals": ["./packages/evals/src/index.ts"]
+      "@audiocomic/evals": ["./packages/evals/src/index.ts"],
+      "@audiocomic/knowledge": ["./packages/knowledge/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", ".next"]
