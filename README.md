@@ -98,7 +98,7 @@ See [`.env.example`](.env.example) for all options. Key settings:
 |---|---|---|
 | `DEFAULT_RENDERER` | `placeholder` | Rendering backend: `comfyui`, `aisdk`, or `placeholder` |
 | `DEFAULT_LLM_MODEL` | `gpt-4o` | Model for story planning |
-| `DEFAULT_IMAGE_MODEL` | `flux-dev` | Model for panel rendering |
+| `DEFAULT_IMAGE_MODEL` | `gpt-image-1-mini` | Model for panel rendering |
 | `WORKER_CONCURRENCY` | `4` | Parallel job workers |
 | `FEATURE_DIARIZATION` | `true` | Speaker diarization for audio input |
 | `FEATURE_MOTION_COMIC` | `true` | MP4 export with Ken Burns motion |

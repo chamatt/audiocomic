@@ -75,7 +75,7 @@ export function SettingsForm({ initialSettings }: Props) {
         <input
           value={settings.imageModel ?? ''}
           onChange={(e) => update('imageModel', e.target.value || undefined)}
-          placeholder="flux-dev"
+          placeholder="gpt-image-1-mini"
         />
       </div>
 

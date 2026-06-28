@@ -58,7 +58,7 @@ export const EnvSchema = z.object({
   // Defaults
   DEFAULT_RENDERER: z.enum(['comfyui', 'aisdk', 'placeholder']).default('placeholder'),
   DEFAULT_LLM_MODEL: z.string().default('gpt-4o'),
-  DEFAULT_IMAGE_MODEL: z.string().default('flux-dev'),
+  DEFAULT_IMAGE_MODEL: z.string().default('gpt-image-1-mini'),
   DEFAULT_TTS_VOICE: z.string().default('alloy'),
 });
 
