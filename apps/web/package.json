@@ -17,6 +17,7 @@
     "@audiocomic/shared": "workspace:*",
     "@audiocomic/workflows": "workspace:*",
     "@rivetkit/effect": "^2.3.2",
+    "@xyflow/react": "^12.11.1",
     "dotenv": "^17.4.2",
     "effect": "4.0.0-beta.66",
     "next": "^16.2.9",

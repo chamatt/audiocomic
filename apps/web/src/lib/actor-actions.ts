@@ -255,3 +255,47 @@ export async function cancelScheduleActor(pipelineKey: string): Promise<ActorRes
     }),
   );
 }
+
+// ============================================================================
+// Pipeline actor — single-step operations
+// ============================================================================
+
+export async function runStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<StepState>> {
+	return run(
+		Effect.gen(function* () {
+			const accessor = yield* pipelineClient;
+			const handle = accessor.getOrCreate(pipelineKey);
+			return yield* handle.RunStep({ stepId });
+		}),
+	);
+}
+
+export async function getStepResultActor(pipelineKey: string, stepId: string): Promise<ActorResult<unknown>> {
+	return run(
+		Effect.gen(function* () {
+			const accessor = yield* pipelineClient;
+			const handle = accessor.getOrCreate(pipelineKey);
+			return yield* handle.GetStepResult({ stepId });
+		}),
+	);
+}
+
+export async function getStepLogsActor(pipelineKey: string, stepId: string): Promise<ActorResult<unknown[]>> {
+	return run(
+		Effect.gen(function* () {
+			const accessor = yield* pipelineClient;
+			const handle = accessor.getOrCreate(pipelineKey);
+			return yield* handle.GetStepLogs({ stepId });
+		}),
+	);
+}
+
+export async function invalidateStepActor(pipelineKey: string, stepId: string): Promise<ActorResult<StepState[]>> {
+	return run(
+		Effect.gen(function* () {
+			const accessor = yield* pipelineClient;
+			const handle = accessor.getOrCreate(pipelineKey);
+			return yield* handle.InvalidateStep({ stepId });
+		}),
+	);
+}
