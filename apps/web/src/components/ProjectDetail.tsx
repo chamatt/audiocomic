@@ -648,27 +648,40 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     if (actorsReady) refreshPipeline();
   }, [actorsReady, refreshPipeline]);
 
-  // Fetch chapters and poll while any are transcribing
+  // Fetch chapters and poll while any are transcribing.
+  // NOTE: chapters is NOT in the deps array — setChapters creates a new
+  // array reference each call, which would re-trigger this effect and
+  // cause an infinite fetch loop. We use a ref to read the latest state
+  // inside the interval and self-terminate when transcription is done.
+  const chaptersRef = useRef(chapters);
+  chaptersRef.current = chapters;
   useEffect(() => {
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
     const fetchChapters = async () => {
       try {
         const res = await fetch(`/api/projects/${projectId}/chapters`);
         if (res.ok && !cancelled) {
           const data = await res.json();
           setChapters(data.chapters ?? []);
+          // Stop polling once no chapter is transcribing
+          const stillWorking = (data.chapters ?? []).some(
+            (c: { status: string }) => c.status === 'transcribing' || c.status === 'pending',
+          );
+          if (!stillWorking && interval) {
+            clearInterval(interval);
+            interval = undefined;
+          }
         }
       } catch { /* ignore */ }
     };
     fetchChapters();
-    // Poll every 3s while any chapter is transcribing
-    const anyTranscribing = chapters.some((c) => c.status === 'transcribing' || c.status === 'pending');
-    if (anyTranscribing) {
-      const interval = setInterval(fetchChapters, 3000);
-      return () => { cancelled = true; clearInterval(interval); };
+    // Only start polling if something is currently transcribing
+    if (chaptersRef.current.some((c) => c.status === 'transcribing' || c.status === 'pending')) {
+      interval = setInterval(fetchChapters, 3000);
     }
-    return () => { cancelled = true; };
-  }, [projectId, chapters]);
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
+  }, [projectId]);
 
   const actorRunning = pipelineState?.status === 'running';
   useEffect(() => {
