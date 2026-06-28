@@ -126,14 +126,25 @@ export class GroqEmbeddingProvider implements EmbeddingProvider {
 /**
  * Select an embedding provider from the environment.
  *
- * Today only OpenAI is supported (Groq has no embeddings API). Throws a clear
- * error when no provider can be constructed so callers can surface guidance.
+ * Preference order:
+ * 1. OpenRouter (proxies openai/text-embedding-3-small, same 1536-dim vectors,
+ *    uses the existing OPENROUTER_API_KEY — no separate billing needed)
+ * 2. OpenAI direct (requires OPENAI_API_KEY with sufficient quota)
+ *
+ * Groq has no embeddings API. Throws a clear error when no provider can be
+ * constructed.
  */
 export function createEmbeddingProvider(env: Env): EmbeddingProvider {
+  if (env.OPENROUTER_API_KEY) {
+    return new OpenAIEmbeddingProvider(env.OPENROUTER_API_KEY, {
+      model: 'openai/text-embedding-3-small',
+      endpoint: 'https://openrouter.ai/api/v1/embeddings',
+    });
+  }
   if (env.OPENAI_API_KEY) {
     return new OpenAIEmbeddingProvider(env.OPENAI_API_KEY);
   }
   throw new Error(
-    'No embedding provider available. Set OPENAI_API_KEY to enable knowledge-base embeddings.',
+    'No embedding provider available. Set OPENROUTER_API_KEY or OPENAI_API_KEY to enable knowledge-base embeddings.',
   );
 }

@@ -2,13 +2,22 @@
 // These agents use tool calling to retrieve knowledge from the RAG index
 // and character bible, enabling cross-chapter consistency.
 
-import { Agent } from '@mastra/core/agent';
+import { Agent, tryGenerateWithJsonFallback } from '@mastra/core/agent';
 import { z } from 'zod';
 import { createProjectTools, type ToolContext } from './tools.ts';
 import type { StorySection, CharacterProfile, WorldBible } from '@audiocomic/domain';
 import type { ProgressEvent } from '@audiocomic/ai';
 import { uuid, nowIso } from '@audiocomic/shared';
 import type { Repository } from '@audiocomic/db';
+
+/**
+ * Resolve the LLM model from env. Falls back to google/gemini-flash-1.5
+ * (cheap, reliable structured output) when not configured.
+ */
+const LLM_MODEL = process.env.DEFAULT_LLM_MODEL
+  ? `openrouter/${process.env.DEFAULT_LLM_MODEL}`
+  : 'openrouter/mistralai/mistral-nemo';
+
 
 // ============================================================================
 // Structured output schemas for agent.generate()
@@ -144,7 +153,7 @@ When planning a chapter:
    as in previous chapters unless there's a narrative reason for change
 
 Output: structured JSON with world, characters, sections, and character states.`,
-    model: 'openrouter/mistralai/mistral-nemo',
+    model: LLM_MODEL,
     tools,
   });
 }
@@ -171,7 +180,7 @@ When processing a new chapter:
 6. Flag contradictions with previous chapters
 
 Output: structured JSON with knowledge updates.`,
-    model: 'openrouter/mistralai/mistral-nemo',
+    model: LLM_MODEL,
     tools,
   });
 }
@@ -188,13 +197,26 @@ function makeStoryPlannerHandle(
     async planStory({ text, emit }) {
       emit?.({ type: 'progress', label: 'Story planner agent started' });
 
-      const response = await agent.generate(
+      const response = await tryGenerateWithJsonFallback(
+        agent,
         `Plan the comic adaptation for the following transcription. ` +
           `Use the available tools to look up existing characters, world info, ` +
-          `and cross-chapter context before planning.\n\nTranscription:\n${text}`,
+          `and cross-chapter context before planning. ` +
+          `After using tools, produce the structured JSON output.\n\nTranscription:\n${text}`,
         {
           maxSteps: 15,
           structuredOutput: { schema: storyPlanSchema },
+          prepareStep: async ({ stepNumber }) => {
+            // Steps 0-2: allow tool calls. Step 3+: force structured output without tools.
+            if (stepNumber < 3) {
+              return { toolChoice: 'auto' };
+            }
+            return {
+              tools: undefined,
+              toolChoice: 'none',
+              structuredOutput: { schema: storyPlanSchema },
+            };
+          },
         },
       );
 
@@ -210,9 +232,9 @@ function makeStoryPlannerHandle(
         name: c.name,
         description: c.description,
         role: (['protagonist', 'antagonist', 'supporting', 'minor', 'narrator'] as const).includes(
-          c.role as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator',
+          c.role?.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator',
         )
-          ? (c.role as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator')
+          ? (c.role.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator')
           : 'supporting',
         aliases: c.aliases,
         outfitRefs: [],
@@ -279,13 +301,25 @@ function makeBibleBuilderHandle(
 ): BibleBuilderAgentHandle {
   return {
     async buildBible({ chapterId, chapterIndex, text }) {
-      const response = await agent.generate(
+      const response = await tryGenerateWithJsonFallback(
+        agent,
         `Process this chapter transcription and extract knowledge updates. ` +
           `Use the available tools to check existing characters and world info ` +
-          `before extracting.\n\nChapter ${chapterIndex} transcription:\n${text}`,
+          `before extracting. ` +
+          `After using tools, produce the structured JSON output.\n\nChapter ${chapterIndex} transcription:\n${text}`,
         {
           maxSteps: 10,
           structuredOutput: { schema: bibleBuildSchema },
+          prepareStep: async ({ stepNumber }) => {
+            if (stepNumber < 3) {
+              return { toolChoice: 'auto' };
+            }
+            return {
+              tools: undefined,
+              toolChoice: 'none',
+              structuredOutput: { schema: bibleBuildSchema },
+            };
+          },
         },
       );
 
@@ -310,7 +344,11 @@ function makeBibleBuilderHandle(
               projectId,
               name: c.name,
               description: c.description,
-              role: c.role,
+              role: (['protagonist', 'antagonist', 'supporting', 'minor', 'narrator'] as const).includes(
+                c.role?.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator',
+              )
+                ? (c.role.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator')
+                : 'supporting',
               aliases: [],
               createdAt: now,
             });

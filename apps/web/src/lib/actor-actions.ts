@@ -320,6 +320,33 @@ export async function createChapterActor(chapterId: string, projectId: string, i
   );
 }
 
+/**
+ * Combined chapter actor setup — creates the actor, initializes identity,
+ * sets title, links asset, and starts transcription in a single sequential
+ * Effect.gen to avoid concurrent getOrCreate race conditions on the same
+ * Chapter actor key.
+ */
+export async function setupChapterActor(
+  chapterId: string,
+  projectId: string,
+  index: number,
+  title: string,
+  sourceAssetId: string,
+): Promise<ActorResult<unknown>> {
+  log.info("setting up chapter actor", { chapterId, projectId, index });
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      // Sequential calls on the same handle — no concurrent getOrCreate.
+      yield* handle.Init({ id: chapterId, projectId, index });
+      yield* handle.UpdateTitle({ title });
+      yield* handle.LinkAsset({ sourceAssetId });
+      return yield* handle.StartTranscription(undefined);
+    }),
+  );
+}
+
 export async function getChapterStateActor(chapterId: string): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {

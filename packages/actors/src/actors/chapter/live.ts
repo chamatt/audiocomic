@@ -45,7 +45,6 @@ function isBeatSection(v: unknown): v is StorySection {
 	const r = v as Record<string, unknown>;
 	return (
 		r.level === "beat" &&
-		typeof r.id === "string" &&
 		typeof r.summary === "string" &&
 		Array.isArray(r.charactersPresent)
 	);
@@ -139,13 +138,22 @@ export const ChapterLive = Chapter.toLayer(
 					return;
 				}
 
-				// 2. Embed transcript chunks.
-				const embedder = createEmbeddingProvider(bridge.env);
-				const embedResult = yield* Effect.tryPromise({
-					try: () => ingestChapterTranscription(bridge.repo, embedder, current.projectId, current.id),
-					catch: (e) => (e instanceof Error ? e : new Error(String(e))),
-				});
-				log.info("embedding done", { chapterId: current.id, embeddings: embedResult.embeddingCount });
+			// 2. Embed transcript chunks (non-fatal — wiki + bible still work without vectors).
+			let embeddingsCount = 0;
+			const embedder = createEmbeddingProvider(bridge.env);
+			yield* Effect.tryPromise({
+				try: () => ingestChapterTranscription(bridge.repo, embedder, current.projectId, current.id),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			}).pipe(
+				Effect.tap((r) => Effect.sync(() => { embeddingsCount = r.embeddingCount; })),
+				Effect.tap(() => Effect.sync(() => log.info("embedding done", { chapterId: current.id, embeddings: embeddingsCount }))),
+				Effect.catchCause((cause) =>
+					Effect.gen(function* () {
+						log.warn("embedding skipped (non-fatal)", { chapterId: current.id, error: cause.toString() });
+						yield* setStage("ingesting", { current: 1, total: 3, detail: "Embeddings skipped — continuing with wiki" });
+					}),
+				),
+			);
 
 				yield* setStage("ingesting", { current: 1, total: 3, detail: "Extracting wiki entities" });
 
@@ -192,14 +200,14 @@ export const ChapterLive = Chapter.toLayer(
 					try: () => bridge.repo.chapterIngestLog.insert({
 						chapterId: current.id,
 						projectId: current.projectId,
-						embeddingsCount: embedResult.embeddingCount,
+						embeddingsCount,
 						wikiPagesCount: wikiPagesCreated,
 					}),
 					catch: () => Promise.resolve(),
 				});
 
 				yield* setStage("ingesting", { current: 3, total: 3, detail: "Done" });
-				log.info("ingest complete", { chapterId: current.id, embeddings: embedResult.embeddingCount, wikiPages: wikiPagesCreated });
+			log.info("ingest complete", { chapterId: current.id, embeddings: embeddingsCount, wikiPages: wikiPagesCreated });
 
 				// Auto-advance to plan.
 				yield* runPlan(current);
@@ -265,15 +273,21 @@ export const ChapterLive = Chapter.toLayer(
 
 				yield* setStage("planning", { current: 2, total: 4, detail: "Planning pages" });
 
-				// 3. Plan pages: divide beats into pages/panels.
-				const beats = sections.filter(isBeatSection);
-				if (beats.length === 0) {
-					yield* setStage("failed", { current: 0, total: 0, detail: "No beats extracted" });
-					return;
-				}
+			// 3. Plan pages: divide beats into pages/panels.
+			// Prefer beat-level sections, but fall back to scene/chapter if the model didn't produce beats.
+			const beats = sections.filter(isBeatSection);
+			if (beats.length === 0) {
+				// No beats — use all sections as beats instead of failing.
+				log.warn("no beat-level sections found, using all sections", { chapterId: current.id, sectionCount: sections.length, levels: sections.map(s => s.level) });
+			}
+			const effectiveBeats = beats.length > 0 ? beats : sections;
+			if (effectiveBeats.length === 0) {
+				yield* setStage("failed", { current: 0, total: 0, detail: "No sections extracted from story plan" });
+				return;
+			}
 
-				const maxBeats = DEFAULT_MAX_PAGES * DEFAULT_BEATS_PER_PAGE;
-				const selected = sampleEvenly(beats, maxBeats);
+			const maxBeats = DEFAULT_MAX_PAGES * DEFAULT_BEATS_PER_PAGE;
+			const selected = sampleEvenly(effectiveBeats, maxBeats);
 
 				const pages: PageSpec[] = [];
 				const panels: PanelSpec[] = [];
@@ -302,7 +316,10 @@ export const ChapterLive = Chapter.toLayer(
 							zIndex: panelIdx,
 							description: beat.summary,
 							cameraFraming: beat.cameraHint,
-							characters: beat.charactersPresent.map((charId) => ({ characterId: charId })),
+							characters: beat.charactersPresent
+								.map((name) => characters.find((c) => c.name.toLowerCase() === name.toLowerCase()))
+								.filter((c): c is CharacterProfile => c !== undefined)
+								.map((c) => ({ characterId: c.id })),
 							dialogueLines: [],
 							startSec: beat.startSec,
 							endSec: beat.endSec,

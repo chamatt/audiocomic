@@ -4,10 +4,8 @@ import { uuid, nowIso, logger, getEnv } from '@audiocomic/shared';
 import { createMediaManagerFromEnv } from '@audiocomic/storage';
 import { parseChapterTitle } from '@/lib/filename-parser';
 import {
-  createChapterActor,
+  setupChapterActor,
   addChapterToProjectActor,
-  linkChapterAssetActor,
-  startChapterTranscriptionActor,
 } from '@/lib/actor-actions';
 
 const log = logger.scoped('upload-batch');
@@ -94,34 +92,23 @@ export async function POST(
         chapterId,
       });
 
-      // 4. Create chapter actor (fire-and-forget).
-      createChapterActor(chapterId, projectId, chapterIndex, title).catch((e) =>
-        log.error('createChapterActor failed', { chapterId, error: String(e) }),
+      // 4. Set up chapter actor (sequential: Init → Title → LinkAsset → StartTranscription).
+      //    Must be sequential to avoid concurrent getOrCreate race on the same actor key.
+      setupChapterActor(chapterId, projectId, chapterIndex, title, assetId).catch((e) =>
+        log.error('setupChapterActor failed', { chapterId, error: String(e) }),
       );
 
-      // 5. Register chapter with project actor (fire-and-forget).
+      // 5. Register chapter with project actor (fire-and-forget — different actor).
       addChapterToProjectActor('main', chapterId, title, chapterIndex).catch((e) =>
         log.error('addChapterToProjectActor failed', { chapterId, error: String(e) }),
       );
 
-      // 6. Link asset to chapter actor (fire-and-forget).
-      linkChapterAssetActor(chapterId, assetId).catch((e) =>
-        log.error('linkChapterAssetActor failed', { chapterId, error: String(e) }),
-      );
-
-      // 7. Start transcription (fire-and-forget).
-      startChapterTranscriptionActor(chapterId, projectId, chapterIndex).catch((e) =>
-        log.error('startChapterTranscriptionActor failed', { chapterId, error: String(e) }),
-      );
-
-      // 8. Patch chapter status to `transcribing`.
+      // 6. Patch chapter status to `transcribing`.
       await repo.chapters.patch(chapterId, {
         status: 'transcribing',
         transcriptionStatus: 'running',
         sourceAssetId: assetId,
       });
-
-      created.push({ id: chapterId, index: chapterIndex, title, status: 'transcribing', assetId, storageKey });
     }
 
     log.info('batch upload complete', { projectId, count: created.length });
