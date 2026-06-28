@@ -1,4 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { experimental_transcribe as transcribe } from 'ai';
 import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai';
 import type { TranscriptChunk } from '@audiocomic/domain';
@@ -12,6 +16,7 @@ import type {
 } from './types';
 
 const log = logger.scoped('transcription');
+const execFileAsync = promisify(execFile);
 
 // ============================================================================
 // OpenAI Whisper transcription adapter
@@ -144,27 +149,47 @@ export class GroqTranscriptionAdapter implements TranscriptionAdapter {
     const ext = rawExt === 'm4b' ? 'm4a' : rawExt;
     log.info('starting Groq transcription', { audioPath, ext, size: audio.length, model: this.model });
 
-    // Use curl via child_process instead of fetch.
-    // Node.js's fetch/FormData inside the RivetKit engine produces a different
-    // multipart payload than standalone Node.js, causing Groq's Whisper to
-    // return incomplete transcriptions. curl produces consistent results.
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
-    const execFileAsync = promisify(execFile);
+    // Whisper stops transcribing after ~3s of continuous silence, producing
+    // truncated results for audiobook intros with gaps between speech segments.
+    // Fix: use ffmpeg silenceremove to strip silences >1s, always use result.
+    const compactPath = join(tmpdir(), `groq-compact-${uuid()}.mp3`);
+    let transcribePath = audioPath;
 
+    try {
+      await execFileAsync(
+        process.env.FFMPEG_PATH ?? 'ffmpeg',
+        [
+          '-y', '-i', audioPath,
+          '-af', 'silenceremove=stop_periods=-1:stop_duration=1:stop_threshold=-40dB',
+          '-codec:a', 'libmp3lame', '-qscale:a', '2',
+          compactPath,
+        ],
+        { maxBuffer: 10 * 1024 * 1024, signal: opts.signal ?? undefined },
+      );
+      const { statSync } = await import('node:fs');
+      const compactSize = statSync(compactPath).size;
+      if (compactSize > 0) {
+        transcribePath = compactPath;
+        log.info('silence-removed audio', { originalSize: audio.length, compactSize, reduction: `${Math.round((1 - compactSize / audio.length) * 100)}%` });
+      }
+    } catch (e) {
+      log.warn('silence removal failed, falling back to original audio', { error: e instanceof Error ? e.message : String(e) });
+    }
+
+    // Call Groq API via curl (bypasses Node.js fetch/FormData issues in RivetKit)
     const args = [
       '-s',
       'https://api.groq.com/openai/v1/audio/transcriptions',
       '-H', `Authorization: Bearer ${this.apiKey}`,
       '-F', `model=${this.model}`,
-      '-F', `file=@${audioPath};type=audio/${ext};filename=audio.${ext}`,
+      '-F', `file=@${transcribePath};type=audio/mp3;filename=audio.mp3`,
       '-F', 'response_format=verbose_json',
       '-F', `language=${opts.language ?? 'en'}`,
       '-F', `prompt=${opts.prompt ?? 'This is an audiobook narration. Transcribe all speech including narration, dialogue, and announcements.'}`,
       '-F', `temperature=${String(opts.temperature ?? 0)}`,
     ];
 
-    log.debug('calling Groq API via curl', { model: this.model, ext, args: args.join(' ').replace(this.apiKey, 'REDACTED') });
+    log.debug('calling Groq API via curl', { model: this.model, transcribePath });
     const done = log.timer('groq transcription');
     const { stdout } = await execFileAsync('curl', args, {
       maxBuffer: 50 * 1024 * 1024,
@@ -186,13 +211,15 @@ export class GroqTranscriptionAdapter implements TranscriptionAdapter {
 
     const segCount = result.segments?.length ?? 0;
     log.info('Groq response received', { segments: segCount, duration: result.duration, textLen: result.text?.length ?? 0 });
-    if (segCount < 2 && (result.duration ?? 0) > 15) {
-      log.warn('suspiciously few segments for >15s audio', { segments: segCount, duration: result.duration, text: result.text?.slice(0, 200) });
-    }
 
     const chunks = chunkPlainText(result.text ?? '', opts.projectId);
     log.info('transcription complete', { chunks: chunks.length, textPreview: result.text?.slice(0, 100) });
     done();
+
+    // Clean up compact file
+    if (transcribePath !== audioPath) {
+      await import('node:fs').then((fs) => fs.promises.unlink(compactPath)).catch(() => {});
+    }
 
     return {
       chunks,
