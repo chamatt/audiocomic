@@ -31,6 +31,9 @@ import {
   SpeakerTurn as SpeakerTurnSchema,
   StorySection as StorySectionSchema,
   TranscriptChunk as TranscriptChunkSchema,
+  Chapter as ChapterSchema,
+  CharacterState as CharacterStateSchema,
+  KnowledgePage as KnowledgePageSchema,
   WorldBible as WorldBibleSchema,
 } from '@audiocomic/domain';
 import type {
@@ -50,9 +53,12 @@ import type {
   SceneProfile as SceneProfileType,
   SourceAsset as SourceAssetType,
   SpeakerTurn as SpeakerTurnType,
-  StorySection as StorySectionType,
   TranscriptChunk as TranscriptChunkType,
+  Chapter as ChapterType,
+  CharacterState as CharacterStateType,
+  KnowledgePage as KnowledgePageType,
   WorldBible as WorldBibleType,
+  StorySection as StorySectionType,
 } from '@audiocomic/domain';
 
 import type { Db } from './client';
@@ -219,10 +225,14 @@ export interface Repository {
   panelRenderRequests: EntityRepo<PanelRenderRequestType, Row<typeof schema.panelRenderRequests>>;
   panelRenderResults: EntityRepo<PanelRenderResultType, Row<typeof schema.panelRenderResults>>;
   pageComposites: EntityRepo<PageCompositeType, Row<typeof schema.pageComposites>>;
+  jobs: EntityRepo<JobRecordType, Row<typeof schema.jobs>>;
+  chapters: EntityRepo<ChapterType, Row<typeof schema.chapters>>;
+  characterStates: EntityRepo<CharacterStateType, Row<typeof schema.characterStates>>;
+  knowledgePages: EntityRepo<KnowledgePageType, Row<typeof schema.knowledgePages>>;
+  knowledgeEmbeddings: { create(input: { projectId: string; chapterId?: string; chunkIndex: number; text: string; metadata?: Record<string, unknown>; embedding?: number[] }): Promise<Row<typeof schema.knowledgeEmbeddings>>; getByProjectId(projectId: string): Promise<Row<typeof schema.knowledgeEmbeddings>[]>; delete(id: string): Promise<void>; };
   letteringSpecs: EntityRepo<LetteringSpecType, Row<typeof schema.letteringSpecs>>;
   narrationTimelines: EntityRepo<NarrationTimelineType, Row<typeof schema.narrationTimelines>>;
   exportBundles: EntityRepo<ExportBundleType, Row<typeof schema.exportBundles>>;
-  jobs: EntityRepo<JobRecordType, Row<typeof schema.jobs>>;
 
   /** Write a pgvector embedding for a row that owns an `embedding` column. */
   setEmbedding(
@@ -399,6 +409,44 @@ export function createRepository(db: Db): Repository {
     fromRow: (r) => toDomain(r) as unknown as ExportBundleType,
   });
 
+  const chapters = makeEntityRepo<typeof schema.chapters, ChapterType>(db, {
+    table: schema.chapters,
+    schema: ChapterSchema,
+    projectColumn: schema.chapters.projectId,
+    toRow: (v) => v as unknown as InsertPayload<typeof schema.chapters>,
+    fromRow: (r) => toDomain(r) as unknown as ChapterType,
+  });
+
+  const characterStates = makeEntityRepo<typeof schema.characterStates, CharacterStateType>(db, {
+    table: schema.characterStates,
+    schema: CharacterStateSchema,
+    projectColumn: schema.characterStates.projectId,
+    toRow: (v) => v as unknown as InsertPayload<typeof schema.characterStates>,
+    fromRow: (r) => toDomain(r) as unknown as CharacterStateType,
+  });
+
+  const knowledgePages = makeEntityRepo<typeof schema.knowledgePages, KnowledgePageType>(db, {
+    table: schema.knowledgePages,
+    schema: KnowledgePageSchema,
+    projectColumn: schema.knowledgePages.projectId,
+    toRow: (v) => v as unknown as InsertPayload<typeof schema.knowledgePages>,
+    fromRow: (r) => toDomain(r) as unknown as KnowledgePageType,
+  });
+
+  // knowledgeEmbeddings — DB-only table, no Zod schema (has embedding vector column)
+  const knowledgeEmbeddings: Repository['knowledgeEmbeddings'] = {
+    async create(input) {
+      const [row] = await db.insert(schema.knowledgeEmbeddings).values(stripUndefined(input)).returning();
+      return row as Row<typeof schema.knowledgeEmbeddings>;
+    },
+    async getByProjectId(projectId: string) {
+      return db.select().from(schema.knowledgeEmbeddings).where(eq(schema.knowledgeEmbeddings.projectId, projectId)) as Promise<Row<typeof schema.knowledgeEmbeddings>[]>;
+    },
+    async delete(id: string) {
+      await db.delete(schema.knowledgeEmbeddings).where(eq(schema.knowledgeEmbeddings.id, id));
+    },
+  };
+
   const jobs = makeEntityRepo<typeof schema.jobs, JobRecordType>(db, {
     table: schema.jobs,
     schema: JobRecordSchema,
@@ -518,6 +566,10 @@ export function createRepository(db: Db): Repository {
     narrationTimelines,
     exportBundles,
     jobs,
+    chapters,
+    characterStates,
+    knowledgePages,
+    knowledgeEmbeddings,
     setEmbedding,
     claimNextJob,
     getLatestJobByProject,

@@ -74,6 +74,7 @@ export const sourceAssets = pgTable(
     storageKey: text('storage_key').notNull(),
     durationSec: real('duration_sec'),
     checksum: text('checksum'),
+    chapterId: uuid('chapter_id'),
     uploadedAt: createdAtCol(),
   },
   (t) => [index('source_assets_project_id_idx').on(t.projectId)],
@@ -93,8 +94,9 @@ export const transcriptChunks = pgTable(
     start: real('start'),
     end: real('end'),
     words: jsonb('words'),
-    speaker: text('speaker'),
     confidence: real('confidence'),
+    chapterId: uuid('chapter_id'),
+    embedding: embeddingCol(),
   },
   (t) => [index('transcript_chunks_project_id_idx').on(t.projectId)],
 );
@@ -463,6 +465,101 @@ export const jobs = pgTable(
     index('jobs_state_idx').on(t.state),
   ],
 );
+// ---------------------------------------------------------------------------
+// Chapters — first-class chapter entity per project
+// ---------------------------------------------------------------------------
+
+export const chapters = pgTable(
+  'chapters',
+  {
+    id: pkUuid(),
+    projectId: projectFk(),
+    index: integer('index').notNull(),
+    title: varchar('title', { length: 512 }).notNull(),
+    description: text('description'),
+    sourceAssetId: uuid('source_asset_id'),
+    status: text('status').notNull().default('pending'),
+    durationSec: real('duration_sec'),
+    transcriptionStatus: text('transcription_status').notNull().default('pending'),
+    createdAt: createdAtCol(),
+    updatedAt: updatedAtCol(),
+  },
+  (t) => [
+    index('chapters_project_id_idx').on(t.projectId),
+    index('chapters_project_order_idx').on(t.projectId, t.index),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Character states — temporal character state per chapter
+// ---------------------------------------------------------------------------
+
+export const characterStates = pgTable(
+  'character_states',
+  {
+    id: pkUuid(),
+    projectId: projectFk(),
+    characterId: uuid('character_id').notNull(),
+    chapterId: uuid('chapter_id').notNull(),
+    chapterIndex: integer('chapter_index').notNull(),
+    outfit: text('outfit'),
+    location: text('location'),
+    mood: text('mood'),
+    relationships: jsonb('relationships').notNull().default([]),
+    notes: text('notes'),
+    provenance: text('provenance'),
+    createdAt: createdAtCol(),
+  },
+  (t) => [
+    index('character_states_project_char_idx').on(t.projectId, t.characterId),
+    index('character_states_char_chapter_idx').on(t.characterId, t.chapterId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Knowledge pages — LLM-wiki structured knowledge entries
+// ---------------------------------------------------------------------------
+
+export const knowledgePages = pgTable(
+  'knowledge_pages',
+  {
+    id: pkUuid(),
+    projectId: projectFk(),
+    type: text('type').notNull(),
+    title: varchar('title', { length: 512 }).notNull(),
+    content: text('content').notNull(),
+    references: jsonb('references').notNull().default([]),
+    crossReferences: jsonb('cross_references').notNull().default([]),
+    confidence: real('confidence').notNull().default(1),
+    updatedAt: updatedAtCol(),
+  },
+  (t) => [
+    index('knowledge_pages_project_id_idx').on(t.projectId),
+    index('knowledge_pages_project_type_idx').on(t.projectId, t.type),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Knowledge embeddings — vector embeddings for RAG over chapter transcriptions
+// ---------------------------------------------------------------------------
+
+export const knowledgeEmbeddings = pgTable(
+  'knowledge_embeddings',
+  {
+    id: pkUuid(),
+    projectId: projectFk(),
+    chapterId: uuid('chapter_id'),
+    chunkIndex: integer('chunk_index').notNull(),
+    text: text('text').notNull(),
+    metadata: jsonb('metadata').notNull().default({}),
+    embedding: embeddingCol(),
+    createdAt: createdAtCol(),
+  },
+  (t) => [
+    index('knowledge_embeddings_project_id_idx').on(t.projectId),
+  ],
+);
+
 
 // ---------------------------------------------------------------------------
 // Re-exported row types (inferred from the Drizzle schema)
@@ -485,5 +582,8 @@ export type PanelRenderResultRow = typeof panelRenderResults.$inferSelect;
 export type PageCompositeRow = typeof pageComposites.$inferSelect;
 export type LetteringSpecRow = typeof letteringSpecs.$inferSelect;
 export type NarrationTimelineRow = typeof narrationTimelines.$inferSelect;
-export type ExportBundleRow = typeof exportBundles.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
+export type ChapterRow = typeof chapters.$inferSelect;
+export type CharacterStateRow = typeof characterStates.$inferSelect;
+export type KnowledgePageRow = typeof knowledgePages.$inferSelect;
+export type KnowledgeEmbeddingRow = typeof knowledgeEmbeddings.$inferSelect;

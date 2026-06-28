@@ -99,7 +99,7 @@ export const SourceAsset = z.object({
   storageKey: z.string(),
   durationSec: z.number().positive().optional(), // audio only
   checksum: z.string().optional(),
-  uploadedAt: z.string().datetime(),
+  chapterId: z.string().uuid().optional(), // NEW — links to Chapter
 });
 export type SourceAsset = z.infer<typeof SourceAsset>;
 
@@ -125,6 +125,7 @@ export const TranscriptChunk = z.object({
   words: z.array(WordTiming).optional(),
   speaker: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  chapterId: z.string().uuid().optional(), // NEW — links to Chapter
 });
 export type TranscriptChunk = z.infer<typeof TranscriptChunk>;
 
@@ -591,3 +592,104 @@ export function validatePageLayout(
 
   return { valid: errors.length === 0, errors };
 }
+
+// ============================================================================
+// Chapter — first-class entity with own audio, transcription, and pipeline
+// ============================================================================
+
+export const ChapterStatus = z.enum([
+  'pending',
+  'transcribing',
+  'transcribed',
+  'planning',
+  'planned',
+  'rendering',
+  'completed',
+  'failed',
+]);
+export type ChapterStatus = z.infer<typeof ChapterStatus>;
+
+export const TranscriptionStatus = z.enum([
+  'pending',
+  'running',
+  'completed',
+  'failed',
+  'skipped',
+]);
+export type TranscriptionStatus = z.infer<typeof TranscriptionStatus>;
+
+export const Chapter = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  index: z.number().int().nonnegative(),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  sourceAssetId: z.string().uuid().optional(),
+  status: ChapterStatus.default('pending'),
+  durationSec: z.number().positive().optional(),
+  transcriptionStatus: TranscriptionStatus.default('pending'),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type Chapter = z.infer<typeof Chapter>;
+
+// ============================================================================
+// Character State — temporal character state per chapter (outfit, mood, etc.)
+// ============================================================================
+
+export const CharacterRelationship = z.object({
+  targetCharacterId: z.string().uuid(),
+  relationship: z.string(),
+});
+export type CharacterRelationship = z.infer<typeof CharacterRelationship>;
+
+export const CharacterState = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  characterId: z.string().uuid(),
+  chapterId: z.string().uuid(),
+  chapterIndex: z.number().int().nonnegative(),
+  outfit: z.string().optional(),
+  location: z.string().optional(),
+  mood: z.string().optional(),
+  relationships: z.array(CharacterRelationship).default([]),
+  notes: z.string().optional(),
+  provenance: z.string().optional(),
+  createdAt: z.string().datetime(),
+});
+export type CharacterState = z.infer<typeof CharacterState>;
+
+// ============================================================================
+// Knowledge Page — LLM-wiki structured knowledge entries
+// ============================================================================
+
+export const KnowledgePageType = z.enum([
+  'character',
+  'location',
+  'object',
+  'concept',
+  'event',
+  'timeline',
+]);
+export type KnowledgePageType = z.infer<typeof KnowledgePageType>;
+
+export const KnowledgeReference = z.object({
+  chapterId: z.string().uuid().optional(),
+  sectionId: z.string().uuid().optional(),
+  chunkIndex: z.number().int().nonnegative().optional(),
+  quote: z.string().optional(),
+});
+export type KnowledgeReference = z.infer<typeof KnowledgeReference>;
+
+export const KnowledgePage = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  type: KnowledgePageType,
+  title: z.string().min(1),
+  content: z.string(),
+  references: z.array(KnowledgeReference).default([]),
+  crossReferences: z.array(z.string().uuid()).default([]),
+  confidence: z.number().min(0).max(1).default(1),
+  updatedAt: z.string().datetime(),
+});
+export type KnowledgePage = z.infer<typeof KnowledgePage>;
