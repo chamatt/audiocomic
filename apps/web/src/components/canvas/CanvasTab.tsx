@@ -1,18 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
-import type { PanelSpec, BoundingBox, LetteringBox } from "@audiocomic/domain";
+import type { PanelSpec, BoundingBox } from "@audiocomic/domain";
 import { ComicCanvas } from "./ComicCanvas";
 import { PanelEditor } from "./PanelEditor";
-import { CanvasToolbar } from "./CanvasToolbar";
+
 import { PageThumbnailBar } from "./PageThumbnailBar";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { useCanvasData } from "@/lib/canvas/use-canvas-data";
 import { throttle } from "@/lib/canvas/throttle";
 import type { CanvasPageData } from "./types";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { KnowledgePanel } from "./KnowledgePanel";
+
+const MODES = [
+  { value: "select" as const, label: "Select", icon: "↖" },
+  { value: "move" as const, label: "Move", icon: "✥" },
+  { value: "bubble" as const, label: "Bubbles", icon: "💬" },
+];
 
 interface CanvasTabProps {
   projectId: string;
@@ -21,8 +26,15 @@ interface CanvasTabProps {
 export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const { pages, loading, error, refresh, addPage, updatePanel, updatePanelBbox, updateLettering } =
     useCanvasData(projectId);
-  const { selectedPanelId, selectedPageId, selectPage, selectedChapterId, selectChapter } =
-    useCanvasStore();
+  const {
+    selectedPanelId,
+    selectedPageId,
+    selectPage,
+    selectedChapterId,
+    selectChapter,
+    mode,
+    setMode,
+  } = useCanvasStore();
 
   // Chapter metadata for the selector bar (id + title + stage)
   interface ChapterMeta {
@@ -133,25 +145,13 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [updatePanel],
   );
 
-  // Regenerate handler
+  // Regenerate handler (synchronous — render API returns when done)
   const handleRegenerate = useCallback(
     async (panelId: string) => {
       try {
         const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: "POST" });
         if (!res.ok) return;
-        const { jobId } = (await res.json()) as { jobId: string };
-        // Poll for job completion every 2s (max 120s)
-        for (let i = 0; i < 60; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const jobRes = await fetch(`/api/jobs/${jobId}`);
-          if (!jobRes.ok) break;
-          const job = (await jobRes.json()) as { state: string };
-          if (job.state === "completed" || job.state === "done") {
-            await refresh();
-            break;
-          }
-          if (job.state === "failed") break;
-        }
+        await refresh();
       } catch {
         /* ignore */
       }
@@ -345,92 +345,179 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <CanvasToolbar
-        pageCount={filteredPages.length}
-        currentPageIndex={currentPageIndex}
-        onPageNavigate={handlePageNavigate}
-        onAddPage={handleAddPage}
-        onExport={handleExport}
+    <div className="relative h-full w-full overflow-hidden">
+      {/* Canvas fills the entire viewport */}
+      <ComicCanvas
+        pages={filteredPages}
+        onPanelBboxChange={handlePanelBboxChange}
+        onBubbleChange={handleBubbleChange}
+        onBubbleTextChange={handleBubbleTextChange}
+        onBubbleDelete={handleBubbleDelete}
+        onBubbleAdd={handleBubbleAdd}
+        onPanelRender={handlePanelRender}
+        renderingPanelIds={renderingPanelIds}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-hidden">
-          <ComicCanvas
-            pages={filteredPages}
-            onPanelBboxChange={handlePanelBboxChange}
-            onBubbleChange={handleBubbleChange}
-            onBubbleTextChange={handleBubbleTextChange}
-            onBubbleDelete={handleBubbleDelete}
-            onBubbleAdd={handleBubbleAdd}
-            onPanelRender={handlePanelRender}
-            renderingPanelIds={renderingPanelIds}
-          />
-        </div>
+      {/* ── Floating UI: top-center toolbar ── */}
+      <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-lg border bg-background/95 p-1.5 shadow-md backdrop-blur">
+          {/* Mode toggle */}
+          <div className="flex items-center rounded-md border">
+            {MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setMode(m.value)}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-medium transition-colors",
+                  mode === m.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted",
+                )}
+              >
+                <span className="mr-1">{m.icon}</span>
+                {m.label}
+              </button>
+            ))}
+          </div>
 
+          <div className="h-5 w-px bg-border" />
+
+          {/* Page navigation */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handlePageNavigate("prev")}
+              disabled={currentPageIndex === 0}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+            >
+              ←
+            </button>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {currentPageIndex + 1}/{filteredPages.length}
+            </span>
+            <button
+              onClick={() => handlePageNavigate("next")}
+              disabled={currentPageIndex >= filteredPages.length - 1}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+            >
+              →
+            </button>
+          </div>
+
+          <div className="h-5 w-px bg-border" />
+
+          <button
+            onClick={handleAddPage}
+            className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+          >
+            + Page
+          </button>
+
+          {selectedChapterStage === "ready_for_review" && (
+            <button
+              onClick={handleRenderAll}
+              disabled={isRenderingAll || renderingPanelIds.size > 0}
+              className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isRenderingAll ? "Rendering…" : "Render All"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Floating UI: top-left chapter selector ── */}
+      <div className="pointer-events-none absolute left-4 top-20 z-20">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
+          <span className="px-2 text-xs font-medium text-muted-foreground">Chapter</span>
+          {chapters.map((ch) => (
+            <button
+              key={ch.id}
+              onClick={() => selectChapter(ch.id)}
+              className={cn(
+                "rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                selectedChapterId === ch.id
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {ch.index}
+            </button>
+          ))}
+          <button
+            onClick={() => selectChapter(null)}
+            className={cn(
+              "rounded-md px-2 py-1 text-xs font-medium transition-colors",
+              selectedChapterId === null
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            All
+          </button>
+        </div>
+      </div>
+
+      {/* ── Floating UI: top-right actions ── */}
+      <div className="pointer-events-none absolute right-4 top-20 z-20">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
+          <button
+            onClick={() => setShowKnowledge(!showKnowledge)}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              showKnowledge
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            📖 KB
+          </button>
+          <button
+            onClick={() => handleExport("pages")}
+            className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+          >
+            Export
+          </button>
+        </div>
+      </div>
+
+      {/* ── Floating UI: right PanelEditor (slides in/out) ── */}
+      <div
+        className={cn(
+          "pointer-events-auto absolute right-0 top-16 z-30 h-[calc(100%-140px)] transition-transform duration-200",
+          selectedPanel ? "translate-x-0" : "translate-x-full",
+        )}
+      >
         <PanelEditor
           panel={selectedPanel}
           panelImageUrl={selectedPanelImageUrl}
           onPatch={handlePanelPatch}
           onRegenerate={handleRegenerate}
         />
+      </div>
 
-        {showKnowledge && (
-          <div className="w-72 border-l overflow-hidden">
+      {/* ── Floating UI: bottom-center page thumbnails ── */}
+      <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
+        <div className="pointer-events-auto rounded-lg border bg-background/95 p-1.5 shadow-md backdrop-blur">
+          <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
+        </div>
+      </div>
+
+      {/* ── Floating UI: Knowledge panel (right side, below toolbar) ── */}
+      {showKnowledge && (
+        <div className="pointer-events-auto absolute right-4 top-36 z-20 w-72 rounded-lg border bg-background/95 shadow-md backdrop-blur">
+          <div className="flex items-center justify-between border-b p-2">
+            <span className="text-xs font-medium">Knowledge Base</span>
+            <button
+              onClick={() => setShowKnowledge(false)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="max-h-[400px] overflow-auto">
             <KnowledgePanel projectId={projectId} />
           </div>
-        )}
-      </div>
-
-      {/* Chapter selector + page thumbnails */}
-      <div className="border-t bg-background/95 backdrop-blur">
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b overflow-x-auto">
-          <span className="text-xs text-muted-foreground font-medium shrink-0">Chapter:</span>
-          {chapters.map((ch) => (
-            <Button
-              key={ch.id}
-              size="sm"
-              variant={selectedChapterId === ch.id ? "default" : "outline"}
-              className={cn("h-7 px-2.5 text-xs shrink-0")}
-              onClick={() => selectChapter(ch.id)}
-            >
-              {ch.index}. {ch.title}
-            </Button>
-          ))}
-          <Button
-            size="sm"
-            variant={selectedChapterId === null ? "default" : "outline"}
-            className={cn("h-7 px-2.5 text-xs shrink-0")}
-            onClick={() => selectChapter(null)}
-          >
-            All
-          </Button>
-          <div className="flex-1" />
-          {selectedChapterStage === "ready_for_review" && (
-            <Button
-              size="sm"
-              variant="default"
-              className="h-7 shrink-0"
-              disabled={isRenderingAll || renderingPanelIds.size > 0}
-              onClick={handleRenderAll}
-            >
-              {isRenderingAll ? "Rendering…" : "Render All"}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant={showKnowledge ? "default" : "outline"}
-            className="h-7 shrink-0"
-            onClick={() => setShowKnowledge(!showKnowledge)}
-          >
-            📖 KB
-          </Button>
-          <span className="text-xs text-muted-foreground shrink-0">
-            {filteredPages.length} page{filteredPages.length !== 1 ? "s" : ""}
-          </span>
         </div>
-        <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
-      </div>
+      )}
     </div>
   );
 }

@@ -1,34 +1,34 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import type { PanelSpec, CameraFraming } from '@audiocomic/domain';
+} from "@/components/ui/select";
+import type { PanelSpec, CameraFraming } from "@audiocomic/domain";
 
 const CAMERA_FRAMINGS: CameraFraming[] = [
-  'wide',
-  'medium',
-  'close-up',
-  'extreme-close-up',
-  'overhead',
-  'low-angle',
-  'pov',
-  'establishing',
+  "wide",
+  "medium",
+  "close-up",
+  "extreme-close-up",
+  "overhead",
+  "low-angle",
+  "pov",
+  "establishing",
 ];
 
-const QA_STATUSES = ['pending', 'passed', 'failed', 'regenerate'] as const;
+const QA_STATUSES = ["pending", "passed", "failed", "regenerate"] as const;
 
 interface PanelEditorProps {
   panel: PanelSpec | null;
@@ -42,15 +42,11 @@ export function PanelEditor({
   panelImageUrl,
   onPatch,
   onRegenerate,
-}: PanelEditorProps): JSX.Element {
+}: PanelEditorProps): JSX.Element | null {
   const [regenerating, setRegenerating] = useState(false);
 
   if (!panel) {
-    return (
-      <div className="flex h-full w-[400px] items-center justify-center border-l bg-background text-muted-foreground">
-        <p className="text-sm">Select a panel to edit</p>
-      </div>
-    );
+    return null;
   }
 
   const handleRegenerate = async () => {
@@ -63,7 +59,7 @@ export function PanelEditor({
   };
 
   return (
-    <div className="flex h-full w-[400px] flex-col border-l bg-background">
+    <div className="flex h-full w-[360px] flex-col rounded-lg border bg-background/95 shadow-lg backdrop-blur">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold">Panel {panel.index + 1}</h3>
@@ -95,7 +91,7 @@ export function PanelEditor({
           {/* Camera Framing */}
           <FieldSection title="Camera Framing">
             <Select
-              value={panel.cameraFraming ?? ''}
+              value={panel.cameraFraming ?? ""}
               onValueChange={(v) => onPatch(panel.id, { cameraFraming: v as CameraFraming })}
             >
               <SelectTrigger>
@@ -117,7 +113,7 @@ export function PanelEditor({
           <FieldSection title="Render Prompt">
             <DebouncedTextarea
               key={`prompt-${panel.id}`}
-              value={panel.renderPrompt ?? ''}
+              value={panel.renderPrompt ?? ""}
               onChange={(v) => onPatch(panel.id, { renderPrompt: v })}
               placeholder="Prompt sent to image generator"
               rows={4}
@@ -128,7 +124,7 @@ export function PanelEditor({
           <FieldSection title="Negative Prompt">
             <DebouncedTextarea
               key={`neg-${panel.id}`}
-              value={panel.renderNegativePrompt ?? ''}
+              value={panel.renderNegativePrompt ?? ""}
               onChange={(v) => onPatch(panel.id, { renderNegativePrompt: v })}
               placeholder="Things to avoid"
               rows={2}
@@ -141,16 +137,14 @@ export function PanelEditor({
               <DebouncedInput
                 key={`seed-${panel.id}`}
                 type="number"
-                value={panel.seed?.toString() ?? ''}
+                value={panel.seed?.toString() ?? ""}
                 onChange={(v) => onPatch(panel.id, { seed: v ? parseInt(v, 10) : undefined })}
               />
             </FieldSection>
             <FieldSection title="QA Status">
               <Select
                 value={panel.qaStatus}
-                onValueChange={(v) =>
-                  onPatch(panel.id, { qaStatus: v as PanelSpec['qaStatus'] })
-                }
+                onValueChange={(v) => onPatch(panel.id, { qaStatus: v as PanelSpec["qaStatus"] })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -172,7 +166,7 @@ export function PanelEditor({
             className="w-full"
             variant="default"
           >
-            {regenerating ? 'Regenerating...' : 'Regenerate Panel'}
+            {regenerating ? "Regenerating..." : "Regenerate Panel"}
           </Button>
 
           <Separator />
@@ -192,7 +186,13 @@ export function PanelEditor({
 
 // --- Sub-components ---
 
-function FieldSection({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function FieldSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
     <div className="space-y-2">
       <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -203,14 +203,14 @@ function FieldSection({ title, children }: { title: string; children: React.Reac
   );
 }
 
-function QaBadge({ status }: { status: PanelSpec['qaStatus'] }): JSX.Element {
-  const variants: Record<string, 'default' | 'outline' | 'destructive' | 'warning'> = {
-    pending: 'outline',
-    passed: 'default',
-    failed: 'destructive',
-    regenerate: 'warning',
+function QaBadge({ status }: { status: PanelSpec["qaStatus"] }): JSX.Element {
+  const variants: Record<string, "default" | "outline" | "destructive" | "warning"> = {
+    pending: "outline",
+    passed: "default",
+    failed: "destructive",
+    regenerate: "warning",
   };
-  return <Badge variant={variants[status] ?? 'outline'}>{status}</Badge>;
+  return <Badge variant={variants[status] ?? "outline"}>{status}</Badge>;
 }
 
 // Debounced textarea that calls onChange after user stops typing
@@ -255,7 +255,7 @@ function DebouncedTextarea({
 function DebouncedInput({
   value,
   onChange,
-  type = 'text',
+  type = "text",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -289,7 +289,7 @@ function CharacterEditor({
 }): JSX.Element {
   const characters = panel.characters;
 
-  const updateChar = (index: number, patch: Partial<PanelSpec['characters'][number]>) => {
+  const updateChar = (index: number, patch: Partial<PanelSpec["characters"][number]>) => {
     const newChars = characters.map((c, i) => (i === index ? { ...c, ...patch } : c));
     void onPatch(panel.id, { characters: newChars });
   };
@@ -301,10 +301,7 @@ function CharacterEditor({
 
   const addChar = () => {
     void onPatch(panel.id, {
-      characters: [
-        ...characters,
-        { characterId: crypto.randomUUID(), position: 'center' },
-      ],
+      characters: [...characters, { characterId: crypto.randomUUID(), position: "center" }],
     });
   };
 
@@ -320,33 +317,28 @@ function CharacterEditor({
                 placeholder="Character ID"
                 className="h-7 text-xs"
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => removeChar(i)}
-                className="h-7 px-2"
-              >
+              <Button size="sm" variant="ghost" onClick={() => removeChar(i)} className="h-7 px-2">
                 ×
               </Button>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Input
-                value={char.pose ?? ''}
+                value={char.pose ?? ""}
                 onChange={(e) => updateChar(i, { pose: e.target.value })}
                 placeholder="Pose"
                 className="h-7 text-xs"
               />
               <Input
-                value={char.expression ?? ''}
+                value={char.expression ?? ""}
                 onChange={(e) => updateChar(i, { expression: e.target.value })}
                 placeholder="Expression"
                 className="h-7 text-xs"
               />
             </div>
             <Select
-              value={char.position ?? 'center'}
+              value={char.position ?? "center"}
               onValueChange={(v) =>
-                updateChar(i, { position: v as 'left' | 'center' | 'right' | 'background' })
+                updateChar(i, { position: v as "left" | "center" | "right" | "background" })
               }
             >
               <SelectTrigger className="h-7 text-xs">
@@ -380,7 +372,7 @@ function DialogueEditor({
 }): JSX.Element {
   const lines = panel.dialogueLines;
 
-  const updateLine = (index: number, patch: Partial<PanelSpec['dialogueLines'][number]>) => {
+  const updateLine = (index: number, patch: Partial<PanelSpec["dialogueLines"][number]>) => {
     const newLines = lines.map((l, i) => (i === index ? { ...l, ...patch } : l));
     void onPatch(panel.id, { dialogueLines: newLines });
   };
@@ -392,7 +384,7 @@ function DialogueEditor({
 
   const addLine = () => {
     void onPatch(panel.id, {
-      dialogueLines: [...lines, { speaker: '', text: '', type: 'speech' }],
+      dialogueLines: [...lines, { speaker: "", text: "", type: "speech" }],
     });
   };
 
@@ -411,7 +403,7 @@ function DialogueEditor({
               <Select
                 value={line.type}
                 onValueChange={(v) =>
-                  updateLine(i, { type: v as 'speech' | 'thought' | 'narration' | 'sfx' })
+                  updateLine(i, { type: v as "speech" | "thought" | "narration" | "sfx" })
                 }
               >
                 <SelectTrigger className="h-7 w-24 text-xs">
@@ -424,12 +416,7 @@ function DialogueEditor({
                   <SelectItem value="sfx">SFX</SelectItem>
                 </SelectContent>
               </Select>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => removeLine(i)}
-                className="h-7 px-2"
-              >
+              <Button size="sm" variant="ghost" onClick={() => removeLine(i)} className="h-7 px-2">
                 ×
               </Button>
             </div>

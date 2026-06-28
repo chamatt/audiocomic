@@ -302,6 +302,52 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     [selectChapter],
   );
 
+  const isCanvasTab = activeTab === "canvas";
+
+  // Canvas tab: full-viewport layout with floating tab bar on top.
+  // Other tabs: standard constrained layout.
+  if (isCanvasTab) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-background">
+        {/* Floating tab bar — top-left, above canvas */}
+        <div className="absolute left-4 top-4 z-20 flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
+          <button
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
+            onClick={() => setActiveTab("canvas")}
+          >
+            Canvas
+          </button>
+          <button
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            onClick={() => setActiveTab("chapters")}
+          >
+            Chapters
+          </button>
+          <button
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            onClick={() => setActiveTab("knowledge")}
+          >
+            Knowledge
+          </button>
+          <button
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            onClick={() => setActiveTab("settings")}
+          >
+            Settings
+          </button>
+        </div>
+
+        {/* Project name — top-center, subtle */}
+        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+          <span className="text-sm font-medium text-muted-foreground">{project.name}</span>
+        </div>
+
+        {/* Canvas fills the entire viewport */}
+        <CanvasTab projectId={projectId} />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       {/* Header */}
@@ -327,11 +373,6 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
         {/* Chapters tab */}
         <TabsContent value="chapters">
           <ChapterBoard projectId={projectId} onReview={handleChapterReview} />
-        </TabsContent>
-
-        {/* Canvas tab */}
-        <TabsContent value="canvas" className="h-[calc(100vh-220px)]">
-          <CanvasTab projectId={projectId} />
         </TabsContent>
 
         {/* Knowledge tab */}
