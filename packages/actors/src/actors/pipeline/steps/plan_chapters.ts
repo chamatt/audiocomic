@@ -231,7 +231,7 @@ export const PlanChaptersStep: StepExecutor = {
 						panel.characters.some((pc) => pc.characterId === c.id),
 					);
 
-					const prompt = bridge.composePanelPrompt(panel, section, panelCharacters, worldBible);
+				const prompt = bridge.composePanelPrompt(panel, section, panelCharacters, worldBible, sections);
 					panel.renderPrompt = prompt;
 
 					// Persist the prompt onto the panel spec.

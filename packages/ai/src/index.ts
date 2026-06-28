@@ -16,5 +16,5 @@ export { OpenAITTSAdapter, createTTSAdapter } from './tts';
 // Image generation
 export { AISDKImageAdapter, createImageAdapter } from './image';
 
-// Prompt composer (pure function)
-export { composePanelPrompt } from './prompt';
+// Prompt composer + section memory builder (pure functions)
+export { composePanelPrompt, buildSectionMemory } from './prompt';

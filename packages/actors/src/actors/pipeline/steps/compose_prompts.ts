@@ -92,13 +92,14 @@ export const ComposePromptsStep: StepExecutor = {
 					panel.characters.some((pc) => pc.characterId === c.id),
 				);
 
-				// Compose the render prompt (sync adapter call)
-				const prompt = bridge.composePanelPrompt(
-					panel,
-					section,
-					panelCharacters,
-					worldBible,
-				);
+			// Compose the render prompt with full section memory (MangaFlow M_k)
+			const prompt = bridge.composePanelPrompt(
+				panel,
+				section,
+				panelCharacters,
+				worldBible,
+				sections,
+			);
 
 				// Persist the prompt onto the panel spec
 				yield* Effect.tryPromise(() =>

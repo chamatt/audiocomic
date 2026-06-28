@@ -65,7 +65,7 @@ export interface PipelineBridgeShape {
 	renderLettering(spec: unknown, pageWidth: number, pageHeight: number): Promise<string>;
 	exportMotionComic(timeline: unknown, pageImages: Map<string, Buffer | string>, audioPath: string | undefined, outputPath: string): Promise<{ sizeBytes: number; durationSec: number }>;
 	exportPageBundle(pageImagePaths: string[], outputPath: string): Promise<{ sizeBytes: number }>;
-	composePanelPrompt(panel: unknown, section: unknown, characters: unknown[], worldBible: unknown, sectionMemory?: string): string;
+	composePanelPrompt(panel: unknown, section: unknown, characters: unknown[], worldBible: unknown, sectionMemoryOrAllSections?: string | unknown[]): string;
 }
 
 export const PipelineBridge = Context.Service<PipelineBridgeShape>("PipelineBridge");
@@ -200,8 +200,8 @@ export function makePipelineBridgeLayer(dbResult: CreateDbResult, env: Env): Lay
 			const result = await mediaExportPageBundle(pageImagePaths, outputPath);
 			return { sizeBytes: result.sizeBytes };
 		},
-		composePanelPrompt(panel: unknown, section: unknown, characters: unknown[], worldBible: unknown, sectionMemory?: string) {
-			return composePanelPrompt(panel as never, section as never, characters as never, worldBible as never, sectionMemory);
+		composePanelPrompt(panel: unknown, section: unknown, characters: unknown[], worldBible: unknown, sectionMemoryOrAllSections?: string | unknown[]) {
+			return composePanelPrompt(panel as never, section as never, characters as never, worldBible as never, sectionMemoryOrAllSections as never);
 		},
 	};
 

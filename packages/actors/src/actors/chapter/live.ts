@@ -362,7 +362,7 @@ export const ChapterLive = Chapter.toLayer(
 					const section = sectionMap.get(panel.storySectionId);
 					if (!section) continue;
 					const panelCharacters = characters.filter((c) => panel.characters.some((pc) => pc.characterId === c.id));
-					const prompt = bridge.composePanelPrompt(panel, section, panelCharacters, worldBible);
+				const prompt = bridge.composePanelPrompt(panel, section, panelCharacters, worldBible, sections);
 					panel.renderPrompt = prompt;
 					yield* Effect.tryPromise(() => bridge.repo.panelSpecs.patch(panel.id, { renderPrompt: prompt }))
 						.pipe(Effect.catch(() => Effect.sync(() => {})));
