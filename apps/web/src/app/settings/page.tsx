@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { Nav } from '@/components/Nav';
 import { SettingsForm } from '@/components/SettingsForm';
 import { getSettingsAction } from '@/lib/actions';
@@ -10,11 +9,9 @@ export default async function SettingsPage() {
   return (
     <div>
       <Nav />
-      <div className="container">
-        <h1 className="mb-4" style={{ fontSize: 24, fontWeight: 700 }}>Provider Settings</h1>
-        <div className="card" style={{ maxWidth: 600 }}>
-          <SettingsForm initialSettings={settings} />
-        </div>
+      <div className="mx-auto max-w-7xl px-6 py-12">
+        <h1 className="text-2xl font-bold tracking-tight mb-8">Provider Settings</h1>
+        <SettingsForm initialSettings={settings} />
       </div>
     </div>
   );

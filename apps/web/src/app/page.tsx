@@ -1,52 +1,59 @@
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
 export default function HomePage() {
   return (
     <div>
       <Nav />
-      <div className="container">
-        <div className="card mb-4">
-          <h1 className="mb-2" style={{ fontSize: 32, fontWeight: 800 }}>
-            Audiobook → Narrated Comic
+      <div className="mx-auto max-w-7xl px-6 py-12">
+        <div className="flex flex-col gap-2 mb-12">
+          <h1 className="text-4xl font-bold tracking-tight">
+            Audiobook to narrated comic
           </h1>
-          <p className="text-dim mb-4">
-            Upload an audiobook or book text. The system transcribes, segments the story,
-            plans pages and panels, renders comic art, composes pages with lettering,
-            and exports a narrated motion-comic video synchronized to the original audio.
+          <p className="text-muted-foreground max-w-xl">
+            Upload audio or text. The pipeline transcribes, segments, plans pages,
+            renders panels, and exports a narrated motion comic.
           </p>
-          <div className="flex gap-4">
+          <div className="flex gap-3 mt-4">
             <Link href="/projects/new">
-              <button className="primary">New Project</button>
+              <Button>New Project</Button>
             </Link>
             <Link href="/projects">
-              <button>View Projects</button>
+              <Button variant="outline">Browse Projects</Button>
             </Link>
           </div>
         </div>
 
-        <div className="grid grid-3 mt-4">
-          <div className="card">
-            <h3 className="mb-2 font-bold">1. Ingest</h3>
-            <p className="text-sm text-dim">
-              Audio is transcribed with word-level timestamps. Text is parsed into
-              chapters and scenes. Both modalities produce a normalized story timeline.
-            </p>
-          </div>
-          <div className="card">
-            <h3 className="mb-2 font-bold">2. Plan</h3>
-            <p className="text-sm text-dim">
-              An LLM plans chapters, scenes, beats, pages, and panels as typed JSON.
-              Character and world bibles are built for cross-panel consistency.
-            </p>
-          </div>
-          <div className="card">
-            <h3 className="mb-2 font-bold">3. Render & Export</h3>
-            <p className="text-sm text-dim">
-              Panels are rendered through adapter backends (ComfyUI, AI SDK, or placeholder).
-              Pages are composed with lettering overlays. FFmpeg exports a narrated MP4.
-            </p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Ingest</CardTitle>
+              <CardDescription>
+                Audio is transcribed with word-level timestamps. Text is parsed into
+                chapters and scenes.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Plan</CardTitle>
+              <CardDescription>
+                An LLM plans chapters, scenes, beats, pages, and panels as typed JSON.
+                Character and world bibles ensure consistency.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Render and Export</CardTitle>
+              <CardDescription>
+                Panels are rendered, composed with lettering, and exported as a
+                narrated MP4 synchronized to the original audio.
+              </CardDescription>
+            </CardHeader>
+          </Card>
         </div>
       </div>
     </div>

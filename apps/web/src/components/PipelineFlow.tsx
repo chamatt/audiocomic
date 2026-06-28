@@ -40,34 +40,34 @@ export interface PipelineFlowProps {
 // ---------------------------------------------------------------------------
 
 const THEME = {
-  bg: '#1a1a2e',
-  node: '#16213e',
-  nodeBorder: '#2a2a4a',
-  nodeSelected: '#f97316',
-  text: '#e0e0e0',
-  textDim: '#8a8aa8',
-  textMuted: '#5a5a78',
-  accent: '#f97316',
-  headerBar: '#0f0f23',
+  bg: 'oklch(0.15 0.02 280)',
+  node: 'oklch(0.19 0.02 280)',
+  nodeBorder: 'oklch(1 0 0 / 10%)',
+  nodeSelected: 'oklch(0.70 0.19 41)',
+  text: 'oklch(0.98 0.01 280)',
+  textDim: 'oklch(0.65 0.02 280)',
+  textMuted: 'oklch(0.50 0.02 280)',
+  accent: 'oklch(0.70 0.19 41)',
+  headerBar: 'oklch(0.12 0.02 280)',
 } as const;
 
 const STATUS_COLORS: Record<StepState['status'], string> = {
-  pending: '#6b7280',
-  running: '#3b82f6',
-  paused: '#a78bfa',
-  completed: '#22c55e',
-  failed: '#ef4444',
-  skipped: '#6b7280',
-  stale: '#f97316',
+  pending: 'oklch(0.65 0.02 280)',
+  running: 'oklch(0.70 0.18 250)',
+  paused: 'oklch(0.70 0.18 300)',
+  completed: 'oklch(0.70 0.19 145)',
+  failed: 'oklch(0.65 0.22 25)',
+  skipped: 'oklch(0.50 0.02 280)',
+  stale: 'oklch(0.70 0.19 41)',
 };
 
 const PIPELINE_STATUS_COLORS: Record<PipelineState['status'], string> = {
-  idle: '#6b7280',
-  running: '#3b82f6',
-  paused: '#a78bfa',
-  completed: '#22c55e',
-  failed: '#ef4444',
-  scheduled: '#60a5fa',
+  idle: 'oklch(0.65 0.02 280)',
+  running: 'oklch(0.70 0.18 250)',
+  paused: 'oklch(0.70 0.18 300)',
+  completed: 'oklch(0.70 0.19 145)',
+  failed: 'oklch(0.65 0.22 25)',
+  scheduled: 'oklch(0.70 0.18 250)',
 };
 
 // ---------------------------------------------------------------------------

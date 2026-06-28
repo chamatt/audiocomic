@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
 import type { PipelineState, StepState } from '@audiocomic/actors';
 import { regeneratePanelAction, regeneratePageAction, exportProjectAction } from '@/lib/actions';
@@ -24,6 +23,21 @@ import {
   type AddStepInput,
 } from '@/lib/actor-actions';
 import { DEFAULT_PIPELINE_STEPS } from '@/lib/default-steps';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Play, Pause, RotateCcw, SkipForward, RefreshCw, Plus, Download,
+  AlertCircle, CheckCircle2, Clock, Loader2, Ban, ZapOff, Zap,
+} from 'lucide-react';
+import { PipelineFlow } from '@/components/PipelineFlow';
 
 export interface ProjectDetailData {
   project: Project;
@@ -41,42 +55,355 @@ interface Props {
   initialDetail: ProjectDetailData;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#6b7280',
-  running: '#fbbf24',
-  paused: '#a78bfa',
-  completed: '#4ade80',
-  failed: '#fca5a5',
-  skipped: '#6b7280',
-  idle: '#6b7280',
-  scheduled: '#60a5fa',
+// ---------------------------------------------------------------------------
+// Status helpers
+// ---------------------------------------------------------------------------
+
+const STATUS_CONFIG: Record<string, { variant: 'default' | 'destructive' | 'success' | 'warning' | 'outline'; icon: typeof Clock }> = {
+  pending: { variant: 'outline', icon: Clock },
+  running: { variant: 'warning', icon: Loader2 },
+  paused: { variant: 'default', icon: Pause },
+  completed: { variant: 'success', icon: CheckCircle2 },
+  failed: { variant: 'destructive', icon: AlertCircle },
+  skipped: { variant: 'outline', icon: SkipForward },
+  stale: { variant: 'warning', icon: RefreshCw },
+  idle: { variant: 'outline', icon: Clock },
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const color = STATUS_COLORS[status] ?? '#6b7280';
+  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending!;
+  const Icon = config.icon;
   return (
-    <span className="badge" style={{ background: `${color}22`, color }}>
+    <Badge variant={config.variant} className="gap-1.5">
+      <Icon className={cn('h-3 w-3', status === 'running' && 'animate-spin')} />
       {status}
-    </span>
+    </Badge>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Step card
+// ---------------------------------------------------------------------------
+
+function StepCard({
+  step,
+  busy,
+  onRun,
+  onRetry,
+  onSkip,
+  onInvalidate,
+}: {
+  step: StepState;
+  busy: boolean;
+  onRun: (id: string) => void;
+  onRetry: (id: string) => void;
+  onSkip: (id: string) => void;
+  onInvalidate: (id: string) => void;
+}) {
+  const isRunning = step.status === 'running';
+  const isCompleted = step.status === 'completed';
+  const isSkipped = step.status === 'skipped';
+
+  return (
+    <Card className={cn(
+      'transition-colors',
+      isRunning && 'border-warning/50',
+      step.status === 'failed' && 'border-destructive/50',
+    )}>
+      <CardContent className="py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <StatusBadge status={step.status} />
+            <div className="min-w-0 flex-1">
+              <p className={cn(
+                'text-sm font-medium truncate',
+                isSkipped && 'line-through text-muted-foreground',
+              )}>
+                {step.definition.name}
+              </p>
+              {step.summary && (
+                <p className="text-xs text-muted-foreground truncate mt-0.5">{step.summary}</p>
+              )}
+              {step.error && (
+                <p className="text-xs text-destructive truncate mt-0.5">{step.error}</p>
+              )}
+            </div>
+            {step.attempts > 0 && (
+              <span className="text-xs text-muted-foreground shrink-0">
+                attempt {step.attempts}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => onRun(step.definition.id)}
+                    disabled={busy || isRunning}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Run step</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => onRetry(step.definition.id)}
+                    disabled={busy || isRunning || isCompleted}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Retry</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => onSkip(step.definition.id)}
+                    disabled={busy || isCompleted || isSkipped}
+                  >
+                    <SkipForward className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Skip</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => onInvalidate(step.definition.id)}
+                    disabled={busy || step.status === 'pending'}
+                  >
+                    <Ban className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Invalidate downstream</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Artifacts tab
+// ---------------------------------------------------------------------------
+
+function ArtifactsTab({ detail, onRegeneratePanel, onRegeneratePage, onExport }: {
+  detail: ProjectDetailData;
+  onRegeneratePanel: (panelId: string) => void;
+  onRegeneratePage: (pageId: string) => void;
+  onExport: (type: 'pages' | 'mp4') => void;
+}) {
+  const [selectedPageIdx, setSelectedPageIdx] = useState(0);
+  const selectedPage = detail.pages[selectedPageIdx];
+
+  if (detail.pages.length === 0 && detail.exports.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-16 text-center">
+          <p className="text-muted-foreground">No artifacts yet. Run the pipeline to generate pages and exports.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Pages */}
+      {detail.pages.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Pages ({detail.pages.length})
+            </h3>
+          </div>
+
+          {/* Page selector */}
+          <div className="flex gap-2 flex-wrap">
+            {detail.pages.map((p, i) => (
+              <Button
+                key={p.id}
+                size="sm"
+                variant={i === selectedPageIdx ? 'default' : 'outline'}
+                onClick={() => setSelectedPageIdx(i)}
+                className="h-8 w-8 p-0"
+              >
+                {i + 1}
+              </Button>
+            ))}
+          </div>
+
+          {/* Selected page */}
+          {selectedPage && (
+            <div className="flex flex-col gap-4">
+              {selectedPage.compositeUrl && (
+                <Card className="overflow-hidden">
+                  <img
+                    src={selectedPage.compositeUrl}
+                    alt={`Page ${selectedPageIdx + 1}`}
+                    className="w-full"
+                  />
+                </Card>
+              )}
+
+              {/* Panels */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {selectedPage.panels.map((panel) => (
+                  <Card key={panel.id} className="overflow-hidden">
+                    <CardContent className="p-4">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">
+                        Panel {panel.index + 1}
+                      </p>
+                      <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
+                        {panel.dialogueLines?.map(d => d.text).join(' ') ?? ''}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onRegeneratePanel(panel.id)}
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1.5" />
+                        Regenerate
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Story sections */}
+      {detail.sections.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Story Sections ({detail.sections.length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {detail.sections.slice(0, 12).map((s) => (
+              <Card key={s.id}>
+                <CardContent className="py-4">
+                  <p className="text-sm font-medium mb-1">{s.title}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-3">{s.summary ?? ''}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Characters */}
+      {detail.characters.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Characters ({detail.characters.length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {detail.characters.map((c) => (
+              <Card key={c.id}>
+                <CardContent className="py-4">
+                  <p className="text-sm font-medium mb-1">{c.name}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-3">{c.description ?? ''}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* World bible */}
+      {detail.worldBible && (
+        <div className="flex flex-col gap-4">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            World Bible
+          </h3>
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground line-clamp-6">
+                {detail.worldBible.setting ?? 'No setting'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Exports */}
+      {detail.exports.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Exports
+          </h3>
+          <div className="flex gap-3 flex-wrap">
+            {detail.exports.map((exp) => (
+              <a key={exp.id} href={`/api/exports/${exp.id}/download`}>
+                <Card className="hover:border-primary/50 transition-colors">
+                  <CardContent className="py-3 px-4 flex items-center gap-3">
+                    <Download className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">{exp.type}</p>
+                      <p className="text-xs text-muted-foreground">{Math.round((exp.sizeBytes ?? 0) / 1024)} KB</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Export actions */}
+      <div className="flex gap-3">
+        <Button variant="outline" onClick={() => onExport('pages')}>
+          <Download className="h-4 w-4 mr-2" />
+          Export Pages (ZIP)
+        </Button>
+        <Button variant="outline" onClick={() => onExport('mp4')}>
+          <Download className="h-4 w-4 mr-2" />
+          Export Motion Comic (MP4)
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export function ProjectDetail({ projectId, initialProject, initialDetail }: Props) {
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
-  const [selectedPageIdx, setSelectedPageIdx] = useState(0);
-
-  // Pipeline actor state
-  const [pipelineKey, setPipelineKey] = useState(projectId);
+  const [pipelineKey] = useState(projectId);
   const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [pipelineBusy, setPipelineBusy] = useState(false);
-  const [scheduleInterval, setScheduleInterval] = useState(60_000);
+  const [actorsReady, setActorsReady] = useState(false);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
   const project = detail.project;
-  const job = detail.job;
-  const progress = job?.progress ?? 0;
 
-  // --- Data refresh ---------------------------------------------------------
+  // --- Data refresh ---
   const refreshDetail = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}/detail`);
@@ -87,21 +414,10 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     } catch { /* ignore */ }
   }, [projectId]);
 
-  const jobRunning = job?.state === 'running' || job?.state === 'pending';
-  useEffect(() => {
-    if (!jobRunning) return;
-    const interval = setInterval(refreshDetail, 3000);
-    return () => clearInterval(interval);
-  }, [jobRunning, refreshDetail]);
-
-  // --- Lazy actor initialization (on first visit) --------------------------
-  const [actorsReady, setActorsReady] = useState(false);
+  // --- Lazy actor init ---
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Create Project + Bible actors lazily; link bible to project.
-      // These are fire-and-forget — errors are non-fatal since actors
-      // may already exist from a prior visit.
       const projectRes = await createProjectActor(project.name, project.description ?? '');
       if (projectRes.ok) {
         const bibleRes = await createBibleActor(project.name, `Story bible for ${project.name}`);
@@ -114,7 +430,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     return () => { cancelled = true; };
   }, [project.name, project.description]);
 
-  // --- Pipeline actor refresh ----------------------------------------------
+  // --- Pipeline refresh ---
   const refreshPipeline = useCallback(async () => {
     const res = await getPipelineStatusActor(pipelineKey);
     if (res.ok) {
@@ -136,7 +452,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     return () => clearInterval(interval);
   }, [actorRunning, refreshPipeline]);
 
-  // --- Pipeline actions -----------------------------------------------------
+  // --- Pipeline actions ---
   const doAction = async (label: string, fn: () => Promise<ActorResult<unknown>>) => {
     setPipelineBusy(true);
     setPipelineError(null);
@@ -153,8 +469,6 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const onSkip = (stepId: string) => doAction(`Skip ${stepId}`, () => skipStepActor(pipelineKey, stepId));
   const onRunStep = (stepId: string) => doAction(`Run ${stepId}`, () => runStepActor(pipelineKey, stepId));
   const onInvalidate = (stepId: string) => doAction(`Invalidate ${stepId}`, () => invalidateStepActor(pipelineKey, stepId));
-  const onSchedule = () => doAction('Schedule', () => schedulePipelineActor(pipelineKey, scheduleInterval));
-  const onCancelSchedule = () => doAction('Cancel schedule', () => cancelScheduleActor(pipelineKey));
 
   const onAddAllSteps = async () => {
     setPipelineBusy(true);
@@ -172,7 +486,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     setPipelineBusy(false);
   };
 
-  // --- Legacy actions -------------------------------------------------------
+  // --- Legacy actions ---
   const onRegeneratePanel = async (panelId: string) => {
     await regeneratePanelAction(projectId, panelId);
     await refreshDetail();
@@ -186,294 +500,218 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     await refreshDetail();
   };
 
-  const selectedPage = detail.pages[selectedPageIdx];
   const steps = pipelineState?.steps ?? [];
   const pipelineStatus = pipelineState?.status ?? 'idle';
+  const hasSteps = steps.length > 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto max-w-7xl px-6 py-8">
       {/* Header */}
-      <div className="card">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700 }}>{project.name}</h1>
-            <p className="text-sm text-dim mt-2">{project.description ?? 'No description'}</p>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="flex items-start justify-between mb-6">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
             <StatusBadge status={project.status} />
-            <span className="text-sm text-dim">{project.modality}</span>
           </div>
-        </div>
-        {progress > 0 && (
-          <div className="progress-bar mt-4">
-            <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
-          </div>
-        )}
-      </div>
-
-      {/* Pipeline Actor Controls */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold" style={{ fontSize: 18 }}>Pipeline Controls</h2>
-          <div className="flex items-center gap-2">
-            <Link href={`/pipeline/${pipelineKey}`} className="primary" style={{ textDecoration: 'none', padding: '6px 16px', borderRadius: 6, display: 'inline-block' }}>
-              View Flow Chart →
-            </Link>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 mb-4">
-          <label className="text-sm text-dim">Pipeline key:</label>
-          <input
-            value={pipelineKey}
-            onChange={(e) => setPipelineKey(e.target.value)}
-            style={{ width: 200 }}
-            placeholder={projectId}
-          />
-          <button onClick={refreshPipeline} disabled={pipelineBusy}>Refresh</button>
-        </div>
-
-        {pipelineError && (
-          <div className="card mb-4" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', padding: '8px 12px' }}>
-            {pipelineError}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 mb-4">
-          <StatusBadge status={pipelineStatus} />
-          {pipelineState?.schedule?.enabled && (
-            <span className="text-sm text-dim">
-              cron: every {Math.round(pipelineState.schedule.intervalMs / 1000)}s
-            </span>
-          )}
-        </div>
-
-        {/* Lifecycle buttons */}
-        <div className="flex items-center gap-2 mb-4">
-          <button className="primary" onClick={onStart} disabled={pipelineBusy || pipelineStatus === 'running'}>
-            Start
-          </button>
-          <button onClick={onPause} disabled={pipelineBusy || pipelineStatus !== 'running'}>
-            Pause
-          </button>
-          <button onClick={onResume} disabled={pipelineBusy || pipelineStatus !== 'paused'}>
-            Resume
-          </button>
-          {steps.length === 0 && (
-            <button onClick={onAddAllSteps} disabled={pipelineBusy}>
-              Add All 15 Steps
-            </button>
-          )}
-        </div>
-
-        {/* Step list */}
-        {steps.length > 0 && (
-          <div className="stage-list">
-            {steps.map((step) => (
-              <div key={step.definition.id} className="stage-item" style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                borderRadius: 6,
-                marginBottom: 4,
-                background: 'var(--bg-card)',
-              }}>
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={step.status} />
-                  <span style={{ fontWeight: 500 }}>{step.definition.name}</span>
-                  {step.attempts > 0 && (
-                    <span className="text-sm text-dim">attempts: {step.attempts}</span>
-                  )}
-                  {step.summary && (
-                    <span className="text-sm text-dim">{step.summary}</span>
-                  )}
-                  {step.error && (
-                    <span className="text-sm" style={{ color: 'var(--danger)' }}>{step.error}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="text-sm"
-                    onClick={() => onRunStep(step.definition.id)}
-                    disabled={pipelineBusy || step.status === 'running'}
-                  >
-                    Run
-                  </button>
-                  <button
-                    className="text-sm"
-                    onClick={() => onRetry(step.definition.id)}
-                    disabled={pipelineBusy || step.status === 'running' || step.status === 'completed'}
-                  >
-                    Retry
-                  </button>
-                  <button
-                    className="text-sm"
-                    onClick={() => onSkip(step.definition.id)}
-                    disabled={pipelineBusy || step.status === 'completed' || step.status === 'skipped'}
-                  >
-                    Skip
-                  </button>
-                  <button
-                    className="text-sm"
-                    onClick={() => onInvalidate(step.definition.id)}
-                    disabled={pipelineBusy || step.status === 'pending'}
-                    title="Mark step and downstream as stale"
-                  >
-                    Invalidate
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Cron scheduling */}
-        <div className="flex items-center gap-2 mt-4" style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-          <label className="text-sm text-dim">Cron interval (ms):</label>
-          <input
-            type="number"
-            value={scheduleInterval}
-            onChange={(e) => setScheduleInterval(Number(e.target.value))}
-            style={{ width: 120 }}
-          />
-          <button onClick={onSchedule} disabled={pipelineBusy}>Schedule</button>
-          <button onClick={onCancelSchedule} disabled={pipelineBusy}>Cancel</button>
+          <p className="text-sm text-muted-foreground">
+            {project.description ?? 'No description'}
+          </p>
+          <p className="text-xs text-muted-foreground capitalize">{project.modality}</p>
         </div>
       </div>
 
-      {/* Job status (legacy) */}
-      {job && (
-        <div className="card">
-          <h2 className="mb-2 font-bold" style={{ fontSize: 18 }}>Job Status</h2>
-          <div className="flex items-center gap-4">
-            <StatusBadge status={job.state} />
-            <span className="text-sm text-dim">type: {job.type}</span>
-            {job.currentStage && <span className="text-sm text-dim">stage: {job.currentStage}</span>}
-            {job.error && <span className="text-sm" style={{ color: 'var(--danger)' }}>{job.error}</span>}
-          </div>
-        </div>
+      {/* Error banner */}
+      {pipelineError && (
+        <Card className="mb-6 border-destructive/50">
+          <CardContent className="py-3 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+            <p className="text-sm text-destructive">{pipelineError}</p>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Story sections */}
-      {detail.sections.length > 0 && (
-        <div className="card">
-          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Story Sections ({detail.sections.length})</h2>
-          <div className="grid grid-3">
-            {detail.sections.slice(0, 12).map((s) => (
-              <div key={s.id} className="card" style={{ padding: 12 }}>
-                <h4 className="font-bold text-sm mb-2">{s.title}</h4>
-                <p className="text-sm text-dim">{s.summary?.slice(0, 100) ?? ''}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Tabs */}
+      <Tabs defaultValue="pipeline">
+        <TabsList className="mb-6">
+          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+          <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
 
-      {/* Characters */}
-      {detail.characters.length > 0 && (
-        <div className="card">
-          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Characters ({detail.characters.length})</h2>
-          <div className="grid grid-3">
-            {detail.characters.map((c) => (
-              <div key={c.id} className="card" style={{ padding: 12 }}>
-                <h4 className="font-bold text-sm mb-2">{c.name}</h4>
-                <p className="text-sm text-dim">{c.description?.slice(0, 100) ?? ''}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* World bible */}
-      {detail.worldBible && (
-        <div className="card">
-          <h2 className="mb-2 font-bold" style={{ fontSize: 18 }}>World Bible</h2>
-          <p className="text-sm text-dim">{detail.worldBible.setting?.slice(0, 300) ?? 'No setting'}</p>
-        </div>
-      )}
-
-      {/* Pages */}
-      {detail.pages.length > 0 && (
-        <div className="card">
-          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Pages ({detail.pages.length})</h2>
-
-          {/* Page selector */}
-          <div className="flex gap-2 mb-4" style={{ flexWrap: 'wrap' }}>
-            {detail.pages.map((p, i) => (
-              <button
-                key={p.id}
-                className={i === selectedPageIdx ? 'primary' : ''}
-                onClick={() => setSelectedPageIdx(i)}
-                style={{ minWidth: 60 }}
+        {/* Pipeline tab */}
+        <TabsContent value="pipeline" className="flex flex-col gap-6">
+          {/* Pipeline controls */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <StatusBadge status={pipelineStatus} />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={onStart}
+                disabled={pipelineBusy || pipelineStatus === 'running'}
               >
-                {i + 1}
-              </button>
-            ))}
-          </div>
-
-          {/* Selected page */}
-          {selectedPage && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold">Page {selectedPageIdx + 1}</h3>
-                <div className="flex gap-2">
-                  <button className="text-sm" onClick={() => onRegeneratePage(selectedPage.id)}>
-                    Regenerate
-                  </button>
-                </div>
-              </div>
-
-              {selectedPage.compositeUrl && (
-                <div className="page-card mb-4">
-                  <img src={selectedPage.compositeUrl} alt={`Page ${selectedPageIdx + 1}`} style={{ width: '100%' }} />
-                </div>
+                <Play className="h-3.5 w-3.5 mr-1.5" />
+                Start
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onPause}
+                disabled={pipelineBusy || pipelineStatus !== 'running'}
+              >
+                <Pause className="h-3.5 w-3.5 mr-1.5" />
+                Pause
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onResume}
+                disabled={pipelineBusy || pipelineStatus !== 'paused'}
+              >
+                <Play className="h-3.5 w-3.5 mr-1.5" />
+                Resume
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={refreshPipeline}
+                disabled={pipelineBusy}
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                Refresh
+              </Button>
+              {!hasSteps && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onAddAllSteps}
+                  disabled={pipelineBusy}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Add All 15 Steps
+                </Button>
               )}
-
-              {/* Panels */}
-              <div className="grid grid-3">
-                {selectedPage.panels.map((panel) => (
-                  <div key={panel.id} className="page-card">
-                    <div className="page-card-body">
-                      <h4 className="font-bold text-sm mb-2">Panel {panel.index + 1}</h4>
-                      <p className="text-sm text-dim mb-2">{panel.dialogueLines?.map(d => d.text).join(' ')?.slice(0, 80) ?? ''}</p>
-                      <button className="text-sm" onClick={() => onRegeneratePanel(panel.id)}>
-                        Regenerate
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Exports */}
-      {detail.exports.length > 0 && (
-        <div className="card">
-          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Exports</h2>
-          <div className="flex gap-2">
-            {detail.exports.map((exp) => (
-              <a key={exp.id} href={`/api/exports/${exp.id}/download`} className="page-card" style={{ textDecoration: 'none' }}>
-                <div className="page-card-body">
-                  <span className="font-bold text-sm">{exp.type}</span>
-                  <span className="text-sm text-dim ml-2">{Math.round((exp.sizeBytes ?? 0) / 1024)}KB</span>
-                </div>
-              </a>
-            ))}
           </div>
-        </div>
-      )}
 
-      {/* Export actions */}
-      <div className="card">
-        <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Export</h2>
-        <div className="flex gap-2">
-          <button onClick={() => onExport('pages')}>Export Pages (ZIP)</button>
-          <button onClick={() => onExport('mp4')}>Export Motion Comic (MP4)</button>
-        </div>
-      </div>
+          {/* Flow chart + step list */}
+          {hasSteps ? (
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+              {/* Flow chart */}
+              <Card className="overflow-hidden">
+                <div className="h-[600px] w-full">
+                  <PipelineFlow
+                    pipelineKey={pipelineKey}
+                    state={pipelineState}
+                    onRunStep={onRunStep}
+                    onRetryStep={onRetry}
+                    onSkipStep={onSkip}
+                    onInvalidateStep={onInvalidate}
+                    onRunAll={onStart}
+                    onPause={onPause}
+                    onResume={onResume}
+                    onSelectStep={setSelectedStepId}
+                    selectedStepId={selectedStepId}
+                  />
+                </div>
+              </Card>
+
+              {/* Step list sidebar */}
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Steps ({steps.length})
+                  </p>
+                  {steps.map((step) => (
+                    <StepCard
+                      key={step.definition.id}
+                      step={step}
+                      busy={pipelineBusy}
+                      onRun={onRunStep}
+                      onRetry={onRetry}
+                      onSkip={onSkip}
+                      onInvalidate={onInvalidate}
+                    />
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-16 text-center">
+                <p className="text-muted-foreground mb-4">
+                  No pipeline steps yet. Add steps to start processing.
+                </p>
+                <Button onClick={onAddAllSteps} disabled={pipelineBusy}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add All 15 Steps
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Artifacts tab */}
+        <TabsContent value="artifacts">
+          <ArtifactsTab
+            detail={detail}
+            onRegeneratePanel={onRegeneratePanel}
+            onRegeneratePage={onRegeneratePage}
+            onExport={onExport}
+          />
+        </TabsContent>
+
+        {/* Settings tab */}
+        <TabsContent value="settings">
+          <div className="flex flex-col gap-6 max-w-2xl">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Project Info</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Name</Label>
+                  <Input value={project.name} readOnly />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Description</Label>
+                  <Input value={project.description ?? ''} readOnly />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Modality</Label>
+                  <Input value={project.modality} readOnly className="capitalize" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Provider Settings</CardTitle>
+                <CardDescription>LLM, transcription, and image rendering configuration</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label>LLM Model</Label>
+                    <Input value={project.providerSettings?.llmModel ?? 'default'} readOnly />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Image Model</Label>
+                    <Input value={project.providerSettings?.imageModel ?? 'default'} readOnly />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Renderer</Label>
+                    <Input value={project.providerSettings?.rendererBackend ?? 'default'} readOnly />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Transcription</Label>
+                    <Input value={project.providerSettings?.transcriptionProvider ?? 'default'} readOnly />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

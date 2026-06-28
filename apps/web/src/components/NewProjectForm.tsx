@@ -3,6 +3,18 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProjectAction } from '@/lib/actions';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export function NewProjectForm() {
   const router = useRouter();
@@ -35,8 +47,6 @@ export function NewProjectForm() {
         textContent: text,
       });
 
-      // Actors (Project, Bible, Pipeline) are created lazily on first access
-      // from the project detail page — no need to block project creation.
       router.push(`/projects/${projectId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
@@ -46,68 +56,74 @@ export function NewProjectForm() {
   };
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div>
-        <label className="text-sm text-dim mb-2 block">Project name</label>
-        <input
+    <form onSubmit={onSubmit} className="flex flex-col gap-6 max-w-2xl">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="name">Project name</Label>
+        <Input
+          id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="My Comic Project"
-          style={{ width: '100%' }}
         />
       </div>
 
-      <div>
-        <label className="text-sm text-dim mb-2 block">Description</label>
-        <textarea
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Optional description"
           rows={2}
-          style={{ width: '100%' }}
         />
       </div>
 
-      <div>
-        <label className="text-sm text-dim mb-2 block">Source type</label>
-        <select value={modality} onChange={(e) => setModality(e.target.value as 'audio' | 'text')}>
-          <option value="audio">Audio file (MP3, M4B, WAV)</option>
-          <option value="text">Text (paste book content)</option>
-        </select>
+      <div className="flex flex-col gap-2">
+        <Label>Source type</Label>
+        <Select value={modality} onValueChange={(v) => setModality(v as 'audio' | 'text')}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="audio">Audio file (MP3, M4B, WAV)</SelectItem>
+            <SelectItem value="text">Text (paste book content)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {modality === 'audio' ? (
-        <div>
-          <label className="text-sm text-dim mb-2 block">Audio file</label>
-          <input
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="file">Audio file</Label>
+          <Input
+            id="file"
             type="file"
-            accept="audio/*,.m4b,.mp3,.wav,.flac,.ogg"
+            accept="audio/*,.m4b,.mp3,.wav"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
-          {file && <p className="text-sm text-dim mt-2">{file.name} ({Math.round(file.size / 1024)}KB)</p>}
+          {file && (
+            <p className="text-xs text-muted-foreground">{file.name} ({Math.round(file.size / 1024)} KB)</p>
+          )}
         </div>
       ) : (
-        <div>
-          <label className="text-sm text-dim mb-2 block">Book text</label>
-          <textarea
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="text">Book text</Label>
+          <Textarea
+            id="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Paste the full text of the book here..."
             rows={10}
-            style={{ width: '100%', fontFamily: 'monospace', fontSize: 13 }}
           />
         </div>
       )}
 
       {error && (
-        <div className="card" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', padding: '8px 12px' }}>
-          {error}
-        </div>
+        <p className="text-sm text-destructive">{error}</p>
       )}
 
-      <button type="submit" className="primary" disabled={loading}>
+      <Button type="submit" disabled={loading} className="w-fit">
         {loading ? 'Creating...' : 'Create Project'}
-      </button>
+      </Button>
     </form>
   );
 }

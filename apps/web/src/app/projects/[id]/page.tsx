@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { Nav } from '@/components/Nav';
 import { notFound } from 'next/navigation';
 import { getProjectAction, getProjectDetail } from '@/lib/actions';
@@ -19,9 +18,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
   return (
     <div>
       <Nav />
-      <div className="container">
-        <ProjectDetail projectId={id} initialProject={project} initialDetail={detail} />
-      </div>
+      <ProjectDetail projectId={id} initialProject={project} initialDetail={detail} />
     </div>
   );
 }

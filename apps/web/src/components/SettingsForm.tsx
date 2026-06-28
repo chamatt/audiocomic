@@ -3,6 +3,12 @@
 import { useState } from 'react';
 import type { ProviderSettings } from '@audiocomic/domain';
 import { saveSettingsAction } from '@/lib/actions';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Check } from 'lucide-react';
 
 interface Props {
   initialSettings: ProviderSettings;
@@ -24,93 +30,114 @@ export function SettingsForm({ initialSettings }: Props) {
   };
 
   return (
-    <form onSubmit={onSave} className="flex flex-col gap-4">
-      <div>
-        <label className="text-sm font-bold mb-2 block">Transcription Provider</label>
-        <select value={settings.transcriptionProvider ?? ''} onChange={(e) => update('transcriptionProvider', (e.target.value || undefined) as ProviderSettings['transcriptionProvider'])}>
-          <option value="">Auto (from env)</option>
-          <option value="openai">OpenAI Whisper</option>
-          <option value="deepgram">Deepgram</option>
-          <option value="groq">Groq</option>
-          <option value="assemblyai">AssemblyAI</option>
-          <option value="fal">Fal</option>
-        </select>
-      </div>
+    <form onSubmit={onSave} className="flex flex-col gap-6 max-w-2xl">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">LLM</CardTitle>
+          <CardDescription>Language model for story planning, beats, and panel hints</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label>Provider</Label>
+              <Select value={settings.llmProvider} onValueChange={(v) => update('llmProvider', v as ProviderSettings['llmProvider'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Model</Label>
+              <Input value={settings.llmModel} onChange={(e) => update('llmModel', e.target.value)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div>
-        <label className="text-sm font-bold mb-2 block">LLM Provider</label>
-        <select value={settings.llmProvider ?? ''} onChange={(e) => update('llmProvider', (e.target.value || undefined) as ProviderSettings['llmProvider'])}>
-          <option value="">Auto (from env)</option>
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="google">Google</option>
-          <option value="groq">Groq</option>
-          <option value="mistral">Mistral</option>
-        </select>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Transcription</CardTitle>
+          <CardDescription>Speech-to-text for audio modality</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-2">
+            <Label>Provider</Label>
+            <Select value={settings.transcriptionProvider ?? 'groq'} onValueChange={(v) => update('transcriptionProvider', v as ProviderSettings['transcriptionProvider'])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="groq">Groq</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+                <SelectItem value="deepgram">Deepgram</SelectItem>
+                <SelectItem value="assemblyai">AssemblyAI</SelectItem>
+                <SelectItem value="fal">Fal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div>
-        <label className="text-sm font-bold mb-2 block">LLM Model</label>
-        <input
-          value={settings.llmModel ?? ''}
-          onChange={(e) => update('llmModel', e.target.value || undefined)}
-          placeholder="gpt-4o"
-        />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Image Rendering</CardTitle>
+          <CardDescription>Panel art generation backend</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label>Backend</Label>
+              <Select value={settings.rendererBackend} onValueChange={(v) => update('rendererBackend', v as ProviderSettings['rendererBackend'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pollinations">Pollinations</SelectItem>
+                  <SelectItem value="aisdk">AI SDK</SelectItem>
+                  <SelectItem value="comfyui">ComfyUI</SelectItem>
+                  <SelectItem value="placeholder">Placeholder</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Image Provider</Label>
+              <Select value={settings.imageProvider} onValueChange={(v) => update('imageProvider', v as ProviderSettings['imageProvider'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pollinations">Pollinations</SelectItem>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="fal">Fal</SelectItem>
+                  <SelectItem value="stability">Stability</SelectItem>
+                  <SelectItem value="comfyui">ComfyUI</SelectItem>
+                  <SelectItem value="placeholder">Placeholder</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Image Model</Label>
+              <Input value={settings.imageModel} onChange={(e) => update('imageModel', e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>TTS Provider</Label>
+              <Select value={settings.ttsProvider ?? 'openai'} onValueChange={(v) => update('ttsProvider', v as ProviderSettings['ttsProvider'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="elevenlabs">ElevenLabs</SelectItem>
+                  <SelectItem value="coqui">Coqui</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div>
-        <label className="text-sm font-bold mb-2 block">Image Provider</label>
-        <select value={settings.imageProvider ?? ''} onChange={(e) => update('imageProvider', (e.target.value || undefined) as ProviderSettings['imageProvider'])}>
-          <option value="">Auto (from env)</option>
-          <option value="comfyui">ComfyUI (open models)</option>
-          <option value="openai">OpenAI (DALL-E / gpt-image)</option>
-          <option value="fal">Fal</option>
-          <option value="stability">Stability AI</option>
-          <option value="placeholder">Placeholder (no GPU needed)</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="text-sm font-bold mb-2 block">Image Model</label>
-        <input
-          value={settings.imageModel ?? ''}
-          onChange={(e) => update('imageModel', e.target.value || undefined)}
-          placeholder="gpt-image-1-mini"
-        />
-      </div>
-
-      <div>
-        <label className="text-sm font-bold mb-2 block">Renderer Backend</label>
-        <select value={settings.rendererBackend ?? ''} onChange={(e) => update('rendererBackend', (e.target.value || undefined) as ProviderSettings['rendererBackend'])}>
-          <option value="">Auto (from env)</option>
-          <option value="comfyui">ComfyUI</option>
-          <option value="aisdk">AI SDK</option>
-          <option value="placeholder">Placeholder</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="text-sm font-bold mb-2 block">TTS Provider</label>
-        <select value={settings.ttsProvider ?? ''} onChange={(e) => update('ttsProvider', (e.target.value || undefined) as ProviderSettings['ttsProvider'])}>
-          <option value="">Auto (from env)</option>
-          <option value="openai">OpenAI TTS</option>
-          <option value="elevenlabs">ElevenLabs</option>
-          <option value="coqui">Coqui</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="text-sm font-bold mb-2 block">TTS Voice</label>
-        <input
-          value={settings.ttsVoice ?? ''}
-          onChange={(e) => update('ttsVoice', e.target.value || undefined)}
-          placeholder="alloy"
-        />
-      </div>
-
-      <div className="flex items-center gap-4">
-        <button type="submit" className="primary">Save Settings</button>
-        {saved && <span className="text-sm" style={{ color: 'var(--success)' }}>✓ Saved</span>}
+      <div className="flex items-center gap-3">
+        <Button type="submit">Save Settings</Button>
+        {saved && (
+          <span className="text-sm text-success flex items-center gap-1.5">
+            <Check className="h-4 w-4" />
+            Saved
+          </span>
+        )}
       </div>
     </form>
   );
