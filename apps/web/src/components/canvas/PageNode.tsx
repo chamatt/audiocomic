@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, type JSX } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { PanelSpec, BoundingBox } from '@audiocomic/domain';
 import { PanelBlock } from './PanelBlock';
 import { BubbleOverlay } from './BubbleOverlay';
@@ -11,7 +11,7 @@ import type { CanvasPageData } from './types';
 const PAGE_WIDTH = 800;
 const PAGE_HEIGHT = 1131; // A4-ish ratio for comic page
 
-export interface PageNodeData {
+export interface PageNodeData extends Record<string, unknown> {
   page: CanvasPageData;
   onBboxChange: (panelId: string, bbox: BoundingBox) => void;
   onBubbleChange: (pageId: string, boxId: string, patch: Partial<BoundingBox>) => void;
@@ -22,9 +22,8 @@ export interface PageNodeData {
   renderingPanelIds?: Set<string>;
 }
 
-export function PageNode({ data, selected }: NodeProps): JSX.Element {
-  const nodeData = data as unknown as PageNodeData;
-  const { page, onBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd, onRender, renderingPanelIds } = nodeData;
+export function PageNode({ data, selected }: NodeProps<Node<PageNodeData>>): JSX.Element {
+  const { page, onBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd, onRender, renderingPanelIds } = data;
   const { selectedPanelId, selectPage, mode } = useCanvasStore();
   const containerRef = useRef<HTMLDivElement>(null);
 

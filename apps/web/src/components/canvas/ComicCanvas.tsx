@@ -59,10 +59,12 @@ function ComicCanvasInner({
     setCenter(x, y, { zoom: 0.5, duration: 400 });
   }, [selectedPageId, getNode, setCenter]);
 
-  const nodes = useMemo(
+  const nodes: Node<PageNodeData>[] = useMemo(
     () =>
       pages.map((page, i) => ({
         id: page.id,
+        type: 'comicPage',
+        position: { x: i * (PAGE_WIDTH + PAGE_GAP), y: 0 },
         data: {
           page,
           onBboxChange: onPanelBboxChange,
@@ -115,7 +117,7 @@ function ComicCanvasInner({
   return (
     <div className="h-full w-full" style={{ '--xy-edge-stroke-default': 'transparent' } as CSSProperties}>
       <ReactFlow
-        nodes={nodes as unknown as Node[]}
+        nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onPaneClick={handlePaneClick}
