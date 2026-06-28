@@ -2,7 +2,18 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { Project, JobRecord, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle } from '@audiocomic/domain';
+import type { PipelineState } from '@audiocomic/actors';
 import { regeneratePanelAction, regeneratePageAction, exportProjectAction } from '@/lib/actions';
+import {
+  startPipelineActor,
+  pausePipelineActor,
+  resumePipelineActor,
+  retryStepActor,
+  skipStepActor,
+  getPipelineStatusActor,
+  schedulePipelineActor,
+  cancelScheduleActor,
+} from '@/lib/actor-actions';
 
 export interface ProjectDetailData {
   project: Project;
@@ -41,6 +52,60 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
       setPolling(false);
     };
   }, [jobRunning, refresh]);
+
+  // --- Rivet actor pipeline controls ---------------------------------------
+  const [pipelineKey, setPipelineKey] = useState(projectId);
+  const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [pipelineAction, setPipelineAction] = useState<string | null>(null);
+  const [scheduleIntervalMs, setScheduleIntervalMs] = useState(60_000);
+
+  const refreshPipeline = useCallback(async (key: string = pipelineKey) => {
+    if (!key) return;
+    setPipelineLoading(true);
+    setPipelineError(null);
+    const res = await getPipelineStatusActor(key);
+    if (res.ok) {
+      setPipelineState(res.data);
+    } else {
+      setPipelineError(res.error);
+      setPipelineState(null);
+    }
+    setPipelineLoading(false);
+  }, [pipelineKey]);
+
+  useEffect(() => {
+    refreshPipeline();
+  }, [refreshPipeline]);
+
+  // Poll while the actor pipeline is running so step states stay live.
+  const actorRunning = pipelineState?.status === 'running';
+  useEffect(() => {
+    if (!actorRunning) return;
+    const interval = setInterval(() => refreshPipeline(), 2000);
+    return () => clearInterval(interval);
+  }, [actorRunning, refreshPipeline]);
+
+  const runPipelineAction = async (
+    label: string,
+    fn: () => Promise<{ ok: true; data: unknown } | { ok: false; error: string }>,
+  ) => {
+    setPipelineAction(label);
+    setPipelineError(null);
+    const res = await fn();
+    if (!res.ok) setPipelineError(res.error);
+    await refreshPipeline();
+    setPipelineAction(null);
+  };
+
+  const onStart = () => runPipelineAction('start', () => startPipelineActor(pipelineKey));
+  const onPause = () => runPipelineAction('pause', () => pausePipelineActor(pipelineKey));
+  const onResume = () => runPipelineAction('resume', () => resumePipelineActor(pipelineKey));
+  const onRetryStep = (stepId: string) => runPipelineAction(`retry:${stepId}`, () => retryStepActor(pipelineKey, stepId));
+  const onSkipStep = (stepId: string) => runPipelineAction(`skip:${stepId}`, () => skipStepActor(pipelineKey, stepId));
+  const onSchedule = () => runPipelineAction('schedule', () => schedulePipelineActor(pipelineKey, scheduleIntervalMs));
+  const onCancelSchedule = () => runPipelineAction('cancel-schedule', () => cancelScheduleActor(pipelineKey));
 
   const project = detail.project;
   const job = detail.job;
@@ -97,6 +162,99 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           </div>
         </div>
       )}
+
+      {/* Rivet actor pipeline controls */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold">Pipeline Controls (Rivet Actor)</h3>
+          <span className="text-sm text-dim">
+            {pipelineLoading ? 'loading…' : (pipelineState?.status ?? 'no status')}
+          </span>
+        </div>
+
+        {/* Pipeline key + refresh */}
+        <div className="flex gap-2 mb-3" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <label className="text-sm text-dim">Pipeline key:</label>
+          <input
+            value={pipelineKey}
+            onChange={(e) => setPipelineKey(e.target.value)}
+            style={{ padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4 }}
+          />
+          <button onClick={() => refreshPipeline()} disabled={pipelineLoading}>Refresh</button>
+        </div>
+
+        {/* Lifecycle controls */}
+        <div className="flex gap-2 mb-3" style={{ flexWrap: 'wrap' }}>
+          <button className="primary" onClick={onStart} disabled={pipelineAction !== null || actorRunning}>Start</button>
+          <button onClick={onPause} disabled={pipelineAction !== null || !actorRunning}>Pause</button>
+          <button onClick={onResume} disabled={pipelineAction !== null || pipelineState?.status !== 'paused'}>Resume</button>
+        </div>
+
+        {pipelineError && (
+          <div className="text-sm mb-3" style={{ color: 'var(--danger)' }}>Error: {pipelineError}</div>
+        )}
+
+        {/* Step list with per-step retry/skip */}
+        {pipelineState && pipelineState.steps.length > 0 ? (
+          <div className="stage-list mb-3">
+            {pipelineState.steps.map((step) => {
+              const st = step.status;
+              const icon = st === 'completed' ? '✓' : st === 'running' ? '⟳' : st === 'failed' ? '✗' : st === 'skipped' ? '→' : '○';
+              const canRetry = st === 'failed' || st === 'skipped';
+              const canSkip = st === 'pending' || st === 'failed' || st === 'paused';
+              return (
+                <div key={step.definition.id} className={`stage-item ${st}`}>
+                  <span>{icon}</span>
+                  <span>{step.definition.name}</span>
+                  <span className="text-sm text-dim">· {st} (attempts: {step.attempts})</span>
+                  {step.error && <span className="text-sm" style={{ color: 'var(--danger)' }}>— {step.error}</span>}
+                  <span className="flex gap-2" style={{ marginLeft: 'auto' }}>
+                    <button
+                      className="text-sm"
+                      onClick={() => onRetryStep(step.definition.id)}
+                      disabled={pipelineAction !== null || !canRetry}
+                      title="Retry this step"
+                    >↻ Retry</button>
+                    <button
+                      className="text-sm"
+                      onClick={() => onSkipStep(step.definition.id)}
+                      disabled={pipelineAction !== null || !canSkip}
+                      title="Skip this step"
+                    >⤳ Skip</button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-dim mb-3">No steps defined for this pipeline.</p>
+        )}
+
+        {/* Cron schedule */}
+        <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
+          <h4 className="font-bold text-sm">Schedule:</h4>
+          <input
+            type="number"
+            min={1000}
+            step={1000}
+            value={scheduleIntervalMs}
+            onChange={(e) => setScheduleIntervalMs(Number(e.target.value))}
+            style={{ width: 120, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4 }}
+          />
+          <span className="text-sm text-dim">ms</span>
+          <button onClick={onSchedule} disabled={pipelineAction !== null}>Schedule</button>
+          <button
+            onClick={onCancelSchedule}
+            disabled={pipelineAction !== null || !pipelineState?.schedule?.enabled}
+          >Cancel Schedule</button>
+        </div>
+        {pipelineState?.schedule?.enabled && (
+          <p className="text-sm text-dim mt-2">
+            Scheduled every {pipelineState.schedule.intervalMs}ms
+            {pipelineState.schedule.nextRunAt ? ` · next ${new Date(pipelineState.schedule.nextRunAt).toLocaleString()}` : ''}
+          </p>
+        )}
+      </div>
 
       {/* World & Character Bible */}
       {(detail.worldBible || detail.characters.length > 0) && (

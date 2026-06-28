@@ -6,7 +6,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@audiocomic/domain": ["../../packages/domain/src/index.ts"],
+      "@audiocomic/actors": ["../../packages/actors/src/index.ts"],
+      "@audiocomic/actors/*": ["../../packages/actors/*"],
       "@audiocomic/shared": ["../../packages/shared/src/index.ts"],
       "@audiocomic/db": ["../../packages/db/src/index.ts"],
       "@audiocomic/workflows": ["../../packages/workflows/src/index.ts"]

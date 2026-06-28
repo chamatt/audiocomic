@@ -22,11 +22,14 @@
       "name": "web",
       "version": "0.1.0",
       "dependencies": {
+        "@audiocomic/actors": "workspace:*",
         "@audiocomic/db": "workspace:*",
         "@audiocomic/domain": "workspace:*",
         "@audiocomic/shared": "workspace:*",
         "@audiocomic/workflows": "workspace:*",
+        "@rivetkit/effect": "^2.3.2",
         "dotenv": "^17.4.2",
+        "effect": "4.0.0-beta.66",
         "next": "^16.2.9",
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
@@ -36,6 +39,21 @@
         "@types/react": "^19.2.17",
         "@types/react-dom": "^19.2.3",
         "typescript": "^5.7.0",
+      },
+    },
+    "packages/actors": {
+      "name": "@audiocomic/actors",
+      "dependencies": {
+        "@audiocomic/ai": "workspace:*",
+        "@audiocomic/db": "workspace:*",
+        "@audiocomic/domain": "workspace:*",
+        "@audiocomic/media": "workspace:*",
+        "@audiocomic/renderers": "workspace:*",
+        "@audiocomic/shared": "workspace:*",
+        "@effect/platform-node": "4.0.0-beta.66",
+        "@rivetkit/effect": "^2.3.2",
+        "effect": "4.0.0-beta.66",
+        "rivetkit": "^2.3.2",
       },
     },
     "packages/ai": {
@@ -116,12 +134,16 @@
       "name": "@audiocomic/workflows",
       "version": "0.1.0",
       "dependencies": {
+        "@audiocomic/actors": "workspace:*",
         "@audiocomic/ai": "workspace:*",
         "@audiocomic/db": "workspace:*",
         "@audiocomic/domain": "workspace:*",
         "@audiocomic/media": "workspace:*",
         "@audiocomic/renderers": "workspace:*",
         "@audiocomic/shared": "workspace:*",
+        "@effect/platform-node": "4.0.0-beta.66",
+        "@rivetkit/effect": "^2.3.2",
+        "effect": "4.0.0-beta.66",
       },
     },
   },
@@ -141,6 +163,8 @@
     "@ai-sdk/ui-utils": ["@ai-sdk/ui-utils@1.2.11", "", { "dependencies": { "@ai-sdk/provider": "1.1.3", "@ai-sdk/provider-utils": "2.2.8", "zod-to-json-schema": "^3.24.1" }, "peerDependencies": { "zod": "^3.23.8" } }, "sha512-3zcwCc8ezzFlwp3ZD15wAPjf2Au4s3vAbKsXQVyhxODHcmu0iyPO2Eua6D/vicq/AUm/BAo60r97O6HU+EI0+w=="],
 
     "@asteasolutions/zod-to-openapi": ["@asteasolutions/zod-to-openapi@8.5.0", "", { "dependencies": { "openapi3-ts": "^4.1.2" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-SABbKiObg5dLRiTFnqiW1WWwGcg1BJfmHtT2asIBnBHg6Smy/Ms2KHc650+JI4Hw7lSkdiNebEGXpwoxfben8Q=="],
+
+    "@audiocomic/actors": ["@audiocomic/actors@workspace:packages/actors"],
 
     "@audiocomic/ai": ["@audiocomic/ai@workspace:packages/ai"],
 

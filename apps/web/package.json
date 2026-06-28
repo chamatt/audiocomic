@@ -11,11 +11,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@audiocomic/actors": "workspace:*",
     "@audiocomic/db": "workspace:*",
     "@audiocomic/domain": "workspace:*",
     "@audiocomic/shared": "workspace:*",
     "@audiocomic/workflows": "workspace:*",
+    "@rivetkit/effect": "^2.3.2",
     "dotenv": "^17.4.2",
+    "effect": "4.0.0-beta.66",
     "next": "^16.2.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
