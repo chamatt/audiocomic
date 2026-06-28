@@ -1,7 +1,7 @@
 'use server';
 
 import { Effect } from "effect";
-import { runWithClient, fileRegistryClient, bibleClient, projectClient, pipelineClient } from "@/lib/rivet-client";
+import { runWithClient, fileRegistryClient, bibleClient, projectClient, pipelineClient, chapterClient } from "@/lib/rivet-client";
 import type {
   ProjectConfig,
   BibleContent,
@@ -297,4 +297,114 @@ export async function invalidateStepActor(pipelineKey: string, stepId: string): 
 			return yield* handle.InvalidateStep({ stepId });
 		}),
 	);
+}
+
+// ============================================================================
+// Chapter actor
+// ============================================================================
+
+export async function createChapterActor(chapterId: string, projectId: string, index: number, title: string, description?: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      yield* handle.UpdateTitle({ title });
+      if (description) yield* handle.UpdateDescription({ description });
+      return yield* handle.GetState(undefined);
+    }),
+  );
+}
+
+export async function getChapterStateActor(chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.GetState(undefined);
+    }),
+  );
+}
+
+export async function linkChapterAssetActor(chapterId: string, sourceAssetId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.LinkAsset({ sourceAssetId });
+    }),
+  );
+}
+
+export async function startChapterTranscriptionActor(chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.StartTranscription(undefined);
+    }),
+  );
+}
+
+export async function addChapterToProjectActor(projectKey: string, chapterId: string, title: string, index: number): Promise<ActorResult<ProjectConfig>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* projectClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.AddChapter({ chapterId, title, index });
+    }),
+  );
+}
+
+export async function listChaptersActor(projectKey: string): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* projectClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.ListChapters(undefined);
+    }),
+  );
+}
+
+export async function removeChapterFromProjectActor(projectKey: string, chapterId: string): Promise<ActorResult<ProjectConfig>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* projectClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.RemoveChapter({ chapterId });
+    }),
+  );
+}
+
+export async function reorderChaptersActor(projectKey: string, chapterIds: string[]): Promise<ActorResult<ProjectConfig>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* projectClient;
+      const handle = accessor.getOrCreate(projectKey);
+      return yield* handle.ReorderChapters({ chapterIds });
+    }),
+  );
+}
+
+// ============================================================================
+// Bible actor — temporal tracking + wiki
+// ============================================================================
+
+export async function getBibleWikiActor(bibleKey: string): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* bibleClient;
+      const handle = accessor.getOrCreate(bibleKey);
+      return yield* handle.GetWiki(undefined);
+    }),
+  );
+}
+
+export async function getCharacterTimelineActor(bibleKey: string, characterId: string): Promise<ActorResult<readonly unknown[]>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* bibleClient;
+      const handle = accessor.getOrCreate(bibleKey);
+      return yield* handle.GetCharacterTimeline({ characterId });
+    }),
+  );
 }
