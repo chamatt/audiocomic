@@ -168,6 +168,18 @@ export const ChapterLive = Chapter.toLayer(
 							durationSec: result.durationSec ?? s.durationSec,
 						}));
 						rawRivetkitContext.broadcast("chapterTranscribed", done);
+
+					// 7. Sync status back to the chapters table.
+					yield* Effect.tryPromise({
+						try: () =>
+							bridge.repo.chapters.patch(current.id, {
+								status: "transcribed",
+								transcriptionStatus: "completed",
+								durationSec: result.durationSec ?? undefined,
+							} as Partial<unknown>),
+						catch: (e) =>
+							e instanceof Error ? e : new Error(String(e)),
+					}).pipe(Effect.ignore);
 				} finally {
 					// Clean up both temp files regardless of outcome.
 					yield* Effect.tryPromise({
@@ -179,11 +191,22 @@ export const ChapterLive = Chapter.toLayer(
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.gen(function* () {
-							const failed = yield* update((s) => ({
-								...s,
-								transcriptionStatus: "failed",
-								status: "failed",
-							}));
+						const failed = yield* update((s) => ({
+							...s,
+							transcriptionStatus: "failed",
+							status: "failed",
+						}));
+
+						// Sync failure status back to the chapters table.
+						yield* Effect.tryPromise({
+							try: () =>
+								bridge.repo.chapters.patch(failed.id, {
+									status: "failed",
+									transcriptionStatus: "failed",
+								} as Partial<unknown>),
+							catch: (e) =>
+								e instanceof Error ? e : new Error(String(e)),
+						}).pipe(Effect.ignore);
 							rawRivetkitContext.broadcast(
 								"chapterTranscriptionFailed",
 								{
@@ -200,6 +223,14 @@ export const ChapterLive = Chapter.toLayer(
 
 			return Chapter.of({
 				GetState: () => getState(),
+
+			Init: ({ payload }) =>
+				update((current) => ({
+					...current,
+					id: payload.id,
+					projectId: payload.projectId,
+					index: payload.index,
+				})),
 
 				UpdateTitle: ({ payload }) =>
 					update((current) => ({

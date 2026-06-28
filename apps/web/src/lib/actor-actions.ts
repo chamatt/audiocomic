@@ -308,6 +308,7 @@ export async function createChapterActor(chapterId: string, projectId: string, i
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
       const handle = accessor.getOrCreate(chapterId);
+      yield* handle.Init({ id: chapterId, projectId, index });
       yield* handle.UpdateTitle({ title });
       if (description) yield* handle.UpdateDescription({ description });
       return yield* handle.GetState(undefined);
@@ -335,11 +336,16 @@ export async function linkChapterAssetActor(chapterId: string, sourceAssetId: st
   );
 }
 
-export async function startChapterTranscriptionActor(chapterId: string): Promise<ActorResult<unknown>> {
+export async function startChapterTranscriptionActor(chapterId: string, projectId?: string, index?: number): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {
       const accessor = yield* chapterClient;
       const handle = accessor.getOrCreate(chapterId);
+      // Ensure identity is set (actor may have been created by an older
+      // server version without the Init action).
+      if (projectId && index !== undefined) {
+        yield* handle.Init({ id: chapterId, projectId, index }).pipe(Effect.ignore);
+      }
       return yield* handle.StartTranscription(undefined);
     }),
   );

@@ -48,6 +48,17 @@ export const Chapter = Actor.make("Chapter", {
 		}),
 
 		// Update the human-readable chapter title.
+		// Initialize identity fields (id, projectId, index). Must be called
+		// once immediately after actor creation, before any other action.
+		Action.make("Init", {
+			payload: {
+				id: Schema.String,
+				projectId: Schema.String,
+				index: Schema.Number,
+			},
+			success: ChapterState,
+		}),
+
 		Action.make("UpdateTitle", {
 			payload: { title: Schema.String },
 			success: ChapterState,
