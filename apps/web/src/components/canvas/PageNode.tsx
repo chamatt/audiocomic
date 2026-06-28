@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type JSX } from 'react';
+import { useCallback, useRef, type JSX } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { PanelSpec, BoundingBox } from '@audiocomic/domain';
 import { PanelBlock } from './PanelBlock';
@@ -15,11 +15,14 @@ export interface PageNodeData {
   page: CanvasPageData;
   onBboxChange: (panelId: string, bbox: BoundingBox) => void;
   onBubbleChange: (pageId: string, boxId: string, patch: Partial<BoundingBox>) => void;
+  onBubbleTextChange: (pageId: string, boxId: string, text: string) => void;
+  onBubbleDelete: (pageId: string, boxId: string) => void;
+  onBubbleAdd: (pageId: string, bbox: BoundingBox, panelId?: string) => void;
 }
 
 export function PageNode({ data, selected }: NodeProps): JSX.Element {
   const nodeData = data as unknown as PageNodeData;
-  const { page, onBboxChange, onBubbleChange } = nodeData;
+  const { page, onBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd } = nodeData;
   const { selectedPanelId, selectPage, mode } = useCanvasStore();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +90,9 @@ export function PageNode({ data, selected }: NodeProps): JSX.Element {
           pageWidth={PAGE_WIDTH}
           pageHeight={PAGE_HEIGHT}
           onBubbleChange={onBubbleChange}
+          onBubbleTextChange={onBubbleTextChange}
+          onBubbleDelete={onBubbleDelete}
+          onBubbleAdd={onBubbleAdd}
         />
       )}
 
@@ -100,5 +106,3 @@ export function PageNode({ data, selected }: NodeProps): JSX.Element {
   );
 }
 
-// Suppress unused import warning — Position is used in Handle
-void Position;

@@ -13,7 +13,7 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { BoundingBox, PanelSpec, LetteringBox } from '@audiocomic/domain';
+import type { BoundingBox } from '@audiocomic/domain';
 import { PageNode } from './PageNode';
 import { useCanvasStore } from '@/stores/canvas-store';
 import type { CanvasPageData } from './types';
@@ -22,6 +22,9 @@ interface ComicCanvasProps {
   pages: CanvasPageData[];
   onPanelBboxChange: (panelId: string, bbox: BoundingBox) => void;
   onBubbleChange: (pageId: string, boxId: string, patch: Partial<BoundingBox>) => void;
+  onBubbleTextChange: (pageId: string, boxId: string, text: string) => void;
+  onBubbleDelete: (pageId: string, boxId: string) => void;
+  onBubbleAdd: (pageId: string, bbox: BoundingBox, panelId?: string) => void;
 }
 
 const PAGE_GAP = 100;
@@ -30,11 +33,13 @@ const PAGE_WIDTH = 800;
 const nodeTypes: NodeTypes = {
   comicPage: PageNode,
 };
-
 function ComicCanvasInner({
   pages,
   onPanelBboxChange,
   onBubbleChange,
+  onBubbleTextChange,
+  onBubbleDelete,
+  onBubbleAdd,
 }: ComicCanvasProps): JSX.Element {
   const { selectPanel, selectPage, setZoom } = useCanvasStore();
 
@@ -48,10 +53,13 @@ function ComicCanvasInner({
           page,
           onBboxChange: onPanelBboxChange,
           onBubbleChange,
+          onBubbleTextChange,
+          onBubbleDelete,
+          onBubbleAdd,
         },
         draggable: false,
       })),
-    [pages, onPanelBboxChange, onBubbleChange],
+    [pages, onPanelBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd],
   );
 
   const edges: Edge[] = useMemo(() => {

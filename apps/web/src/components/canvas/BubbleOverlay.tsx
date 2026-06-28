@@ -10,6 +10,9 @@ interface BubbleOverlayProps {
   pageWidth: number;
   pageHeight: number;
   onBubbleChange: (pageId: string, boxId: string, patch: Partial<BoundingBox>) => void;
+  onBubbleTextChange: (pageId: string, boxId: string, text: string) => void;
+  onBubbleDelete: (pageId: string, boxId: string) => void;
+  onBubbleAdd: (pageId: string, bbox: BoundingBox, panelId?: string) => void;
 }
 
 interface BubbleDragState {
@@ -24,6 +27,9 @@ export function BubbleOverlay({
   pageWidth,
   pageHeight,
   onBubbleChange,
+  onBubbleTextChange,
+  onBubbleDelete,
+  onBubbleAdd,
 }: BubbleOverlayProps): JSX.Element {
   const { selectedBubbleId, selectBubble, selectPanel } = useCanvasStore();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -65,8 +71,22 @@ export function BubbleOverlay({
     }
   }, []);
 
+  const handleBackgroundClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // Only add bubble if clicking the background (not a bubble)
+      if (e.target !== e.currentTarget) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      // Default bubble size
+      const bbox: BoundingBox = { x: Math.min(x, 0.7), y: Math.min(y, 0.85), w: 0.3, h: 0.15 };
+      onBubbleAdd(page.id, bbox);
+    },
+    [page.id, onBubbleAdd],
+  );
+
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0 cursor-crosshair" onClick={handleBackgroundClick}>
       {page.lettering.map((box) => (
         <Bubble
           key={box.id}
@@ -77,15 +97,11 @@ export function BubbleOverlay({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onDoubleClick={() => setEditingId(box.id)}
-          onTextChange={(text) => {
-            // Text editing handled by parent via onBubbleTextChange
-            // For now, inline update
-            void text;
-          }}
+          onTextChange={(text) => onBubbleTextChange(page.id, box.id, text)}
           onEditEnd={() => setEditingId(null)}
           onDelete={() => {
+            onBubbleDelete(page.id, box.id);
             selectBubble(null);
-            selectPanel(null);
           }}
         />
       ))}

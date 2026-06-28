@@ -31,6 +31,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: pageId } = await params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pageId)) {
+    return Response.json({ error: 'Invalid page ID' }, { status: 400 });
+  }
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const repo = await getRepo();

@@ -113,6 +113,52 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [pages, updateLettering],
   );
 
+  // Bubble text change handler
+  const handleBubbleTextChange = useCallback(
+    (pageId: string, boxId: string, text: string) => {
+      const page = pages.find((p) => p.id === pageId);
+      if (!page) return;
+      const newBoxes = page.lettering.map((b) =>
+        b.id === boxId ? { ...b, text } : b,
+      );
+      updateLettering(pageId, newBoxes);
+      void fetch(`/api/lettering/${pageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boxId, text }),
+      });
+    },
+    [pages, updateLettering],
+  );
+
+  // Bubble delete handler
+  const handleBubbleDelete = useCallback(
+    (pageId: string, boxId: string) => {
+      const page = pages.find((p) => p.id === pageId);
+      if (!page) return;
+      const newBoxes = page.lettering.filter((b) => b.id !== boxId);
+      updateLettering(pageId, newBoxes);
+      void fetch(`/api/lettering/${pageId}?boxId=${boxId}`, {
+        method: 'DELETE',
+      });
+    },
+    [pages, updateLettering],
+  );
+
+  // Bubble add handler
+  const handleBubbleAdd = useCallback(
+    (pageId: string, bbox: BoundingBox, panelId?: string) => {
+      void fetch(`/api/pages/${pageId}/lettering`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'speech', text: '', bbox, panelId }),
+      }).then(() => {
+        void refresh();
+      });
+    },
+    [refresh],
+  );
+
   // Page reorder handler
   const handlePageReorder = useCallback(
     (newOrder: CanvasPageData[]) => {
@@ -188,6 +234,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
             pages={canvasPages}
             onPanelBboxChange={handlePanelBboxChange}
             onBubbleChange={handleBubbleChange}
+            onBubbleTextChange={handleBubbleTextChange}
+            onBubbleDelete={handleBubbleDelete}
+            onBubbleAdd={handleBubbleAdd}
           />
         </div>
 
