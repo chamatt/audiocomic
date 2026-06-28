@@ -110,11 +110,11 @@ export const ChapterLive = Chapter.toLayer(
 					});
 				log.info("downloaded audio from storage", { storageKey: asset!.storageKey, bytes: buffer.length });
 
-				// 3. Spill to a temp file, then convert to mp3 with ffmpeg.
-				//    Groq accepts mp3 natively; converting avoids format issues
-				//    with m4b and other audiobook formats.
-				const rawTmpPath = join(tmpdir(), `chapter-${current.id}-${uuid()}.raw`);
-				const mp3Path = join(tmpdir(), `chapter-${current.id}-${uuid()}.mp3`);
+				// 3. Spill the downloaded audio to a temp file.
+				//    The transcription adapter handles format conversion +
+				//    compression internally (silenceremove + low-bitrate mp3).
+				//    The original stays in blob storage untouched for export.
+				const rawTmpPath = join(tmpdir(), `chapter-${current.id}-${uuid()}.${asset!.filename.split('.').pop() ?? 'raw'}`);
 				yield* Effect.tryPromise({
 					try: () => fs.writeFile(rawTmpPath, buffer),
 					catch: (e) =>
@@ -123,26 +123,14 @@ export const ChapterLive = Chapter.toLayer(
 				log.debug("spilled audio to temp file", { rawTmpPath, bytes: buffer.length });
 
 				try {
-					yield* Effect.tryPromise({
-						try: () =>
-							new Promise<void>((resolve, reject) => {
-								execFile(
-									process.env.FFMPEG_PATH ?? "ffmpeg",
-									["-y", "-i", rawTmpPath, "-codec:a", "libmp3lame", "-qscale:a", "2", mp3Path],
-									{ maxBuffer: 10 * 1024 * 1024 },
-									(err) => (err ? reject(err) : resolve()),
-								);
-							}),
-						catch: (e) =>
-							e instanceof Error ? e : new Error(String(e)),
-					});
-				log.info("ffmpeg conversion complete", { mp3Path });
-
-					// 4. Run the transcription adapter on the mp3 file.
+					// 4. Run the transcription adapter directly on the raw file.
+					//    The adapter does silenceremove + compresses to 32 kbps mono
+					//    mp3 before sending to Groq, keeping the upload well under
+					//    the 25 MB API limit even for long audiobook chapters.
 					const adapter = bridge.getTranscriptionAdapter();
 					const result: TranscriptResult = yield* Effect.tryPromise({
 						try: () =>
-							adapter.transcribe(mp3Path, {
+							adapter.transcribe(rawTmpPath, {
 								projectId: current.projectId,
 								chapterId: current.id,
 							} as unknown as TranscriptionOptions),
@@ -191,9 +179,10 @@ export const ChapterLive = Chapter.toLayer(
 							e instanceof Error ? e : new Error(String(e)),
 					}).pipe(Effect.ignore);
 				} finally {
-					// Clean up both temp files regardless of outcome.
+					// Clean up the temp file. The adapter creates its own
+					// temp file and cleans it up internally.
 					yield* Effect.tryPromise({
-						try: () => Promise.all([fs.unlink(rawTmpPath), fs.unlink(mp3Path)]),
+						try: () => fs.unlink(rawTmpPath),
 						catch: (e) =>
 							e instanceof Error ? e : new Error(String(e)),
 					}).pipe(Effect.ignore);

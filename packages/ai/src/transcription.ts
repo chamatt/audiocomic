@@ -161,7 +161,7 @@ export class GroqTranscriptionAdapter implements TranscriptionAdapter {
         [
           '-y', '-i', audioPath,
           '-af', 'silenceremove=stop_periods=-1:stop_duration=1:stop_threshold=-40dB',
-          '-codec:a', 'libmp3lame', '-qscale:a', '2',
+          '-codec:a', 'libmp3lame', '-b:a', '32k', '-ac', '1',
           compactPath,
         ],
         { maxBuffer: 10 * 1024 * 1024, signal: opts.signal ?? undefined },
@@ -170,6 +170,9 @@ export class GroqTranscriptionAdapter implements TranscriptionAdapter {
       const compactSize = statSync(compactPath).size;
       if (compactSize > 0) {
         transcribePath = compactPath;
+        if (compactSize > 24 * 1024 * 1024) {
+          log.warn('compressed audio still exceeds 24MB Groq limit', { compactSize, audioPath });
+        }
         log.info('silence-removed audio', { originalSize: audio.length, compactSize, reduction: `${Math.round((1 - compactSize / audio.length) * 100)}%` });
       }
     } catch (e) {
