@@ -1,9 +1,8 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
-import { getPrevResult, isComposePromptsResult, isPlanPagesResult, isPlanStoryResult } from "./helpers.ts";
 import { uuid, nowIso } from "@audiocomic/shared";
-import type { PanelRenderRequest, PanelRenderResult, PanelSpec, CharacterProfile } from "@audiocomic/domain";
+import type { PanelRenderRequest, PanelRenderResult, PanelSpec } from "@audiocomic/domain";
 
 /** Type guard: a render result carrying inline image bytes to persist. */
 function hasImageData(v: PanelRenderResult): v is PanelRenderResult & { imageData: Buffer } {
@@ -12,44 +11,55 @@ function hasImageData(v: PanelRenderResult): v is PanelRenderResult & { imageDat
 
 export const RenderPanelsStep: StepExecutor = {
 	type: "render_panels",
-	inputs: ["compose_prompts", "plan_pages", "plan_story"] as const,
-	outputs: ["render_panels"] as const,
+	inputs: ["plan_chapters"],
+	outputs: ["render_panels"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
 
-			const composeResult = getPrevResult(ctx, "compose_prompts", isComposePromptsResult);
-			const panelPrompts = composeResult.panelPrompts;
+			// Read ALL panels for this project from DB — not from in-memory
+			// step results. This ensures panels already rendered from the
+			// canvas (which patched renderResultId in DB) are skipped.
+			const allPanels = yield* Effect.tryPromise({
+				try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
 
-			const pagesResult = getPrevResult(ctx, "plan_pages", isPlanPagesResult);
-			const panels = pagesResult.panels as PanelSpec[];
-
-			const storyResult = getPrevResult(ctx, "plan_story", isPlanStoryResult);
-			const characters = storyResult.characters as CharacterProfile[];
+			// Only render panels that have a renderPrompt but no renderResultId.
+			const panelsToRender = allPanels.filter(
+				(p) => p.renderPrompt && !p.renderResultId,
+			) as PanelSpec[];
 
 			const panelImageKeys = new Map<string, string>();
 			let renderedCount = 0;
-			let skippedCount = 0;
+			let skippedCount = allPanels.length - panelsToRender.length;
 
-			yield* Effect.logInfo(`render_panels: ${panels.length} panels to render (sequential)`);
-			ctx.emit({ type: "info", label: "render_panels", detail: `${panels.length} panels to render` });
+			yield* Effect.logInfo(
+				`render_panels: ${panelsToRender.length} to render, ${skippedCount} already rendered (from DB)`,
+			);
+			ctx.emit({
+				type: "info" as const,
+				label: "render_panels",
+				detail: `${panelsToRender.length} to render, ${skippedCount} skipped`,
+			});
 
-			for (let i = 0; i < panels.length; i++) {
-				const panel = panels[i]!;
-				const prompt = panelPrompts.get(panel.id);
-				if (!prompt) continue;
-
-				// Skip if this panel already has a render result from a previous run.
-				// Check both the previousResults map (in-memory) and the DB.
-				let alreadyRendered = false;
-				if (panel.renderResultId !== undefined) {
-					yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] panel ${panel.id} already has renderResultId, skipping`);
-					skippedCount += 1;
-					alreadyRendered = true;
+			for (let i = 0; i < panelsToRender.length; i++) {
+				if (ctx.shouldAbort?.()) {
+					yield* Effect.logInfo("render_panels: aborted by user");
+					break;
 				}
-				if (alreadyRendered) continue;
-			yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] rendering panel ${panel.id}...`);
-			ctx.emit({ type: "substep_start", label: `panel ${i + 1}/${panels.length}`, current: i + 1, total: panels.length, detail: panel.id });
+
+				const panel = panelsToRender[i]!;
+				const prompt = panel.renderPrompt!;
+
+				yield* Effect.logInfo(`render_panels: [${i + 1}/${panelsToRender.length}] rendering panel ${panel.id}...`);
+				ctx.emit({
+					type: "substep_start" as const,
+					label: `panel ${i + 1}/${panelsToRender.length}`,
+					current: i + 1,
+					total: panelsToRender.length,
+					detail: panel.id,
+				});
 
 				const renderReq: PanelRenderRequest = {
 					id: uuid(),
@@ -67,12 +77,10 @@ export const RenderPanelsStep: StepExecutor = {
 
 				const result = yield* Effect.tryPromise({
 					try: async () => {
-						// Persist the render request (non-fatal if DB unavailable).
 						try { await bridge.repo.panelRenderRequests.create(renderReq); } catch { /* non-fatal */ }
 
 						const result: PanelRenderResult = await bridge.getRenderer().render(renderReq);
 
-						// Persist the render result (non-fatal).
 						try { await bridge.repo.panelRenderResults.create(result); } catch { /* non-fatal */ }
 						try {
 							await bridge.repo.panelSpecs.patch(panel.id, {
@@ -81,23 +89,29 @@ export const RenderPanelsStep: StepExecutor = {
 							});
 						} catch { /* non-fatal */ }
 
-						// Renderer adapters normally persist the image themselves and only
-						// return an imageKey. If a result carries inline bytes, write them.
 						if (hasImageData(result)) {
 							await bridge.storage.writeAsset(result.imageKey, Buffer.from(result.imageData));
 						}
 
 						return result;
 					},
-					catch: (e: unknown) => e instanceof Error ? e : new Error(String(e)),
+					catch: (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
 				});
 
 				panelImageKeys.set(panel.id, result.imageKey);
 				renderedCount += 1;
-			yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] done in ${result.durationMs ?? 0}ms → ${result.imageKey}`);
-			ctx.emit({ type: "substep_done", label: `panel ${i + 1}/${panels.length}`, current: i + 1, total: panels.length, detail: `${result.durationMs ?? 0}ms → ${result.imageKey}` });
-				// Yield control briefly so the actor can process concurrent
-				// requests (GetStatus, Pause) between panel renders.
+
+				yield* Effect.logInfo(
+					`render_panels: [${i + 1}/${panelsToRender.length}] done in ${result.durationMs ?? 0}ms → ${result.imageKey}`,
+				);
+				ctx.emit({
+					type: "substep_done" as const,
+					label: `panel ${i + 1}/${panelsToRender.length}`,
+					current: i + 1,
+					total: panelsToRender.length,
+					detail: `${result.durationMs ?? 0}ms → ${result.imageKey}`,
+				});
+
 				yield* Effect.sleep(10);
 			}
 
@@ -107,11 +121,11 @@ export const RenderPanelsStep: StepExecutor = {
 				data: {
 					step: "render_panels" as const,
 					status: "completed" as const,
+					panelImageKeys,
 					renderedCount,
 					skippedCount,
-					panelImageKeys,
 				},
-				summary: `${renderedCount} panels rendered`,
+				summary: `${renderedCount} rendered, ${skippedCount} skipped`,
 			} satisfies StepOutput;
 		}),
 };

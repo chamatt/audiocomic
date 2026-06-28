@@ -4,7 +4,6 @@ import { registerStep, type StepExecutor, type StepContext, type StepOutput } fr
 import {
 	getPrevResult,
 	isComposePagesResult,
-	isPlanPagesResult,
 } from "./helpers.ts";
 import { uuid, nowIso, exportKey } from "@audiocomic/shared";
 import type {
@@ -30,7 +29,7 @@ export interface ExportMotionResult {
 	durationSec: number;
 }
 
-// Safe narrowing of the unknown[] carried by plan_pages panels/pages. A panel
+// Safe narrowing of the DB rows returned by pageSpecs/panelSpecs. A panel
 // must carry the fields the timeline builder reads: id, pageId, description,
 // and optional startSec/endSec. A page must carry an id.
 const isPanelLike = (v: unknown): v is PanelSpec =>
@@ -51,7 +50,7 @@ const isPageLike = (v: unknown): v is PageSpec =>
 
 export const ExportMotionStep: StepExecutor = {
 	type: "export_motion",
-	inputs: ["compose_pages", "plan_pages"],
+	inputs: ["compose_pages"],
 	outputs: ["export_motion"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
@@ -63,27 +62,33 @@ export const ExportMotionStep: StepExecutor = {
 					getPrevResult(ctx, "compose_pages", isComposePagesResult),
 				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
 			});
-			const planPages = yield* Effect.tryPromise({
-				try: async () => getPrevResult(ctx, "plan_pages", isPlanPagesResult),
+
+			// Read pages and panels from the DB (plan_chapters persists them).
+			const rawPages = yield* Effect.tryPromise({
+				try: () => bridge.repo.pageSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+			const rawPanels = yield* Effect.tryPromise({
+				try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
 				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
 			});
 
-			// Narrow the plan_pages pages/panels arrays safely.
+			// Narrow the DB rows safely.
 			const pages: PageSpec[] = [];
-			for (const p of planPages.pages) {
+			for (const p of rawPages) {
 				if (!isPageLike(p)) {
 					return yield* Effect.fail(
-						new Error("export_motion: plan_pages page missing string 'id' field"),
+						new Error("export_motion: pageSpecs row missing string 'id' field"),
 					);
 				}
 				pages.push(p);
 			}
 			const allPanels: PanelSpec[] = [];
-			for (const p of planPages.panels) {
+			for (const p of rawPanels) {
 				if (!isPanelLike(p)) {
 					return yield* Effect.fail(
 						new Error(
-							"export_motion: plan_pages panel missing id/pageId/description fields",
+							"export_motion: panelSpecs row missing id/pageId/description fields",
 						),
 					);
 				}

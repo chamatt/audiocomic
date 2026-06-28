@@ -76,25 +76,14 @@ const PIPELINE_STATUS_COLORS: Record<PipelineState['status'], string> = {
 
 const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
   ingest_knowledge: { x: 0, y: 220 },
-  segment: { x: 520, y: 220 },
-  plan_story: { x: 780, y: 220 },
-  // Col 4: three parallel branches
-  build_bibles: { x: 1040, y: 60 },
-  section_memory: { x: 1040, y: 220 },
-  plan_pages: { x: 1040, y: 380 },
-  // Col 5: plan_pages outputs
-  validate_layout: { x: 1300, y: 140 },
-  compose_prompts: { x: 1300, y: 300 },
-  // Col 6
-  render_panels: { x: 1560, y: 220 },
-  // Col 7
-  panel_qa: { x: 1820, y: 140 },
-  compose_pages: { x: 1820, y: 300 },
-  // Col 8
-  lettering: { x: 2080, y: 140 },
-  export_static: { x: 2080, y: 300 },
-  // Col 9
-  export_motion: { x: 2340, y: 220 },
+  build_bibles: { x: 320, y: 220 },
+  plan_chapters: { x: 640, y: 220 },
+  render_panels: { x: 960, y: 220 },
+  panel_qa: { x: 1280, y: 140 },
+  compose_pages: { x: 1280, y: 300 },
+  lettering: { x: 1600, y: 140 },
+  export_static: { x: 1600, y: 300 },
+  export_motion: { x: 1920, y: 220 },
 };
 
 const DEFAULT_POSITION = { x: 2600, y: 220 };

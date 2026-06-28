@@ -1,13 +1,13 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
-import { getPrevResult, isPlanPagesResult, isRenderPanelsResult } from "./helpers.ts";
+import { getPrevResult, isRenderPanelsResult } from "./helpers.ts";
 import type { PanelSpec } from "@audiocomic/domain";
 
 // ─── panel_qa step ───
 // For MVP, marks every rendered panel as QA-passed. Reads the panelImageKeys
 // map from render_panels (only panels that were actually rendered) and the
-// panel specs from plan_pages, then patches each rendered panel's qaStatus
+// panel specs from the DB, then patches each rendered panel's qaStatus
 // to 'passed' in the DB.
 
 export interface PanelQaResult {
@@ -16,19 +16,9 @@ export interface PanelQaResult {
 	passedCount: number;
 }
 
-/** Type guard: narrows an unknown to a PanelSpec with the fields we need. */
-function isPanelSpec(v: unknown): v is PanelSpec {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		"id" in v &&
-		typeof (v as Record<string, unknown>).id === "string"
-	);
-}
-
 export const PanelQaStep: StepExecutor = {
 	type: "panel_qa",
-	inputs: ["render_panels", "plan_pages"],
+	inputs: ["render_panels"],
 	outputs: ["panel_qa"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
@@ -38,13 +28,20 @@ export const PanelQaStep: StepExecutor = {
 			const renderPanels = getPrevResult(ctx, "render_panels", isRenderPanelsResult);
 			const panelImageKeys = renderPanels.panelImageKeys;
 
-			// Read plan_pages result for the panel specs.
-			const planPages = getPrevResult(ctx, "plan_pages", isPlanPagesResult);
-			const panels = planPages.panels.filter(isPanelSpec);
+			// Read panel specs from the DB.
+			const allPanels = yield* Effect.tryPromise({
+				try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
 
-			// Mark every panel that has a rendered image as QA-passed.
+			// Only panels that were actually rendered have a renderResultId.
+			const renderedPanels = allPanels.filter(
+				(p) => p.renderResultId !== undefined,
+			) as PanelSpec[];
+
+			// Mark every rendered panel as QA-passed.
 			let passedCount = 0;
-			for (const panel of panels) {
+			for (const panel of renderedPanels) {
 				if (!panelImageKeys.has(panel.id)) continue;
 				yield* Effect.tryPromise({
 					try: () => bridge.repo.panelSpecs.patch(panel.id, { qaStatus: "passed" }),

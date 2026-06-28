@@ -3,13 +3,8 @@
 // consulted by `getStepExecutor` / `listStepTypes`.
 
 import "./ingest_knowledge.ts";
-import "./segment.ts";
-import "./plan_story.ts";
 import "./build_bibles.ts";
-import "./section_memory.ts";
-import "./plan_pages.ts";
-import "./validate_layout.ts";
-import "./compose_prompts.ts";
+import "./plan_chapters.ts";
 import "./render_panels.ts";
 import "./panel_qa.ts";
 import "./compose_pages.ts";

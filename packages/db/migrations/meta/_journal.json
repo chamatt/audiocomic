@@ -8,6 +8,13 @@
       "when": 1733000000000,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1733000001000,
+      "tag": "0002_add_chapter_id_to_pages_panels",
+      "breakpoints": true
     }
   ]
 }

@@ -269,6 +269,7 @@ export const PanelSpec = z.object({
   id: z.string().uuid(),
   pageId: z.string().uuid(),
   projectId: z.string().uuid(),
+  chapterId: z.string().uuid().optional(), // links panel to its chapter
   index: z.number().int().nonnegative(),
   storySectionId: z.string().uuid(), // MUST reference a StorySection
   // layout
@@ -311,6 +312,7 @@ export type PanelSpec = z.infer<typeof PanelSpec>;
 export const PageSpec = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
+  chapterId: z.string().uuid().optional(), // links page to its chapter
   index: z.number().int().nonnegative(),
   storySectionId: z.string().uuid().optional(), // primary section for this page
   panelIds: z.array(z.string().uuid()).default([]),

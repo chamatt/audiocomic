@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, type JSX } from 'react';
+import { useCallback, useMemo, useRef, useState, type JSX } from 'react';
 import type { PanelSpec, BoundingBox, LetteringBox } from '@audiocomic/domain';
 import { ComicCanvas } from './ComicCanvas';
 import { PanelEditor } from './PanelEditor';
@@ -27,6 +27,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         id: p.id,
         index: p.index,
         projectId: p.projectId,
+        chapterId: p.chapterId,
         panelIds: p.panelIds,
         panelCount: p.panelCount,
         readingOrder: p.readingOrder,
@@ -37,6 +38,18 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       })),
     [pages],
   );
+
+  // Chapter filter
+  const [selectedChapterId, setSelectedChapterId] = useState<string>('all');
+  const chapterIds = useMemo(() => {
+    const ids = new Set<string>();
+    pages.forEach((p) => { if (p.chapterId) ids.add(p.chapterId); });
+    return Array.from(ids);
+  }, [pages]);
+  const filteredPages = useMemo(() => {
+    if (selectedChapterId === 'all') return canvasPages;
+    return canvasPages.filter((p) => p.chapterId === selectedChapterId);
+  }, [canvasPages, selectedChapterId]);
 
   const selectedPanel = useMemo(() => {
     for (const page of pages) {
@@ -97,8 +110,24 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   // Regenerate handler
   const handleRegenerate = useCallback(async (panelId: string) => {
-    await fetch(`/api/panels/${panelId}/regenerate`, { method: 'POST' });
-  }, []);
+    try {
+      const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: 'POST' });
+      if (!res.ok) return;
+      const { jobId } = await res.json() as { jobId: string };
+      // Poll for job completion every 2s (max 120s)
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const jobRes = await fetch(`/api/jobs/${jobId}`);
+        if (!jobRes.ok) break;
+        const job = await jobRes.json() as { state: string };
+        if (job.state === 'completed' || job.state === 'done') {
+          await refresh();
+          break;
+        }
+        if (job.state === 'failed') break;
+      }
+    } catch { /* ignore */ }
+  }, [refresh]);
 
   // Throttled API save for bubble position (fires at most once per 150ms during drag)
   const saveBubblePosition = useRef(
@@ -234,7 +263,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   return (
     <div className="flex h-full flex-col">
       <CanvasToolbar
-        pageCount={pages.length}
+        pageCount={filteredPages.length}
         currentPageIndex={currentPageIndex}
         onPageNavigate={handlePageNavigate}
         onExport={handleExport}
@@ -243,7 +272,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-hidden">
           <ComicCanvas
-            pages={canvasPages}
+            pages={filteredPages}
             onPanelBboxChange={handlePanelBboxChange}
             onBubbleChange={handleBubbleChange}
             onBubbleTextChange={handleBubbleTextChange}
@@ -260,7 +289,28 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         />
       </div>
 
-      <PageThumbnailBar pages={canvasPages} onReorder={handlePageReorder} />
+      {/* Chapter filter + page thumbnails */}
+      <div className="border-t bg-background/95 backdrop-blur">
+        {chapterIds.length > 1 && (
+          <div className="flex items-center gap-2 px-3 py-1 border-b">
+            <span className="text-xs text-muted-foreground font-medium">Chapter:</span>
+            <select
+              className="text-xs bg-transparent border rounded px-2 py-0.5"
+              value={selectedChapterId}
+              onChange={(e) => setSelectedChapterId(e.target.value)}
+            >
+              <option value="all">All chapters</option>
+              {chapterIds.map((id, i) => (
+                <option key={id} value={id}>Chapter {i + 1}</option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">
+              {filteredPages.length} page{filteredPages.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
+        <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
+      </div>
     </div>
   );
 }

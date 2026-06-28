@@ -4,6 +4,7 @@ export interface CanvasPageData {
   id: string;
   index: number;
   projectId: string;
+  chapterId?: string;
   panelIds: string[];
   panelCount: number;
   readingOrder: string[];

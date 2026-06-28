@@ -1,14 +1,14 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
-import { getPrevResult, isPlanPagesResult, isRenderPanelsResult } from "./helpers.ts";
+import { getPrevResult, isRenderPanelsResult } from "./helpers.ts";
 import { uuid, nowIso, pageImageKey } from "@audiocomic/shared";
-import type { PageSpec, PanelSpec, PageComposite } from "@audiocomic/domain";
+import type { PageComposite } from "@audiocomic/domain";
 
 // ─── compose_pages step ───
 // Composites rendered panel images into full pages, persists PageComposite
 // records, and links each page to its composite. Reads panel image keys from
-// the render_panels result and page/panel specs from the plan_pages result.
+// the render_panels result and page/panel specs from the DB.
 
 export interface ComposePagesResult {
 	step: "compose_pages";
@@ -16,48 +16,27 @@ export interface ComposePagesResult {
 	pageImageKeys: Map<string, string>;
 }
 
-/** Type guard: narrows an unknown to a PanelSpec with the fields we need. */
-function isPanelSpec(v: unknown): v is PanelSpec {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		"id" in v &&
-		typeof (v as Record<string, unknown>).id === "string" &&
-		"pageId" in v &&
-		typeof (v as Record<string, unknown>).pageId === "string"
-	);
-}
-
-/** Type guard: narrows an unknown to a PageSpec with the fields we need. */
-function isPageSpec(v: unknown): v is PageSpec {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		"id" in v &&
-		typeof (v as Record<string, unknown>).id === "string"
-	);
-}
-
 export const ComposePagesStep: StepExecutor = {
 	type: "compose_pages",
-	inputs: ["plan_pages", "render_panels"],
+	inputs: ["render_panels"],
 	outputs: ["compose_pages"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
 
-			// Read plan_pages result for pages and panels.
-			const planPages = getPrevResult(ctx, "plan_pages", isPlanPagesResult);
-			const rawPages = planPages.pages;
-			const rawPanels = planPages.panels;
+			// Read page and panel specs from the DB.
+			const pages = yield* Effect.tryPromise({
+				try: () => bridge.repo.pageSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+			const panels = yield* Effect.tryPromise({
+				try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
 
 			// Read render_panels result for the panelImageKeys map.
 			const renderPanels = getPrevResult(ctx, "render_panels", isRenderPanelsResult);
 			const panelImageKeys = renderPanels.panelImageKeys;
-
-			// Validate page/panel shapes once up front.
-			const pages = rawPages.filter(isPageSpec);
-			const panels = rawPanels.filter(isPanelSpec);
 
 			const pageImageKeys = new Map<string, string>();
 

@@ -20,6 +20,8 @@ fi
 echo "│ Stopping existing servers..."
 lsof -ti :3000 2>/dev/null | xargs kill -9 2>/dev/null || true
 lsof -ti :6420 2>/dev/null | xargs kill -9 2>/dev/null || true
+# Kill worker process
+pkill -f "workflows/src/worker" 2>/dev/null || true
 sleep 1
 echo "✓ Servers stopped"
 
@@ -91,6 +93,12 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+# Start worker (background, for per-panel regeneration jobs)
+echo "│ Starting worker..."
+npx dotenv -e .env -- npx tsx packages/workflows/src/worker.ts > /tmp/audiocomic-worker.log 2>&1 &
+WORKER_PID=$!
+echo "✓ Worker started (PID $WORKER_PID, logs: /tmp/audiocomic-worker.log)"
+
 echo ""
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║  AudioComic is running!                              ║"
@@ -98,6 +106,7 @@ echo "║                                                      ║"
 echo "║  Web app:     http://localhost:3000                  ║"
 echo "║  Actor API:   http://localhost:6420                  ║"
 echo "║  MinIO console: http://localhost:9001                ║"
+echo "║  Worker:      tail -f /tmp/audiocomic-worker.log      ║"
 echo "║  Postgres:    localhost:5432                         ║"
 echo "║                                                      ║"
 echo "║  Logs:                                               ║"

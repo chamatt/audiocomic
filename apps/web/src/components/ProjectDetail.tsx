@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
 import type { PipelineState, StepState } from '@audiocomic/actors';
 import {
@@ -648,10 +648,10 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     if (actorsReady) refreshPipeline();
   }, [actorsReady, refreshPipeline]);
 
-  // Fetch chapters for the chapter selector
+  // Fetch chapters and poll while any are transcribing
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const fetchChapters = async () => {
       try {
         const res = await fetch(`/api/projects/${projectId}/chapters`);
         if (res.ok && !cancelled) {
@@ -659,9 +659,16 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           setChapters(data.chapters ?? []);
         }
       } catch { /* ignore */ }
-    })();
+    };
+    fetchChapters();
+    // Poll every 3s while any chapter is transcribing
+    const anyTranscribing = chapters.some((c) => c.status === 'transcribing' || c.status === 'pending');
+    if (anyTranscribing) {
+      const interval = setInterval(fetchChapters, 3000);
+      return () => { cancelled = true; clearInterval(interval); };
+    }
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, chapters]);
 
   const actorRunning = pipelineState?.status === 'running';
   useEffect(() => {
@@ -669,6 +676,9 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     const interval = setInterval(refreshPipeline, 2000);
     return () => clearInterval(interval);
   }, [actorRunning, refreshPipeline]);
+
+  const transcribedCount = chapters.filter((c) => c.status === 'transcribed' || c.status === 'completed').length;
+  const allTranscribed = chapters.length > 0 && transcribedCount === chapters.length;
 
   // --- Pipeline actions ---
   const doAction = async (label: string, fn: () => Promise<ActorResult<unknown>>) => {
@@ -692,9 +702,18 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
   const steps = pipelineState?.steps ?? [];
   const pipelineStatus = pipelineState?.status ?? 'idle';
-  const composePromptsDone = steps.some((s) => s.definition.id === 'compose_prompts' && s.status === 'completed');
+  const planChaptersDone = steps.some((s) => s.definition.id === 'plan_chapters' && s.status === 'completed');
   const renderPanelsStarted = steps.some((s) => s.definition.id === 'render_panels' && s.status !== 'pending');
-  const atReviewCheckpoint = pipelineStatus === 'paused' && composePromptsDone && !renderPanelsStarted;
+  const atReviewCheckpoint = pipelineStatus === 'paused' && planChaptersDone && !renderPanelsStarted;
+
+  // Auto-switch to Canvas when pipeline completes
+  const prevStatus = useRef(pipelineStatus);
+  useEffect(() => {
+    if (prevStatus.current === 'running' && pipelineStatus === 'completed') {
+      setActiveTab('canvas');
+    }
+    prevStatus.current = pipelineStatus;
+  }, [pipelineStatus]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -754,6 +773,26 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
               </span>
             </div>
           )}
+          {/* Ready to start prompt */}
+          {allTranscribed && pipelineStatus === 'idle' && (
+            <Card className="border-primary/50 bg-primary/5">
+              <CardContent className="flex items-center justify-between gap-4 py-4">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold">All chapters transcribed</p>
+                    <p className="text-sm text-muted-foreground">
+                      {chapters.length} chapters ready. Click Start to build the knowledge base and plan chapters.
+                    </p>
+                  </div>
+                </div>
+                <Button size="sm" onClick={onStart} disabled={pipelineBusy}>
+                  <Play className="h-3.5 w-3.5 mr-1.5" />
+                  Start Pipeline
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           {/* Pipeline controls */}
           <div className="flex items-center gap-3 flex-wrap">
             <StatusBadge status={pipelineStatus} />
@@ -761,7 +800,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
               <Button
                 size="sm"
                 onClick={onStart}
-                disabled={pipelineBusy || pipelineStatus === 'running'}
+                disabled={pipelineBusy || pipelineStatus === 'running' || transcribedCount === 0}
               >
                 <Play className="h-3.5 w-3.5 mr-1.5" />
                 Start
@@ -803,9 +842,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                 <div className="flex items-center gap-3">
                   <AlertCircle className="h-5 w-5 text-primary" />
                   <div>
-                    <p className="text-sm font-semibold">Review checkpoint</p>
                     <p className="text-sm text-muted-foreground">
-                      Panels are planned and prompts are ready. Review them on the Canvas tab,
+                      Chapters are planned with pages and prompts ready. Review them on the Canvas tab,
                       render individual panels, or click Resume to render all and continue.
                     </p>
                   </div>

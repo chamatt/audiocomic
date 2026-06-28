@@ -247,6 +247,7 @@ export const pageSpecs = pgTable(
   {
     id: pkUuid(),
     projectId: projectFk(),
+    chapterId: uuid('chapter_id'),
     index: integer('index').notNull(),
     storySectionId: uuid('story_section_id'),
     panelIds: jsonb('panel_ids').notNull().default([]),
@@ -258,7 +259,7 @@ export const pageSpecs = pgTable(
     layoutIssues: jsonb('layout_issues').notNull().default([]),
     compositeId: uuid('composite_id'),
   },
-  (t) => [index('page_specs_project_id_idx').on(t.projectId)],
+  (t) => [index('page_specs_project_id_idx').on(t.projectId), index('page_specs_chapter_id_idx').on(t.chapterId)],
 );
 
 export const panelSpecs = pgTable(
@@ -267,6 +268,7 @@ export const panelSpecs = pgTable(
     id: pkUuid(),
     pageId: uuid('page_id').notNull(),
     projectId: projectFk(),
+    chapterId: uuid('chapter_id'),
     index: integer('index').notNull(),
     storySectionId: uuid('story_section_id').notNull(),
     bbox: jsonb('bbox').notNull(),
@@ -287,8 +289,8 @@ export const panelSpecs = pgTable(
   },
   (t) => [
     index('panel_specs_project_id_idx').on(t.projectId),
-    index('panel_specs_page_id_idx').on(t.pageId),
     index('panel_specs_story_section_id_idx').on(t.storySectionId),
+    index('panel_specs_chapter_id_idx').on(t.chapterId),
   ],
 );
 

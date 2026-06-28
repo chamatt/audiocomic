@@ -1,34 +1,41 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
-import { getPrevResult, isComposePagesResult, isPlanPagesResult } from "./helpers.ts";
+import { getPrevResult, isComposePagesResult } from "./helpers.ts";
 import { uuid, nowIso, letteringKey } from "@audiocomic/shared";
-import type { PageSpec, PanelSpec, LetteringSpec, LetteringBox } from "@audiocomic/domain";
+import type { LetteringSpec, LetteringBox } from "@audiocomic/domain";
 
 /**
  * Lettering — extracts dialogue lines from each page's panels, builds a
  * LetteringSpec per page, renders an SVG overlay via the media adapter, writes
  * it to storage, and persists the spec to the DB.
  *
- * Depends on: compose_pages, plan_pages
+ * Depends on: compose_pages
  * Output: `{ step, status, letteringKeys: Map<pageId, letteringKey> }`
  */
 export const LetteringStep: StepExecutor = {
 	type: "lettering",
-	inputs: ["compose_pages", "plan_pages"],
+	inputs: ["compose_pages"],
 	outputs: ["lettering"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
 
-			// We only need plan_pages for pages + panels; compose_pages is a
-			// dependency because lettering overlays must be produced after the
-			// page images exist, but we don't read its payload directly here.
+			// compose_pages is a dependency because lettering overlays must be
+			// produced after the page images exist; we read its result to access
+			// the pageImageKeys map.
 			getPrevResult(ctx, "compose_pages", isComposePagesResult);
-			const plan = getPrevResult(ctx, "plan_pages", isPlanPagesResult);
 
-			const pages = plan.pages as PageSpec[];
-			const panels = plan.panels as PanelSpec[];
+			// Read pages and panels from the DB rather than in-memory step
+			// results, so lettering reflects whatever plan_chapters persisted.
+			const pages = yield* Effect.tryPromise({
+				try: () => bridge.repo.pageSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+			const panels = yield* Effect.tryPromise({
+				try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
 
 			yield* Effect.logInfo(
 				`lettering: placing overlays for project ${ctx.projectId} (${pages.length} pages)`,
