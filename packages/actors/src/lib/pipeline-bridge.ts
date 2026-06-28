@@ -93,8 +93,8 @@ export function makePipelineBridgeLayer(dbResult: CreateDbResult, env: Env): Lay
 		},
 	};
 
-	const llmProvider: LLMProvider = env.OPENAI_API_KEY ? "openai" : env.ANTHROPIC_API_KEY ? "anthropic" : env.GOOGLE_GENERATIVE_AI_API_KEY ? "google" : "openai";
-	const transcriptionProvider: TranscriptionProvider = env.OPENAI_API_KEY ? "openai" : env.GROQ_API_KEY ? "groq" : "openai";
+	const llmProvider: LLMProvider = env.OPENROUTER_API_KEY ? "openrouter" : env.OPENAI_API_KEY ? "openai" : env.ANTHROPIC_API_KEY ? "anthropic" : env.GOOGLE_GENERATIVE_AI_API_KEY ? "google" : "openrouter";
+	const transcriptionProvider: TranscriptionProvider = env.GROQ_API_KEY ? "groq" : env.OPENAI_API_KEY ? "openai" : "groq";
 
 	let transcriptionAdapter: TranscriptionAdapter | null = null;
 	let storyPlanner: StoryPlannerAdapter | null = null;

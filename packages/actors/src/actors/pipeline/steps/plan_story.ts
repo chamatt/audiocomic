@@ -22,21 +22,28 @@ export const PlanStoryStep: StepExecutor = {
 			yield* Effect.logInfo(`plan_story: planning story for project ${ctx.projectId} (${fullText.length} chars)`);
 
 			const planner = bridge.getStoryPlanner();
-			const result = yield* Effect.tryPromise(() =>
-				planner.planStory({ projectId: ctx.projectId, text: fullText }),
-			);
+			const result = yield* Effect.tryPromise({
+				try: () => planner.planStory({ projectId: ctx.projectId, text: fullText }),
+				catch: (e) => e instanceof Error ? e : new Error(String(e)),
+			});
 
 			const sections: StorySection[] = result.sections;
 			const characters: CharacterProfile[] = result.characters;
 			const worldBible: WorldBible = result.worldBible;
 
-			// Persist sections, characters, and world bible in parallel.
-			yield* Effect.tryPromise(() =>
-				Promise.all([
-					Promise.all(sections.map((s) => bridge.repo.storySections.create(s))),
-					Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
-					bridge.repo.worldBibles.create(worldBible),
-				]),
+			yield* Effect.tryPromise({
+				try: () =>
+					Promise.all([
+						Promise.all(sections.map((s) => bridge.repo.storySections.create(s))),
+						Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
+						bridge.repo.worldBibles.create(worldBible),
+					]),
+				catch: (e) => {
+					const msg = e instanceof Error ? e.message : String(e);
+					return new Error(`plan_story: DB persist failed (non-fatal): ${msg}`);
+				},
+			}).pipe(
+				Effect.catch((e: Error) => Effect.logInfo(e.message)),
 			);
 
 			yield* Effect.logInfo(

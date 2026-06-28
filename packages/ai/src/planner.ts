@@ -55,6 +55,15 @@ function resolveLanguageModel(
         compatibility: 'compatible',
       }).chat(model);
     }
+    case 'openrouter': {
+      // OpenRouter is OpenAI-compatible; reuse the OpenAI provider against OpenRouter's base URL.
+      if (!env.OPENROUTER_API_KEY) throw new Error('OpenRouter LLM requires OPENROUTER_API_KEY');
+      return createOpenAI({
+        apiKey: env.OPENROUTER_API_KEY,
+        baseURL: 'https://openrouter.ai/api/v1',
+        compatibility: 'compatible',
+      }).chat(model);
+    }
     default:
       throw new Error(`Unsupported LLM provider: ${provider satisfies never}`);
   }
@@ -210,6 +219,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     const projectId = input.projectId;
     const text = truncate(input.text, MAX_PASS1_CHARS);
 
+    console.error(`[planner] pass 1/3: world + characters + chapters...`);
     // ---- Pass 1: chapters + scenes + world + characters ----
     // Use generateObject with retry — streamObject can fail silently if the
     // model returns no valid JSON, giving "No object generated" errors.
@@ -240,6 +250,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
         pass1 = result.object;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        console.error(`[planner] pass 1 failed (attempt ${attempt + 1}/3): ${lastError.message}`);
         if (attempt < 2) {
           // Brief pause before retry
           await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -328,6 +339,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
       chapterIndex++;
     }
 
+    console.error(`[planner] pass 2/3: beats for ${sceneSections.length} scene(s) (parallel)...`);
     // ---- Pass 2: beats per scene (parallel) ----
     const beatSectionsByScene = await Promise.all(
       sceneSections.map(async ({ section, excerpt }) => {
@@ -372,6 +384,8 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
       });
     }
 
+    const totalBeats = beatSectionsByScene.reduce((n, { beats }) => n + beats.length, 0);
+    console.error(`[planner] pass 3/3: panel hints for ${totalBeats} beat(s) across ${beatSectionsByScene.length} scene(s) (parallel)...`);
     // ---- Pass 3: page/panel allocation hints per scene (parallel) ----
     const panelsPerBeat = input.panelsPerBeat ?? 1;
     const pass3Results = await Promise.all(
@@ -416,6 +430,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
       }
     }
 
+    console.error(`[planner] done: ${sections.length} sections, ${characters.length} characters, ${panelHints.length} panel hints`);
     return { sections, characters, worldBible, panelHints };
   }
 }

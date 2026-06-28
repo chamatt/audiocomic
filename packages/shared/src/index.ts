@@ -29,6 +29,9 @@ export const EnvSchema = z.object({
   // Groq
   GROQ_API_KEY: z.string().optional(),
 
+  // OpenRouter (OpenAI-compatible gateway)
+  OPENROUTER_API_KEY: z.string().optional(),
+
   // ComfyUI
   COMFYUI_URL: z.string().url().optional(),
   COMFYUI_API_KEY: z.string().optional(),

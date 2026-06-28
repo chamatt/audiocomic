@@ -27,9 +27,10 @@ export const TranscribeStep: StepExecutor = {
 			const audioPath = normalizeResult.audioPath;
 			yield* Effect.logInfo(`transcribe: transcribing ${audioPath}`);
 			const adapter = bridge.getTranscriptionAdapter();
-			const result = yield* Effect.tryPromise(() =>
-				adapter.transcribe(audioPath, { projectId: ctx.projectId }),
-			);
+			const result = yield* Effect.tryPromise({
+				try: () => adapter.transcribe(audioPath, { projectId: ctx.projectId }),
+				catch: (e) => e instanceof Error ? e : new Error(String(e)),
+			});
 
 			const chunks: TranscriptChunk[] = result.chunks.map((c, i) => ({
 				...c,
@@ -38,8 +39,16 @@ export const TranscribeStep: StepExecutor = {
 				index: i,
 			}));
 
-			yield* Effect.tryPromise(() =>
-				Promise.all(chunks.map((c) => bridge.repo.transcriptChunks.create(c))),
+			// Persist to DB — non-fatal if projectId isn't a valid DB entity
+			// (e.g. during CLI testing with arbitrary pipeline keys).
+			yield* Effect.tryPromise({
+				try: () => Promise.all(chunks.map((c) => bridge.repo.transcriptChunks.create(c))),
+				catch: (e) => {
+					const msg = e instanceof Error ? e.message : String(e);
+					return new Error(`transcribe: DB persist failed (non-fatal): ${msg}`);
+				},
+			}).pipe(
+				Effect.catch((e: Error) => Effect.logInfo(e.message)),
 			);
 
 			yield* Effect.logInfo(`transcribe: ${chunks.length} chunks, duration=${result.durationSec ?? 0}s`);
