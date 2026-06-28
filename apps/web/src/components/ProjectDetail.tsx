@@ -243,7 +243,7 @@ function KnowledgeTab({
 
 export function ProjectDetail({ projectId, initialProject, initialDetail }: Props) {
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
-  const [activeTab, setActiveTab] = useState<string>(detail.pages.length > 0 ? 'canvas' : 'chapters');
+  const [activeTab, setActiveTab] = useState<string>('canvas');
   const project = detail.project;
   const { selectChapter } = useCanvasStore();
 
@@ -287,8 +287,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6">
-          <TabsTrigger value="chapters">Chapters</TabsTrigger>
           <TabsTrigger value="canvas">Canvas</TabsTrigger>
+          <TabsTrigger value="chapters">Chapters</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>

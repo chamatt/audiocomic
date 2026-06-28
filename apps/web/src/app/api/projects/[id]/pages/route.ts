@@ -50,3 +50,37 @@ export async function GET(
     return Response.json({ error: 'Failed to list pages' }, { status: 500 });
   }
 }
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: projectId } = await params;
+  try {
+    const body = await request.json().catch(() => ({})) as { chapterId?: string };
+    const repo = await getRepo();
+
+    // Determine the next page index
+    const existing = await repo.pageSpecs.getByProjectId(projectId);
+    const index = existing.length > 0 ? Math.max(...existing.map((p) => p.index)) + 1 : 0;
+
+    const page = await repo.pageSpecs.create({
+      id: crypto.randomUUID(),
+      projectId,
+      chapterId: body.chapterId,
+      index,
+      panelIds: [],
+      panelCount: 1,
+      readingOrder: [],
+      emphasisWeights: {},
+      bleedGutter: { bleed: 0, gutter: 0.02 },
+      layoutValid: false,
+      layoutIssues: [],
+    });
+
+    return Response.json({ page }, { status: 201 });
+  } catch (err) {
+    log.error('Failed to create page', { error: err instanceof Error ? err.message : String(err) });
+    return Response.json({ error: 'Failed to create page' }, { status: 500 });
+  }
+}

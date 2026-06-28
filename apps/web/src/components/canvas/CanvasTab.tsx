@@ -19,7 +19,7 @@ interface CanvasTabProps {
 }
 
 export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
-  const { pages, loading, error, refresh, updatePanel, updatePanelBbox, updateLettering } =
+  const { pages, loading, error, refresh, addPage, updatePanel, updatePanelBbox, updateLettering } =
     useCanvasData(projectId);
   const { selectedPanelId, selectedPageId, selectPage, selectedChapterId, selectChapter } = useCanvasStore();
 
@@ -264,6 +264,11 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [projectId],
   );
 
+  // Add blank page
+  const handleAddPage = useCallback(async () => {
+    await addPage(selectedChapterId ?? undefined);
+  }, [addPage, selectedChapterId]);
+
   // Per-panel rendering state
   const [renderingPanelIds, setRenderingPanelIds] = useState<Set<string>>(new Set());
   const handlePanelRender = useCallback(async (panelId: string) => {
@@ -331,6 +336,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         pageCount={filteredPages.length}
         currentPageIndex={currentPageIndex}
         onPageNavigate={handlePageNavigate}
+        onAddPage={handleAddPage}
         onExport={handleExport}
       />
 

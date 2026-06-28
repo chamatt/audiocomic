@@ -13,6 +13,7 @@ export interface CanvasData {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  addPage: (chapterId?: string) => Promise<void>;
   updatePanel: (panelId: string, patch: Partial<PanelSpec>) => void;
   updatePanelBbox: (panelId: string, bbox: { x: number; y: number; w: number; h: number }) => void;
   updateLettering: (pageId: string, boxes: LetteringBox[]) => void;
@@ -74,12 +75,27 @@ export function useCanvasData(projectId: string): CanvasData {
       ),
     );
   }, []);
+  const addPage = useCallback(async (chapterId?: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chapterId }),
+      });
+      if (!res.ok) throw new Error(`Failed to create page: ${res.status}`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add page');
+    }
+  }, [projectId, refresh]);
+
 
   return {
     pages,
     loading,
     error,
     refresh,
+    addPage,
     updatePanel,
     updatePanelBbox,
     updateLettering,
