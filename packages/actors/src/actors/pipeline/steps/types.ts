@@ -7,12 +7,12 @@ export interface StepContext {
 	stepId: string;
 	config: Record<string, unknown>;
 	previousResults: Map<string, unknown>;
-	rawRivetkitContext: any;
+	rawRivetkitContext: unknown;
 }
 
 export interface StepExecutor {
 	readonly type: string;
-	execute(ctx: StepContext): Effect.Effect<unknown, Error>;
+	execute(ctx: StepContext): Effect.Effect<unknown, Error, unknown>;
 }
 
 const stepRegistry = new Map<string, StepExecutor>();

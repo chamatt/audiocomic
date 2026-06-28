@@ -21,10 +21,10 @@ const DEFAULT_RETRY: RetryPolicy = {
  * a timeout becomes a failure so the retry schedule can catch it.
  */
 function withRetryAndTimeout(
-	execEffect: Effect.Effect<unknown, Error>,
+	execEffect: Effect.Effect<unknown, Error, unknown>,
 	retryPolicy: RetryPolicy | undefined,
 	stepId: string,
-): Effect.Effect<unknown, Error | Cause.TimeoutError> {
+): Effect.Effect<unknown, Error | Cause.TimeoutError, unknown> {
 	const rp = retryPolicy ?? DEFAULT_RETRY;
 
 	let effect = execEffect;
@@ -72,7 +72,7 @@ export const PipelineLive = Pipeline.toLayer(
 		// Step execution loop — forked into the actor scope by Start/Resume.
 		// -------------------------------------------------------------------
 
-		const runLoop: Effect.Effect<string, never, never> = Effect.gen(function* () {
+		const runLoop: Effect.Effect<string, never, unknown> = Effect.gen(function* () {
 			const initial = yield* State.get(state).pipe(Effect.orDie);
 			rawRivetkitContext.broadcast("pipelineStarted", initial);
 

@@ -1,16 +1,25 @@
 import { NodeRuntime } from "@effect/platform-node";
 import { Client, Registry } from "@rivetkit/effect";
 import { Effect, Layer } from "effect";
+import { config } from "dotenv";
+config({ path: "../../.env", override: true });
+
 import { FileRegistryLive } from "../actors/file-registry/live.ts";
 import { BibleLive } from "../actors/bible/live.ts";
 import { ProjectLive } from "../actors/project/live.ts";
 import { PipelineLive } from "../actors/pipeline/live.ts";
-// Import step executors to register them
+// Import step executors to trigger registration with the step registry
 import "../actors/pipeline/steps/index.ts";
 import { StorageLive, FFmpegLive } from "../lib/services.ts";
-import { PipelineBridgeLive } from "../lib/pipeline-bridge.ts";
+import { makePipelineBridgeLayer } from "../lib/pipeline-bridge.ts";
+import { createDb } from "@audiocomic/db";
+import { getEnv } from "@audiocomic/shared";
 
 const endpoint = process.env.RIVET_ENDPOINT ?? "http://127.0.0.1:6420";
+
+const env = getEnv();
+const dbResult = createDb(env.DATABASE_URL);
+const bridgeLayer = makePipelineBridgeLayer(dbResult, env);
 
 const ActorsLayer = Layer.mergeAll(
 	FileRegistryLive,
@@ -20,7 +29,7 @@ const ActorsLayer = Layer.mergeAll(
 ).pipe(
 	Layer.provide(StorageLive),
 	Layer.provide(FFmpegLive),
-	Layer.provide(PipelineBridgeLive),
+	Layer.provide(bridgeLayer),
 	Layer.provide(Client.layer({ endpoint })),
 );
 
@@ -31,6 +40,7 @@ Effect.gen(function* () {
 	yield* Effect.log(`Endpoint: ${endpoint}`);
 	yield* Effect.log("Actors: FileRegistry, Bible, Project, Pipeline");
 	yield* Effect.log("Steps: 15 registered (normalize → export_motion)");
+	yield* Effect.log("Bridge: direct adapters (@audiocomic/ai, @audiocomic/renderers, @audiocomic/media)");
 }).pipe(
 	Effect.flatMap(() => Layer.launch(MainLayer)),
 	NodeRuntime.runMain,

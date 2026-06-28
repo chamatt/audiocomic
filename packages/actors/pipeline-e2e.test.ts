@@ -121,7 +121,7 @@ async function main(): Promise<void> {
 
   log("  Adding 15 steps...");
   for (const step of STEPS) {
-    const config = step.id === "normalize" ? { inputPath: "/tmp/test-pipeline.m4a" } : {};
+    const config = step.id === "normalize" ? { inputPath: "/Users/matheus/code/audiocomic/test-fixtures/chapter-001.m4b" } : {};
     await addStep(PIPELINE_KEY, makeStepDef(step, config));
   }
 
@@ -170,7 +170,7 @@ async function main(): Promise<void> {
 
   const PAUSE_KEY = `e2e-pause-${ts}`;
   for (const step of STEPS.slice(0, 3)) {
-    const config = step.id === "normalize" ? { inputPath: "/tmp/test-pipeline.m4a" } : {};
+    const config = step.id === "normalize" ? { inputPath: "/Users/matheus/code/audiocomic/test-fixtures/chapter-001.m4b" } : {};
     await addStep(PAUSE_KEY, makeStepDef(step, config));
   }
 

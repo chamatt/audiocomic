@@ -2,21 +2,52 @@ import { Effect } from "effect";
 import { FFmpeg, FFmpegLive } from "../../../lib/services.ts";
 import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
 
+/** Type guard for normalize config. */
+function isNormalizeConfig(v: unknown): v is { inputPath?: string; textContent?: string } {
+	return typeof v === "object" && v !== null;
+}
+
+/**
+ * Normalize — probes the source audio file (or parses text) and resolves
+ * the local file path for downstream steps.
+ *
+ * Input  (config):   `inputPath` (audio) or `textContent` (text)
+ * Output:            `{ audioPath?, textContent?, durationSec? }`
+ */
 export const NormalizeStep: StepExecutor = {
 	type: "normalize",
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
-			const inputPath = ctx.config.inputPath;
-			if (typeof inputPath === "string" && inputPath.length > 0) {
-				yield* Effect.logInfo(`normalize: probing audio duration for ${inputPath}`);
+			if (!isNormalizeConfig(ctx.config)) {
+				yield* Effect.fail(new Error("normalize: invalid config"));
+			}
+			const cfg = ctx.config as { inputPath?: string; textContent?: string };
+			const inputPath = typeof cfg.inputPath === "string" ? cfg.inputPath : undefined;
+			const textContent = typeof cfg.textContent === "string" ? cfg.textContent : undefined;
+
+			if (inputPath && inputPath.length > 0) {
+				yield* Effect.logInfo(`normalize: probing audio ${inputPath}`);
 				const ffmpeg = yield* FFmpeg;
 				const duration = yield* ffmpeg.getDuration(inputPath);
 				yield* Effect.logInfo(`normalize: duration=${duration}s`);
-				return { step: "normalize", status: "completed" as const, duration };
+				return {
+					step: "normalize" as const,
+					status: "completed" as const,
+					audioPath: inputPath,
+					durationSec: duration,
+				};
 			}
-			// Text book path — no audio probing required
-			yield* Effect.logInfo("normalize: parsing text book (no audio probe)");
-			return { step: "normalize", status: "completed" as const };
+
+			if (textContent && textContent.length > 0) {
+				yield* Effect.logInfo(`normalize: text source (${textContent.length} chars)`);
+				return {
+					step: "normalize" as const,
+					status: "completed" as const,
+					textContent,
+				};
+			}
+
+			yield* Effect.fail(new Error("normalize: no inputPath or textContent in config"));
 		}).pipe(Effect.provide(FFmpegLive)),
 };
 

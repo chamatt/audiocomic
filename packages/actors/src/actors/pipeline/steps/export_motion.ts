@@ -1,12 +1,222 @@
 import { Effect } from "effect";
+import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import {
+	getPrevResult,
+	isComposePagesResult,
+	isPlanPagesResult,
+	isTranscribeResult,
+	isNormalizeResult,
+} from "./helpers.ts";
+import { uuid, nowIso, exportKey } from "@audiocomic/shared";
+import type {
+	NarrationTimeline,
+	NarrationSegment,
+	ExportBundle,
+	PageSpec,
+	PanelSpec,
+} from "@audiocomic/domain";
+
+// ─── export_motion step ───
+// Builds a NarrationTimeline from the planned pages/panels (one ken-burns
+// segment per panel), persists it, then renders an MP4 motion comic via the
+// media adapter. Page images are read from storage into a Map keyed by pageId.
+// If the source modality is audio, the normalized audio path is passed as the
+// narration track; otherwise audioPath is undefined.
+
+export interface ExportMotionResult {
+	step: "export_motion";
+	status: "completed";
+	exportId: string;
+	sizeBytes: number;
+	durationSec: number;
+}
+
+// Safe narrowing of the unknown[] carried by plan_pages panels/pages. A panel
+// must carry the fields the timeline builder reads: id, pageId, description,
+// and optional startSec/endSec. A page must carry an id.
+const isPanelLike = (v: unknown): v is PanelSpec =>
+	typeof v === "object" &&
+	v !== null &&
+	"id" in v &&
+	typeof (v as Record<string, unknown>).id === "string" &&
+	"pageId" in v &&
+	typeof (v as Record<string, unknown>).pageId === "string" &&
+	"description" in v &&
+	typeof (v as Record<string, unknown>).description === "string";
+
+const isPageLike = (v: unknown): v is PageSpec =>
+	typeof v === "object" &&
+	v !== null &&
+	"id" in v &&
+	typeof (v as Record<string, unknown>).id === "string";
 
 export const ExportMotionStep: StepExecutor = {
 	type: "export_motion",
-	execute: (_ctx: StepContext) =>
+	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
-			yield* Effect.logInfo("export_motion: exporting narrated motion comic (placeholder)");
-			return { step: "export_motion", status: "completed" as const };
+			const bridge = yield* PipelineBridge;
+
+			// Read previous step results.
+			const composePages = yield* Effect.tryPromise({
+				try: async () =>
+					getPrevResult(ctx, "compose_pages", isComposePagesResult),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+			const planPages = yield* Effect.tryPromise({
+				try: async () => getPrevResult(ctx, "plan_pages", isPlanPagesResult),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+			// transcribe provides timing context; its chunks are read for
+			// duration data but the timeline itself is derived from panel specs.
+			const transcribe = yield* Effect.tryPromise({
+				try: async () => getPrevResult(ctx, "transcribe", isTranscribeResult),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+			// Reference chunks so the transcribe result is validated as consumed;
+			// timing is sourced from panel.startSec/endSec when present.
+			const _chunks = transcribe.chunks;
+
+			// Narrow the plan_pages pages/panels arrays safely.
+			const pages: PageSpec[] = [];
+			for (const p of planPages.pages) {
+				if (!isPageLike(p)) {
+					return yield* Effect.fail(
+						new Error("export_motion: plan_pages page missing string 'id' field"),
+					);
+				}
+				pages.push(p);
+			}
+			const allPanels: PanelSpec[] = [];
+			for (const p of planPages.panels) {
+				if (!isPanelLike(p)) {
+					return yield* Effect.fail(
+						new Error(
+							"export_motion: plan_pages panel missing id/pageId/description fields",
+						),
+					);
+				}
+				allPanels.push(p);
+			}
+
+			// Build the narration timeline: one ken-burns segment per panel,
+			// ordered by page then panel. Timing falls back to a running clock
+			// when panel.startSec/endSec are absent (5s per panel).
+			const segments: NarrationSegment[] = [];
+			let currentTime = 0;
+			for (const page of pages) {
+				const pagePanels = allPanels.filter((p) => p.pageId === page.id);
+				for (const panel of pagePanels) {
+					const start = panel.startSec ?? currentTime;
+					const end = panel.endSec ?? start + 5;
+					segments.push({
+						panelId: panel.id,
+						pageId: page.id,
+						startSec: start,
+						endSec: end,
+						motion: "ken-burns",
+						motionParams: {
+							zoomStart: 1.0,
+							zoomEnd: 1.15,
+							panX: 0,
+							panY: 0,
+						},
+						text: panel.description,
+					});
+					currentTime = end;
+				}
+			}
+
+			if (segments.length === 0) {
+				yield* Effect.logInfo(
+					"export_motion: no panels to animate — skipping motion export",
+				);
+				return {
+					step: "export_motion" as const,
+					status: "completed" as const,
+					exportId: "",
+					sizeBytes: 0,
+					durationSec: 0,
+				} satisfies ExportMotionResult;
+			}
+
+			const timeline: NarrationTimeline = {
+				id: uuid(),
+				projectId: ctx.projectId,
+				segments,
+				totalDurationSec: currentTime,
+				ttsGenerated: false,
+			};
+
+			// Persist the timeline.
+			yield* Effect.tryPromise({
+				try: () => bridge.repo.narrationTimelines.create(timeline),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+
+			// Read the normalize result for the audio narration path (audio
+			// modality only). Text modality yields no audio track.
+			let audioPath: string | undefined = undefined;
+			const normalizeRaw = ctx.previousResults.get("normalize");
+			if (normalizeRaw !== undefined && isNormalizeResult(normalizeRaw)) {
+				audioPath = normalizeRaw.audioPath;
+			}
+
+			// Build the page image map by reading each composed page image from
+			// storage. Only pages present in compose_pages' pageImageKeys are
+			// included; the motion adapter throws if a segment's pageId is
+			// missing from the map.
+			const pageImageMap = new Map<string, Buffer>();
+			for (const [pageId, imageKey] of composePages.pageImageKeys) {
+				const buf = yield* Effect.tryPromise({
+					try: () => bridge.storage.readAsset(imageKey),
+					catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+				});
+				pageImageMap.set(pageId, buf);
+			}
+
+			// Render the motion comic to the export directory.
+			const motionExportId = uuid();
+			const motionKey = exportKey(ctx.projectId, motionExportId, "mp4");
+			const motionLocalPath = `${bridge.env.EXPORT_DIR}/${motionKey}`;
+
+			const motionResult = yield* Effect.tryPromise({
+				try: () =>
+					bridge.exportMotionComic(
+						timeline as never,
+						pageImageMap,
+						audioPath,
+						motionLocalPath,
+					),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+
+			// Persist the export bundle record.
+			const motionBundle: ExportBundle = {
+				id: motionExportId,
+				projectId: ctx.projectId,
+				type: "mp4",
+				storageKey: motionKey,
+				createdAt: nowIso(),
+				sizeBytes: motionResult.sizeBytes,
+				metadata: { durationSec: motionResult.durationSec },
+			};
+			yield* Effect.tryPromise({
+				try: () => bridge.repo.exportBundles.create(motionBundle),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
+
+			yield* Effect.logInfo(
+				`export_motion: rendered motion comic ${motionExportId} — ${motionResult.sizeBytes} bytes, ${motionResult.durationSec}s`,
+			);
+
+			return {
+				step: "export_motion" as const,
+				status: "completed" as const,
+				exportId: motionExportId,
+				sizeBytes: motionResult.sizeBytes,
+				durationSec: motionResult.durationSec,
+			} satisfies ExportMotionResult;
 		}),
 };
 

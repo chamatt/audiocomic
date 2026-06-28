@@ -1,12 +1,39 @@
 import { Effect } from "effect";
 import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { getPrevResult, isPlanStoryResult } from "./helpers.ts";
+
+// ─── build_bibles step ───
+// The story bibles (sections, characters, world bible) are produced and persisted
+// during the plan_story step. This step is a marker that confirms the bibles are
+// in place and records their counts for downstream consumers. No DB writes here.
+
+export interface BuildBiblesResult {
+	step: "build_bibles";
+	status: "completed";
+	sectionCount: number;
+	characterCount: number;
+}
 
 export const BuildBiblesStep: StepExecutor = {
 	type: "build_bibles",
-	execute: (_ctx: StepContext) =>
+	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
-			yield* Effect.logInfo("build_bibles: building world/character bibles (placeholder)");
-			return { step: "build_bibles", status: "completed" as const };
+			// Verify the plan_story result carries the bibles we expect.
+			const plan = getPrevResult(ctx, "plan_story", isPlanStoryResult);
+
+			const sectionCount = plan.sections.length;
+			const characterCount = plan.characters.length;
+
+			yield* Effect.logInfo(
+				`build_bibles: bibles built (world bible persisted in plan_story) — ${sectionCount} sections, ${characterCount} characters`,
+			);
+
+			return {
+				step: "build_bibles" as const,
+				status: "completed" as const,
+				sectionCount,
+				characterCount,
+			} satisfies BuildBiblesResult;
 		}),
 };
 
