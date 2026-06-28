@@ -25,13 +25,15 @@ export function NewProjectForm() {
     setLoading(true);
     try {
       // 1. Create project in DB
-      const fileData = file ? Buffer.from(await file.arrayBuffer()) : undefined;
+      const fileDataBase64 = file
+        ? btoa(String.fromCharCode(...new Uint8Array(await file.arrayBuffer())))
+        : undefined;
       const projectId = await createProjectAction({
         name,
         description,
         modality,
         fileName: file?.name,
-        fileData,
+        fileDataBase64,
         textContent: text,
       });
 

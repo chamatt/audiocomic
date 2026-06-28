@@ -18,6 +18,7 @@ import type {
 } from '@audiocomic/domain';
 import { uuid, nowIso, defaultProviderSettings, getEnv } from '@audiocomic/shared';
 import { getRepo, getSql } from '@/lib/db';
+import { writeAsset } from '@/lib/storage';
 
 // ============================================================================
 // Project list + detail
@@ -116,7 +117,7 @@ export interface CreateProjectInput {
   description: string;
   modality: 'audio' | 'text';
   fileName?: string;
-  fileData?: Buffer;
+  fileDataBase64?: string;
   textContent?: string;
 }
 
@@ -138,24 +139,22 @@ export async function createProjectAction(input: CreateProjectInput): Promise<st
     stages: [],
   });
 
-  // Register source asset
-  if (input.modality === 'audio' && input.fileName && input.fileData) {
+  if (input.modality === 'audio' && input.fileName && input.fileDataBase64) {
+    const fileData = Buffer.from(input.fileDataBase64, 'base64');
     const storageKey = `projects/${id}/source/${input.fileName}`;
-    const { writeAsset } = await import('@/lib/storage');
-    await writeAsset(storageKey, input.fileData);
+    await writeAsset(storageKey, fileData);
     await repo.sourceAssets.create({
       id: uuid(),
       projectId: id,
       modality: 'audio',
       filename: input.fileName,
       mimeType: 'audio/mpeg',
-      sizeBytes: input.fileData.length,
+      sizeBytes: fileData.length,
       storageKey,
       uploadedAt: now,
     });
   } else if (input.modality === 'text' && input.textContent) {
     const storageKey = `projects/${id}/source/text.txt`;
-    const { writeAsset } = await import('@/lib/storage');
     await writeAsset(storageKey, Buffer.from(input.textContent, 'utf-8'));
     await repo.sourceAssets.create({
       id: uuid(),
