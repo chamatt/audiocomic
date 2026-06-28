@@ -15,7 +15,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { BoundingBox } from '@audiocomic/domain';
-import { PageNode } from './PageNode';
+import { PageNode, type PageNodeData } from './PageNode';
 import { useCanvasStore } from '@/stores/canvas-store';
 import type { CanvasPageData } from './types';
 
@@ -26,6 +26,8 @@ interface ComicCanvasProps {
   onBubbleTextChange: (pageId: string, boxId: string, text: string) => void;
   onBubbleDelete: (pageId: string, boxId: string) => void;
   onBubbleAdd: (pageId: string, bbox: BoundingBox, panelId?: string) => void;
+  onPanelRender?: (panelId: string) => void;
+  renderingPanelIds?: Set<string>;
 }
 
 const PAGE_GAP = 100;
@@ -41,6 +43,8 @@ function ComicCanvasInner({
   onBubbleTextChange,
   onBubbleDelete,
   onBubbleAdd,
+  onPanelRender,
+  renderingPanelIds,
 }: ComicCanvasProps): JSX.Element {
   const { selectPanel, selectPage, setZoom, selectedPageId } = useCanvasStore();
   const { setCenter, getNode } = useReactFlow();
@@ -55,12 +59,10 @@ function ComicCanvasInner({
     setCenter(x, y, { zoom: 0.5, duration: 400 });
   }, [selectedPageId, getNode, setCenter]);
 
-  const nodes: Node[] = useMemo(
+  const nodes = useMemo(
     () =>
       pages.map((page, i) => ({
         id: page.id,
-        type: 'comicPage',
-        position: { x: i * (PAGE_WIDTH + PAGE_GAP), y: 0 },
         data: {
           page,
           onBboxChange: onPanelBboxChange,
@@ -68,10 +70,12 @@ function ComicCanvasInner({
           onBubbleTextChange,
           onBubbleDelete,
           onBubbleAdd,
+          onRender: onPanelRender,
+          renderingPanelIds,
         },
         draggable: false,
       })),
-    [pages, onPanelBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd],
+    [pages, onPanelBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd, onPanelRender, renderingPanelIds],
   );
 
   const edges: Edge[] = useMemo(() => {
@@ -111,7 +115,7 @@ function ComicCanvasInner({
   return (
     <div className="h-full w-full" style={{ '--xy-edge-stroke-default': 'transparent' } as CSSProperties}>
       <ReactFlow
-        nodes={nodes}
+        nodes={nodes as unknown as Node[]}
         edges={edges}
         nodeTypes={nodeTypes}
         onPaneClick={handlePaneClick}

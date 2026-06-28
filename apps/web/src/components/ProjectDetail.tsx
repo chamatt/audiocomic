@@ -2,12 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
-import {
-  createProjectActor,
-  createBibleActor,
-  linkBibleActor,
-  getBibleWikiActor,
-} from '@/lib/actor-actions';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -92,9 +86,11 @@ const WIKI_TYPE_LABELS: Record<string, string> = {
 const WIKI_TYPE_ORDER = ['character', 'location', 'object', 'concept', 'event', 'timeline'];
 
 function KnowledgeTab({
+  projectId,
   characters,
   worldBible,
 }: {
+  projectId: string;
   characters: CharacterProfile[];
   worldBible: WorldBible | null;
 }) {
@@ -105,17 +101,18 @@ function KnowledgeTab({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await getBibleWikiActor('main');
+      const res = await fetch(`/api/projects/${projectId}/knowledge`);
       if (cancelled) return;
       if (res.ok) {
-        setWikiPages(res.data as WikiPageEntry[]);
+        const data = await res.json();
+        setWikiPages(data.wikiPages ?? []);
       } else {
-        setWikiError(res.error);
+        setWikiError('Failed to load knowledge base');
       }
       setWikiLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   // Group wiki pages by type
   const grouped = wikiPages.reduce<Record<string, WikiPageEntry[]>>((acc, page) => {
@@ -263,16 +260,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
   // --- Lazy actor init ---
   useEffect(() => {
-    (async () => {
-      const projectRes = await createProjectActor(project.name, project.description ?? '');
-      if (projectRes.ok) {
-        const bibleRes = await createBibleActor(project.name, `Story bible for ${project.name}`);
-        if (bibleRes.ok) {
-          await linkBibleActor(projectRes.data.key, bibleRes.data.content.id);
-        }
-      }
-    })();
-  }, [project.name, project.description]);
+    fetch(`/api/projects/${projectId}/setup`, { method: 'POST' }).catch(() => { /* non-fatal */ });
+  }, [projectId]);
 
   // --- Chapter review handler: switch to canvas tab + set selected chapter ---
   const handleChapterReview = useCallback((chapterId: string) => {
@@ -317,7 +306,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
         {/* Knowledge tab */}
         <TabsContent value="knowledge">
-          <KnowledgeTab characters={detail.characters} worldBible={detail.worldBible} />
+          <KnowledgeTab projectId={projectId} characters={detail.characters} worldBible={detail.worldBible} />
         </TabsContent>
 
 

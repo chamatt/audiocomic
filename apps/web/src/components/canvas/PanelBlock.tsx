@@ -10,7 +10,9 @@ interface PanelBlockProps {
   pageHeight: number;
   imageUrl?: string;
   isSelected: boolean;
+  isRendering?: boolean;
   onBboxChange: (panelId: string, bbox: BoundingBox) => void;
+  onRender?: (panelId: string) => void;
 }
 
 type DragState =
@@ -20,14 +22,15 @@ type DragState =
 
 const MIN_W = 0.05;
 const MIN_H = 0.05;
-
 export function PanelBlock({
   panel,
   pageWidth,
   pageHeight,
   imageUrl,
   isSelected,
+  isRendering,
   onBboxChange,
+  onRender,
 }: PanelBlockProps): JSX.Element {
   const { selectPanel, mode } = useCanvasStore();
   const dragState = useRef<DragState>(null);
@@ -128,8 +131,23 @@ export function PanelBlock({
           draggable={false}
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-muted/40 p-2 text-center text-xs text-muted-foreground">
-          {panel.description || `Panel ${panel.index + 1}`}
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-muted/40 p-2 text-center">
+          <span className="text-xs text-muted-foreground line-clamp-3">
+            {panel.description || `Panel ${panel.index + 1}`}
+          </span>
+          {onRender && (
+            <button
+              type="button"
+              disabled={isRendering}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRender(panel.id);
+              }}
+              className="pointer-events-auto rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isRendering ? 'Rendering…' : 'Render'}
+            </button>
+          )}
         </div>
       )}
 

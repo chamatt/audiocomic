@@ -18,11 +18,13 @@ export interface PageNodeData {
   onBubbleTextChange: (pageId: string, boxId: string, text: string) => void;
   onBubbleDelete: (pageId: string, boxId: string) => void;
   onBubbleAdd: (pageId: string, bbox: BoundingBox, panelId?: string) => void;
+  onRender?: (panelId: string) => void;
+  renderingPanelIds?: Set<string>;
 }
 
 export function PageNode({ data, selected }: NodeProps): JSX.Element {
   const nodeData = data as unknown as PageNodeData;
-  const { page, onBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd } = nodeData;
+  const { page, onBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd, onRender, renderingPanelIds } = nodeData;
   const { selectedPanelId, selectPage, mode } = useCanvasStore();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +62,9 @@ export function PageNode({ data, selected }: NodeProps): JSX.Element {
               pageHeight={PAGE_HEIGHT}
               imageUrl={page.panelImages[panel.id]}
               isSelected={selectedPanelId === panel.id}
+              isRendering={renderingPanelIds?.has(panel.id)}
               onBboxChange={onBboxChange}
+              onRender={onRender}
             />
           ))}
         </div>
