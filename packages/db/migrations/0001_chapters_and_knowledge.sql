@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS knowledge_pages (
   type TEXT NOT NULL,
   title VARCHAR(512) NOT NULL,
   content TEXT NOT NULL,
-  references JSONB NOT NULL DEFAULT '[]',
+  "references" JSONB NOT NULL DEFAULT '[]',
   cross_references JSONB NOT NULL DEFAULT '[]',
   confidence REAL NOT NULL DEFAULT 1,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
