@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
 import type { PipelineState, StepState } from '@audiocomic/actors';
 import { regeneratePanelAction, regeneratePageAction, exportProjectAction } from '@/lib/actions';
@@ -10,6 +11,8 @@ import {
   resumePipelineActor,
   retryStepActor,
   skipStepActor,
+  runStepActor,
+  invalidateStepActor,
   getPipelineStatusActor,
   schedulePipelineActor,
   cancelScheduleActor,
@@ -17,6 +20,7 @@ import {
   type ActorResult,
   type AddStepInput,
 } from '@/lib/actor-actions';
+import { DEFAULT_PIPELINE_STEPS } from '@/lib/default-steps';
 
 export interface ProjectDetailData {
   project: Project;
@@ -124,8 +128,26 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const onResume = () => doAction('Resume', () => resumePipelineActor(pipelineKey));
   const onRetry = (stepId: string) => doAction(`Retry ${stepId}`, () => retryStepActor(pipelineKey, stepId));
   const onSkip = (stepId: string) => doAction(`Skip ${stepId}`, () => skipStepActor(pipelineKey, stepId));
+  const onRunStep = (stepId: string) => doAction(`Run ${stepId}`, () => runStepActor(pipelineKey, stepId));
+  const onInvalidate = (stepId: string) => doAction(`Invalidate ${stepId}`, () => invalidateStepActor(pipelineKey, stepId));
   const onSchedule = () => doAction('Schedule', () => schedulePipelineActor(pipelineKey, scheduleInterval));
   const onCancelSchedule = () => doAction('Cancel schedule', () => cancelScheduleActor(pipelineKey));
+
+  const onAddAllSteps = async () => {
+    setPipelineBusy(true);
+    setPipelineError(null);
+    const existingIds = new Set((pipelineState?.steps ?? []).map((s) => s.definition.id));
+    const toAdd = DEFAULT_PIPELINE_STEPS.filter((s) => !existingIds.has(s.id));
+    for (const step of toAdd) {
+      const res = await addPipelineStepActor(pipelineKey, step);
+      if (!res.ok) {
+        setPipelineError(`Add ${step.id}: ${res.error}`);
+        break;
+      }
+    }
+    await refreshPipeline();
+    setPipelineBusy(false);
+  };
 
   // --- Legacy actions -------------------------------------------------------
   const onRegeneratePanel = async (panelId: string) => {
@@ -168,7 +190,14 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
       {/* Pipeline Actor Controls */}
       <div className="card">
-        <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Pipeline Controls</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold" style={{ fontSize: 18 }}>Pipeline Controls</h2>
+          <div className="flex items-center gap-2">
+            <Link href={`/pipeline/${pipelineKey}`} className="primary" style={{ textDecoration: 'none', padding: '6px 16px', borderRadius: 6, display: 'inline-block' }}>
+              View Flow Chart →
+            </Link>
+          </div>
+        </div>
 
         <div className="flex items-center gap-2 mb-4">
           <label className="text-sm text-dim">Pipeline key:</label>
@@ -207,6 +236,11 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           <button onClick={onResume} disabled={pipelineBusy || pipelineStatus !== 'paused'}>
             Resume
           </button>
+          {steps.length === 0 && (
+            <button onClick={onAddAllSteps} disabled={pipelineBusy}>
+              Add All 15 Steps
+            </button>
+          )}
         </div>
 
         {/* Step list */}
@@ -228,11 +262,21 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                   {step.attempts > 0 && (
                     <span className="text-sm text-dim">attempts: {step.attempts}</span>
                   )}
+                  {step.summary && (
+                    <span className="text-sm text-dim">{step.summary}</span>
+                  )}
                   {step.error && (
                     <span className="text-sm" style={{ color: 'var(--danger)' }}>{step.error}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    className="text-sm"
+                    onClick={() => onRunStep(step.definition.id)}
+                    disabled={pipelineBusy || step.status === 'running'}
+                  >
+                    Run
+                  </button>
                   <button
                     className="text-sm"
                     onClick={() => onRetry(step.definition.id)}
@@ -246,6 +290,14 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                     disabled={pipelineBusy || step.status === 'completed' || step.status === 'skipped'}
                   >
                     Skip
+                  </button>
+                  <button
+                    className="text-sm"
+                    onClick={() => onInvalidate(step.definition.id)}
+                    disabled={pipelineBusy || step.status === 'pending'}
+                    title="Mark step and downstream as stale"
+                  >
+                    Invalidate
                   </button>
                 </div>
               </div>

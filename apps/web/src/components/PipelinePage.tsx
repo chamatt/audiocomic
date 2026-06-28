@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Nav } from '@/components/Nav';
 import { PipelineFlow } from '@/components/PipelineFlow';
 import { StepDetailPanel } from '@/components/StepDetailPanel';
@@ -14,18 +14,31 @@ import {
   runStepActor,
   invalidateStepActor,
 } from '@/lib/actor-actions';
-import type { PipelineState } from '@audiocomic/actors';
+import type { PipelineState, StepState } from '@audiocomic/actors';
 
 interface PipelinePageProps {
   pipelineKey: string;
 }
 
+/** Step-level events that should trigger a status refresh. */
+const STEP_EVENTS = new Set([
+  'stepStarted',
+  'stepCompleted',
+  'stepFailed',
+  'pipelineStarted',
+  'pipelineCompleted',
+  'pipelinePaused',
+  'pipelineResumed',
+]);
+
 export function PipelinePage({ pipelineKey }: PipelinePageProps) {
   const [state, setState] = useState<PipelineState | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [liveEvents, setLiveEvents] = useState<Record<string, unknown[]>>({});
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  // Poll for status updates
+  // Fetch full status from the actor (authoritative source)
   const refresh = useCallback(async () => {
     const result = await getPipelineStatusActor(pipelineKey);
     if (result.ok) {
@@ -36,13 +49,74 @@ export function PipelinePage({ pipelineKey }: PipelinePageProps) {
     }
   }, [pipelineKey]);
 
+  // Initial load
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 1000);
-    return () => clearInterval(interval);
   }, [refresh]);
 
-  const selectedStep = state?.steps.find((s) => s.definition.id === selectedStepId) ?? null;
+  // SSE subscription for real-time events
+  useEffect(() => {
+    const es = new EventSource(`/api/pipeline/${pipelineKey}/events`);
+    eventSourceRef.current = es;
+
+    // On connection, do a full refresh
+    es.addEventListener('connected', () => {
+      refresh();
+    });
+
+    es.addEventListener('error', (e) => {
+      // EventSource auto-reconnects; only show error if it stays closed
+      if (es.readyState === EventSource.CLOSED) {
+        setError('Lost connection to pipeline events');
+      }
+    });
+
+    // Step-level events → refresh full state (cheap, non-blocking)
+    for (const eventName of STEP_EVENTS) {
+      es.addEventListener(eventName, () => {
+        refresh();
+      });
+    }
+
+    // stepProgress events → accumulate in live buffer (no full refresh needed)
+    es.addEventListener('stepProgress', (e) => {
+      try {
+        const data = JSON.parse(e.data) as { stepId?: string; type?: string; label?: string; detail?: string };
+        const stepId = data.stepId;
+        if (stepId !== undefined) {
+          setLiveEvents((prev) => {
+            const existing = prev[stepId] ?? [];
+            const next = [...existing, data];
+            // Ring buffer: keep last 50 progress events per step
+            return { ...prev, [stepId]: next.slice(-50) };
+          });
+        }
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [pipelineKey, refresh]);
+
+  // Merge live events into step state for display
+  const stepsWithLive: StepState[] | undefined = state?.steps.map((step) => {
+    const events = liveEvents[step.definition.id];
+    if (events === undefined || events.length === 0) return step;
+    return {
+      ...step,
+      progressEvents: [...(step.progressEvents ?? []), ...events],
+    };
+  });
+
+  const liveState: PipelineState | null = stepsWithLive !== undefined && state !== null
+    ? { ...state, steps: stepsWithLive }
+    : state;
+
+  const selectedStep = liveState?.steps.find((s) => s.definition.id === selectedStepId) ?? null;
 
   const handleRunAll = useCallback(async () => {
     await startPipelineActor(pipelineKey);
@@ -108,7 +182,7 @@ export function PipelinePage({ pipelineKey }: PipelinePageProps) {
         }}>
           <PipelineFlow
             pipelineKey={pipelineKey}
-            state={state}
+            state={liveState}
             onRunStep={handleRunStep}
             onRetryStep={handleRetryStep}
             onSkipStep={handleSkipStep}

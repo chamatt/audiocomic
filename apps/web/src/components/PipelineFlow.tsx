@@ -121,7 +121,7 @@ function formatDuration(step: StepState): string | null {
 // Node data shape
 // ---------------------------------------------------------------------------
 
-interface PipelineNodeData {
+interface PipelineNodeData extends Record<string, unknown> {
   step: StepState;
   selected: boolean;
   onOpenMenu: (stepId: string, e: MouseEvent<HTMLElement>) => void;
