@@ -337,7 +337,7 @@ export const RenderPreset = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid().optional(), // global if undefined
   name: z.string(),
-  backend: z.enum(['comfyui', 'aisdk', 'placeholder']),
+  backend: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']),
   model: z.string(),
   loraSet: z.array(
     z.object({
@@ -387,7 +387,7 @@ export const PanelRenderResult = z.object({
   panelId: z.string().uuid(),
   projectId: z.string().uuid(),
   requestId: z.string().uuid(),
-  backend: z.enum(['comfyui', 'aisdk', 'placeholder']),
+  backend: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']),
   imageKey: z.string(), // storage key
   width: z.number().int().positive(),
   height: z.number().int().positive(),

@@ -4,7 +4,7 @@ import type { PanelRenderRequest, PanelRenderResult } from '@audiocomic/domain';
  * Supported renderer backends. Mirrors the `backend` enum on `RenderPreset`
  * and `PanelRenderResult`.
  */
-export type RendererBackend = 'comfyui' | 'aisdk' | 'placeholder';
+export type RendererBackend = 'comfyui' | 'aisdk' | 'pollinations' | 'placeholder';
 
 /**
  * A renderer adapter turns a {@link PanelRenderRequest} into a persisted

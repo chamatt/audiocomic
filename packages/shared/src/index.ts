@@ -39,6 +39,9 @@ export const EnvSchema = z.object({
   // Fal
   FAL_KEY: z.string().optional(),
 
+  // Pollinations (open-source image generation)
+  POLLINATIONS_API_KEY: z.string().optional(),
+
   // ElevenLabs
   ELEVENLABS_API_KEY: z.string().optional(),
 
@@ -59,7 +62,7 @@ export const EnvSchema = z.object({
   FEATURE_MOTION_COMIC: z.string().optional().transform((v) => v !== 'false'),
 
   // Defaults
-  DEFAULT_RENDERER: z.enum(['comfyui', 'aisdk', 'placeholder']).default('placeholder'),
+  DEFAULT_RENDERER: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']).default('placeholder'),
   DEFAULT_LLM_MODEL: z.string().default('gpt-4o'),
   DEFAULT_IMAGE_MODEL: z.string().default('gpt-image-1-mini'),
   DEFAULT_TTS_VOICE: z.string().default('alloy'),
