@@ -1,44 +1,44 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // ============================================================================
 // Core enums and shared types
 // ============================================================================
 
 export const ProjectStatus = z.enum([
-  'created',
-  'ingesting',
-  'planning',
-  'rendering',
-  'composing',
-  'exporting',
-  'completed',
-  'failed',
+  "created",
+  "ingesting",
+  "planning",
+  "rendering",
+  "composing",
+  "exporting",
+  "completed",
+  "failed",
 ]);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
 
-export const SourceModality = z.enum(['audio', 'text']);
+export const SourceModality = z.enum(["audio", "text"]);
 export type SourceModality = z.infer<typeof SourceModality>;
 
 export const ProjectStage = z.enum([
-  'normalize',
-  'transcribe',
-  'segment',
-  'plan_story',
-  'build_bibles',
-  'section_memory',
-  'plan_pages',
-  'validate_layout',
-  'compose_prompts',
-  'render_panels',
-  'panel_qa',
-  'compose_pages',
-  'lettering',
-  'export_static',
-  'export_motion',
+  "normalize",
+  "transcribe",
+  "segment",
+  "plan_story",
+  "build_bibles",
+  "section_memory",
+  "plan_pages",
+  "validate_layout",
+  "compose_prompts",
+  "render_panels",
+  "panel_qa",
+  "compose_pages",
+  "lettering",
+  "export_static",
+  "export_motion",
 ]);
 export type ProjectStage = z.infer<typeof ProjectStage>;
 
-export const StageState = z.enum(['pending', 'running', 'completed', 'failed', 'skipped']);
+export const StageState = z.enum(["pending", "running", "completed", "failed", "skipped"]);
 export type StageState = z.infer<typeof StageState>;
 
 // ============================================================================
@@ -46,14 +46,16 @@ export type StageState = z.infer<typeof StageState>;
 // ============================================================================
 
 export const ProviderSettings = z.object({
-  transcriptionProvider: z.enum(['openai', 'deepgram', 'groq', 'assemblyai', 'fal']).optional(),
-  llmProvider: z.enum(['openai', 'anthropic', 'google', 'groq', 'mistral']).optional(),
+  transcriptionProvider: z.enum(["openai", "deepgram", "groq", "assemblyai", "fal"]).optional(),
+  llmProvider: z.enum(["openai", "anthropic", "google", "groq", "mistral"]).optional(),
   llmModel: z.string().optional(),
-  imageProvider: z.enum(['comfyui', 'openai', 'fal', 'stability', 'pollinations', 'placeholder']).optional(),
+  imageProvider: z
+    .enum(["comfyui", "openai", "fal", "stability", "pollinations", "placeholder"])
+    .optional(),
   imageModel: z.string().optional(),
-  ttsProvider: z.enum(['openai', 'elevenlabs', 'coqui']).optional(),
+  ttsProvider: z.enum(["openai", "elevenlabs", "coqui"]).optional(),
   ttsVoice: z.string().optional(),
-  rendererBackend: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']).optional(),
+  rendererBackend: z.enum(["comfyui", "aisdk", "pollinations", "placeholder"]).optional(),
 });
 export type ProviderSettings = z.infer<typeof ProviderSettings>;
 
@@ -65,25 +67,27 @@ export const Project = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   description: z.string().optional(),
-  status: ProjectStatus.default('created'),
+  status: ProjectStatus.default("created"),
   modality: SourceModality,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   providerSettings: ProviderSettings.default({}),
   // stage progress
-  stages: z.array(
-    z.object({
-      stage: ProjectStage,
-      state: StageState.default('pending'),
-      startedAt: z.string().datetime().optional(),
-      completedAt: z.string().datetime().optional(),
-      error: z.string().optional(),
-      attempts: z.number().int().nonnegative().default(0),
-    }),
-  ).default([]),
+  stages: z
+    .array(
+      z.object({
+        stage: ProjectStage,
+        state: StageState.default("pending"),
+        startedAt: z.string().datetime().optional(),
+        completedAt: z.string().datetime().optional(),
+        error: z.string().optional(),
+        attempts: z.number().int().nonnegative().default(0),
+      }),
+    )
+    .default([]),
+  renderModel: z.string().optional(), // e.g. "flux", "gptimage", "turbo"
 });
 export type Project = z.infer<typeof Project>;
-
 
 // ============================================================================
 // Source Asset
@@ -145,17 +149,34 @@ export type SpeakerTurn = z.infer<typeof SpeakerTurn>;
 // Story structure — MangaFlow-style section memory
 // ============================================================================
 
-export const StoryLevel = z.enum(['chapter', 'scene', 'beat']);
+export const StoryLevel = z.enum(["chapter", "scene", "beat"]);
 export type StoryLevel = z.infer<typeof StoryLevel>;
 
 export const EmotionalTone = z.enum([
-  'neutral', 'tense', 'joyful', 'sad', 'angry', 'fearful',
-  'romantic', 'mysterious', 'epic', 'comedic', 'melancholic', 'hopeful',
+  "neutral",
+  "tense",
+  "joyful",
+  "sad",
+  "angry",
+  "fearful",
+  "romantic",
+  "mysterious",
+  "epic",
+  "comedic",
+  "melancholic",
+  "hopeful",
 ]);
 export type EmotionalTone = z.infer<typeof EmotionalTone>;
 
 export const CameraFraming = z.enum([
-  'wide', 'medium', 'close-up', 'extreme-close-up', 'overhead', 'low-angle', 'pov', 'establishing',
+  "wide",
+  "medium",
+  "close-up",
+  "extreme-close-up",
+  "overhead",
+  "low-angle",
+  "pov",
+  "establishing",
 ]);
 export type CameraFraming = z.infer<typeof CameraFraming>;
 
@@ -176,7 +197,7 @@ export const StorySection = z.object({
   // story metadata
   charactersPresent: z.array(z.string()).default([]), // character profile ids
   sceneId: z.string().uuid().optional(),
-  emotionalTone: EmotionalTone.default('neutral'),
+  emotionalTone: EmotionalTone.default("neutral"),
   cameraHint: CameraFraming.optional(),
   objects: z.array(z.string()).default([]),
   // section memory embedding key
@@ -194,17 +215,21 @@ export const CharacterProfile = z.object({
   name: z.string(),
   aliases: z.array(z.string()).default([]),
   description: z.string(),
-  role: z.enum(['protagonist', 'antagonist', 'supporting', 'minor', 'narrator']).default('supporting'),
+  role: z
+    .enum(["protagonist", "antagonist", "supporting", "minor", "narrator"])
+    .default("supporting"),
   // visual anchors
   canonicalFaceRef: z.string().optional(), // storage key for face sheet
   canonicalBodyRef: z.string().optional(),
-  outfitRefs: z.array(
-    z.object({
-      sectionId: z.string().uuid().optional(),
-      storageKey: z.string(),
-      description: z.string(),
-    }),
-  ).default([]),
+  outfitRefs: z
+    .array(
+      z.object({
+        sectionId: z.string().uuid().optional(),
+        storageKey: z.string(),
+        description: z.string(),
+      }),
+    )
+    .default([]),
   paletteNotes: z.array(z.string()).default([]),
   // negative constraints (what to avoid)
   negativeConstraints: z.array(z.string()).default([]),
@@ -219,8 +244,8 @@ export const SceneProfile = z.object({
   projectId: z.string().uuid(),
   name: z.string(),
   description: z.string(),
-  locationType: z.enum(['indoor', 'outdoor', 'abstract', 'vehicle']).default('outdoor'),
-  timeOfDay: z.enum(['dawn', 'day', 'dusk', 'night', 'unknown']).default('unknown'),
+  locationType: z.enum(["indoor", "outdoor", "abstract", "vehicle"]).default("outdoor"),
+  timeOfDay: z.enum(["dawn", "day", "dusk", "night", "unknown"]).default("unknown"),
   weather: z.string().optional(),
   paletteNotes: z.array(z.string()).default([]),
   referenceImageKey: z.string().optional(),
@@ -278,21 +303,25 @@ export const PanelSpec = z.object({
   // content
   description: z.string(), // visual description of the panel
   cameraFraming: CameraFraming.optional(),
-  characters: z.array(
-    z.object({
-      characterId: z.string().uuid(),
-      pose: z.string().optional(),
-      expression: z.string().optional(),
-      position: z.enum(['left', 'center', 'right', 'background']).optional(),
-    }),
-  ).default([]),
-  dialogueLines: z.array(
-    z.object({
-      speaker: z.string(),
-      text: z.string(),
-      type: z.enum(['speech', 'thought', 'narration', 'sfx']).default('speech'),
-    }),
-  ).default([]),
+  characters: z
+    .array(
+      z.object({
+        characterId: z.string().uuid(),
+        pose: z.string().optional(),
+        expression: z.string().optional(),
+        position: z.enum(["left", "center", "right", "background"]).optional(),
+      }),
+    )
+    .default([]),
+  dialogueLines: z
+    .array(
+      z.object({
+        speaker: z.string(),
+        text: z.string(),
+        type: z.enum(["speech", "thought", "narration", "sfx"]).default("speech"),
+      }),
+    )
+    .default([]),
   // timing for motion comic
   startSec: z.number().nonnegative().optional(),
   endSec: z.number().nonnegative().optional(),
@@ -304,7 +333,7 @@ export const PanelSpec = z.object({
   // result
   renderResultId: z.string().uuid().optional(),
   // QA
-  qaStatus: z.enum(['pending', 'passed', 'failed', 'regenerate']).default('pending'),
+  qaStatus: z.enum(["pending", "passed", "failed", "regenerate"]).default("pending"),
   qaNotes: z.string().optional(),
 });
 export type PanelSpec = z.infer<typeof PanelSpec>;
@@ -320,10 +349,12 @@ export const PageSpec = z.object({
   panelCount: z.number().int().positive(),
   readingOrder: z.array(z.string().uuid()).default([]), // panel ids in reading order
   emphasisWeights: z.record(z.string(), z.number()).default({}), // panelId -> weight
-  bleedGutter: z.object({
-    bleed: z.number().min(0).default(0),
-    gutter: z.number().min(0).max(0.1).default(0.02),
-  }).default({}),
+  bleedGutter: z
+    .object({
+      bleed: z.number().min(0).default(0),
+      gutter: z.number().min(0).max(0.1).default(0.02),
+    })
+    .default({}),
   // validation
   layoutValid: z.boolean().default(false),
   layoutIssues: z.array(z.string()).default([]),
@@ -340,24 +371,28 @@ export const RenderPreset = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid().optional(), // global if undefined
   name: z.string(),
-  backend: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']),
+  backend: z.enum(["comfyui", "aisdk", "pollinations", "placeholder"]),
   model: z.string(),
-  loraSet: z.array(
-    z.object({
-      name: z.string(),
-      weight: z.number().min(0).max(2).default(1),
-    }),
-  ).default([]),
+  loraSet: z
+    .array(
+      z.object({
+        name: z.string(),
+        weight: z.number().min(0).max(2).default(1),
+      }),
+    )
+    .default([]),
   ipAdapterRefs: z.array(z.string()).default([]), // storage keys
-  controlNetControls: z.array(
-    z.object({
-      type: z.enum(['pose', 'lineart', 'depth', 'canny', 'segment', 'composition']),
-      imageKey: z.string(),
-      weight: z.number().min(0).max(2).default(1),
-    }),
-  ).default([]),
-  aspectRatio: z.enum(['1:1', '3:4', '2:3', '16:9', '4:3']).default('3:4'),
-  qualityTier: z.enum(['draft', 'standard', 'high']).default('standard'),
+  controlNetControls: z
+    .array(
+      z.object({
+        type: z.enum(["pose", "lineart", "depth", "canny", "segment", "composition"]),
+        imageKey: z.string(),
+        weight: z.number().min(0).max(2).default(1),
+      }),
+    )
+    .default([]),
+  aspectRatio: z.enum(["1:1", "3:4", "2:3", "16:9", "4:3"]).default("3:4"),
+  qualityTier: z.enum(["draft", "standard", "high"]).default("standard"),
   steps: z.number().int().positive().default(30),
   cfgScale: z.number().positive().default(7),
   sampler: z.string().optional(),
@@ -372,6 +407,7 @@ export const PanelRenderRequest = z.object({
   projectId: z.string().uuid(),
   prompt: z.string(),
   negativePrompt: z.string().optional(),
+  model: z.string().optional(), // override the renderer's default model
   presetId: z.string().uuid().optional(),
   preset: RenderPreset.optional(),
   // reference images (character packs, scene refs)
@@ -390,7 +426,7 @@ export const PanelRenderResult = z.object({
   panelId: z.string().uuid(),
   projectId: z.string().uuid(),
   requestId: z.string().uuid(),
-  backend: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']),
+  backend: z.enum(["comfyui", "aisdk", "pollinations", "placeholder"]),
   imageKey: z.string(), // storage key
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -424,7 +460,7 @@ export type PageComposite = z.infer<typeof PageComposite>;
 
 export const LetteringBox = z.object({
   id: z.string().uuid(),
-  type: z.enum(['speech', 'thought', 'narration', 'sfx', 'caption']),
+  type: z.enum(["speech", "thought", "narration", "sfx", "caption"]),
   text: z.string(),
   // placement (normalized to page)
   bbox: BoundingBox,
@@ -461,13 +497,17 @@ export const NarrationSegment = z.object({
   startSec: z.number().nonnegative(),
   endSec: z.number().nonnegative(),
   // motion params
-  motion: z.enum(['static', 'pan-left', 'pan-right', 'zoom-in', 'zoom-out', 'ken-burns']).default('static'),
-  motionParams: z.object({
-    zoomStart: z.number().min(1).max(4).default(1),
-    zoomEnd: z.number().min(1).max(4).default(1),
-    panX: z.number().min(-1).max(1).default(0),
-    panY: z.number().min(-1).max(1).default(0),
-  }).default({}),
+  motion: z
+    .enum(["static", "pan-left", "pan-right", "zoom-in", "zoom-out", "ken-burns"])
+    .default("static"),
+  motionParams: z
+    .object({
+      zoomStart: z.number().min(1).max(4).default(1),
+      zoomEnd: z.number().min(1).max(4).default(1),
+      panX: z.number().min(-1).max(1).default(0),
+      panY: z.number().min(-1).max(1).default(0),
+    })
+    .default({}),
   text: z.string().optional(), // narration text for this segment
 });
 export type NarrationSegment = z.infer<typeof NarrationSegment>;
@@ -485,12 +525,14 @@ export type NarrationTimeline = z.infer<typeof NarrationTimeline>;
 export const ExportBundle = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
-  type: z.enum(['pages', 'pdf', 'cbz', 'mp4', 'panel_strip']),
+  type: z.enum(["pages", "pdf", "cbz", "mp4", "panel_strip"]),
   storageKey: z.string(),
-  pageRange: z.object({
-    start: z.number().int().nonnegative(),
-    end: z.number().int().nonnegative(),
-  }).optional(),
+  pageRange: z
+    .object({
+      start: z.number().int().nonnegative(),
+      end: z.number().int().nonnegative(),
+    })
+    .optional(),
   sectionId: z.string().uuid().optional(),
   createdAt: z.string().datetime(),
   sizeBytes: z.number().int().nonnegative().optional(),
@@ -505,8 +547,14 @@ export type ExportBundle = z.infer<typeof ExportBundle>;
 export const JobRecord = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
-  type: z.enum(['full_pipeline', 'regenerate_panel', 'regenerate_page', 'regenerate_scene', 'export']),
-  state: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled']),
+  type: z.enum([
+    "full_pipeline",
+    "regenerate_panel",
+    "regenerate_page",
+    "regenerate_scene",
+    "export",
+  ]),
+  state: z.enum(["pending", "running", "completed", "failed", "cancelled"]),
   currentStage: ProjectStage.optional(),
   progress: z.number().min(0).max(1).default(0),
   payload: z.record(z.string(), z.unknown()).default({}),
@@ -547,9 +595,7 @@ export function validatePageLayout(
 
   // 1. Panel count check
   if (pagePanels.length !== page.panelCount) {
-    errors.push(
-      `Panel count mismatch: spec=${page.panelCount}, actual=${pagePanels.length}`,
-    );
+    errors.push(`Panel count mismatch: spec=${page.panelCount}, actual=${pagePanels.length}`);
   }
 
   // 2. Bounds check
@@ -600,29 +646,30 @@ export function validatePageLayout(
 // ============================================================================
 
 export const ChapterStatus = z.enum([
-  'pending',
-  'transcribing',
-  'transcribed',
-  'planning',
-  'planned',
-  'rendering',
-  'completed',
-  'failed',
+  "pending",
+  "transcribing",
+  "transcribed",
+  "planning",
+  "planned",
+  "rendering",
+  "completed",
+  "failed",
 ]);
 export type ChapterStatus = z.infer<typeof ChapterStatus>;
 
-export const TranscriptionStatus = z.enum([
-  'pending',
-  'running',
-  'completed',
-  'failed',
-  'skipped',
-]);
+export const TranscriptionStatus = z.enum(["pending", "running", "completed", "failed", "skipped"]);
 export type TranscriptionStatus = z.infer<typeof TranscriptionStatus>;
 
 export const ChapterStage = z.enum([
-  'pending', 'transcribing', 'ingesting', 'planning',
-  'ready_for_review', 'rendering', 'composing', 'done', 'failed',
+  "pending",
+  "transcribing",
+  "ingesting",
+  "planning",
+  "ready_for_review",
+  "rendering",
+  "composing",
+  "done",
+  "failed",
 ]);
 export type ChapterStage = z.infer<typeof ChapterStage>;
 
@@ -640,11 +687,11 @@ export const Chapter = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   sourceAssetId: z.string().uuid().optional(),
-  status: ChapterStatus.default('pending'),
-  stage: ChapterStage.default('pending'),
+  status: ChapterStatus.default("pending"),
+  stage: ChapterStage.default("pending"),
   stageProgress: StageProgress.nullable().optional(),
   durationSec: z.number().positive().optional(),
-  transcriptionStatus: TranscriptionStatus.default('pending'),
+  transcriptionStatus: TranscriptionStatus.default("pending"),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -681,12 +728,12 @@ export type CharacterState = z.infer<typeof CharacterState>;
 // ============================================================================
 
 export const KnowledgePageType = z.enum([
-  'character',
-  'location',
-  'object',
-  'concept',
-  'event',
-  'timeline',
+  "character",
+  "location",
+  "object",
+  "concept",
+  "event",
+  "timeline",
 ]);
 export type KnowledgePageType = z.infer<typeof KnowledgePageType>;
 

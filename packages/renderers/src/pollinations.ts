@@ -46,7 +46,7 @@ export class PollinationsRenderer implements RendererAdapter {
     const params = new URLSearchParams();
     params.set("width", String(req.width));
     params.set("height", String(req.height));
-    params.set("model", this.model);
+    params.set("model", req.model ?? this.model);
     if (req.seed !== undefined) params.set("seed", String(req.seed));
     // Remove watermark when authenticated
     if (this.apiKey) {

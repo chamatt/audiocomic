@@ -22,9 +22,17 @@ function getRenderer() {
 // Calls the configured renderer (pollinations, comfyui, placeholder) directly,
 // stores the result in DB + object storage, and patches the panel's
 // renderResultId so the canvas picks up the new image on next fetch.
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: panelId } = await params;
   try {
+    // Optional model override from request body.
+    let body: { model?: string } = {};
+    try {
+      body = await request.json();
+    } catch {
+      // POST with no body is fine — use default model.
+    }
+
     const repo = await getRepo();
     const panel = await repo.panelSpecs.getById(panelId);
     if (!panel) {
@@ -41,15 +49,34 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // Determine version: 0 for first render, increment for re-renders.
     const version = panel.renderResultId ? 1 : 0;
 
+    // Compute render dimensions from the panel's bbox aspect ratio.
+    // bbox is normalized (0-1) relative to the page; we derive pixel
+    // dimensions that match the panel's shape, capped at a base budget.
+    const aspect = panel.bbox.w / panel.bbox.h;
+    const BASE = 1024;
+    let width: number;
+    let height: number;
+    if (aspect >= 1) {
+      width = BASE;
+      height = Math.round(BASE / aspect);
+    } else {
+      height = BASE;
+      width = Math.round(BASE * aspect);
+    }
+    // Round to nearest 64 (most image models prefer multiples of 64).
+    width = Math.max(64, Math.round(width / 64) * 64);
+    height = Math.max(64, Math.round(height / 64) * 64);
+
     const renderReq: PanelRenderRequest = {
       id: uuid(),
       panelId,
       projectId: panel.projectId,
       prompt: panel.renderPrompt,
       negativePrompt: panel.renderNegativePrompt,
+      model: body.model ?? (await repo.projects.getById(panel.projectId))?.renderModel,
       seed: panel.seed ?? Math.floor(Math.random() * 1_000_000_000),
-      width: 768,
-      height: 1024,
+      width,
+      height,
       version,
       createdAt: nowIso(),
       referenceImageKeys: [],

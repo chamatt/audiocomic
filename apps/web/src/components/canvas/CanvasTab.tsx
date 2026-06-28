@@ -19,6 +19,16 @@ const MODES = [
   { value: "bubble" as const, label: "Bubbles", icon: "💬" },
 ];
 
+const POLLINATIONS_MODELS = [
+  { value: "flux", label: "Flux" },
+  { value: "turbo", label: "Turbo" },
+  { value: "gptimage", label: "GPT Image" },
+  { value: "sana", label: "Sana" },
+  { value: "nanobanana-pro", label: "NanoBanana Pro" },
+  { value: "seedream5", label: "Seedream 5" },
+  { value: "kontext", label: "Kontext" },
+] as const;
+
 interface CanvasTabProps {
   projectId: string;
 }
@@ -145,18 +155,55 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [updatePanel],
   );
 
+  // Image model selection (persisted to project in DB)
+  const [selectedModel, setSelectedModel] = useState<string>("gptimage");
+  useEffect(() => {
+    let cancelled = false;
+    const fetchModel = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/detail`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          const model = data.detail?.project?.renderModel;
+          if (model) setSelectedModel(model);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void fetchModel();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  const handleModelChange = useCallback(
+    (model: string) => {
+      setSelectedModel(model);
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ renderModel: model }),
+      });
+    },
+    [projectId],
+  );
+
   // Regenerate handler (synchronous — render API returns when done)
   const handleRegenerate = useCallback(
     async (panelId: string) => {
       try {
-        const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: "POST" });
+        const res = await fetch(`/api/panels/${panelId}/regenerate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: selectedModel }),
+        });
         if (!res.ok) return;
         await refresh();
       } catch {
         /* ignore */
       }
     },
-    [refresh],
+    [refresh, selectedModel],
   );
 
   // Throttled API save for bubble position (fires at most once per 150ms during drag)
@@ -282,7 +329,11 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     async (panelId: string) => {
       setRenderingPanelIds((prev) => new Set(prev).add(panelId));
       try {
-        const res = await fetch(`/api/panels/${panelId}/regenerate`, { method: "POST" });
+        const res = await fetch(`/api/panels/${panelId}/regenerate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: selectedModel }),
+        });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           console.error("panel render failed", body);
@@ -300,7 +351,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
       }
     },
-    [refresh],
+    [refresh, selectedModel],
   );
 
   // The selected chapter's stage (for render button visibility)
@@ -411,6 +462,22 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           >
             + Page
           </button>
+
+          <div className="h-5 w-px bg-border" />
+
+          {/* Model selector */}
+          <select
+            value={selectedModel}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+            title="Image generation model"
+          >
+            {POLLINATIONS_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
 
           {selectedChapterStage === "ready_for_review" && (
             <button
