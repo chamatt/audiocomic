@@ -13,6 +13,7 @@ export { Bible } from "./actors/bible/api.ts";
 export { Project } from "./actors/project/api.ts";
 export { Pipeline, PipelineState } from "./actors/pipeline/api.ts";
 export { Chapter } from "./actors/chapter/api.ts";
+export { KnowledgeBase } from "./actors/knowledge-base/api.ts";
 export type { PipelineState as PipelineStateType } from "./actors/pipeline/api.ts";
 
 export {

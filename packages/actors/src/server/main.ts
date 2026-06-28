@@ -9,6 +9,7 @@ import { BibleLive } from "../actors/bible/live.ts";
 import { ProjectLive } from "../actors/project/live.ts";
 import { PipelineLive } from "../actors/pipeline/live.ts";
 import { ChapterLive } from "../actors/chapter/live.ts";
+import { KnowledgeBaseLive } from "../actors/knowledge-base/live.ts";
 // Import step executors to trigger registration with the step registry
 import { FFmpegLive } from "../lib/services.ts";
 import { makePipelineBridgeLayer } from "../lib/pipeline-bridge.ts";
@@ -27,6 +28,7 @@ const ActorsLayer = Layer.mergeAll(
 	ProjectLive,
 	PipelineLive,
 	ChapterLive,
+	KnowledgeBaseLive,
 ).pipe(
 	Layer.provide(FFmpegLive),
 	Layer.provide(bridgeLayer),
@@ -45,7 +47,7 @@ const MainLayer = Registry.serve(ActorsLayer).pipe(
 Effect.gen(function* () {
 	yield* Effect.log("Starting AudioComic actor server...");
 	yield* Effect.log(`Endpoint: ${endpoint}`);
-	yield* Effect.log("Actors: FileRegistry, Bible, Project, Pipeline, Chapter");
+	yield* Effect.log("Actors: FileRegistry, Bible, Project, Pipeline, Chapter, KnowledgeBase");
 	yield* Effect.log("Steps: 15 registered (normalize → export_motion)");
 	yield* Effect.log("Bridge: direct adapters (@audiocomic/ai, @audiocomic/renderers, @audiocomic/media)");
 }).pipe(

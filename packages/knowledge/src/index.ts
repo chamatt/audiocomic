@@ -13,6 +13,11 @@ export type {
   WikiExtractionResult,
 } from './types';
 
+export type { WikiIngestor, WikiIngestResult } from './wiki';
+export type { StoryPlannerAdapter as WikiStoryPlannerAdapter } from './wiki-ingestor';
+
+export { makeWikiIngestor } from './wiki-ingestor';
+
 export {
   OpenAIEmbeddingProvider,
   GroqEmbeddingProvider,
