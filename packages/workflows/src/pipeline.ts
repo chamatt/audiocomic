@@ -493,12 +493,20 @@ export class FullPipelineHandler implements JobHandler {
     ctx: JobContext,
   ): Promise<{ pages: PageSpec[]; panels: PanelSpec[] }> {
     ctx.log('Planning pages and panels...');
-    const beats = plan.sections.filter((s) => s.level === 'beat');
+    const allBeats = plan.sections.filter((s) => s.level === 'beat');
+    // Cap pages to keep render cost bounded — sample evenly across the story
+    const MAX_PAGES = 4;
+    const beatsPerPage = 3;
+    const maxBeats = MAX_PAGES * beatsPerPage;
+    let beats = allBeats;
+    if (allBeats.length > maxBeats) {
+      const step = allBeats.length / maxBeats;
+      beats = Array.from({ length: maxBeats }, (_, i) => allBeats[Math.floor(i * step)]!);
+      ctx.log(`Capped ${allBeats.length} beats → ${maxBeats} (max ${MAX_PAGES} pages)`);
+    }
     const pages: PageSpec[] = [];
     const panels: PanelSpec[] = [];
 
-    // Group beats into pages (2-4 beats per page for MVP)
-    const beatsPerPage = 3;
     for (let pageIdx = 0; pageIdx < beats.length; pageIdx += beatsPerPage) {
       const pageBeats = beats.slice(pageIdx, pageIdx + beatsPerPage);
       const pageId = uuid();

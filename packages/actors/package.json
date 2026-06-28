@@ -1,0 +1,21 @@
+{
+  "name": "@audiocomic/actors",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@audiocomic/domain": "workspace:*",
+    "@audiocomic/shared": "workspace:*",
+    "@audiocomic/ai": "workspace:*",
+    "@audiocomic/renderers": "workspace:*",
+    "@audiocomic/media": "workspace:*",
+    "@audiocomic/db": "workspace:*",
+    "@rivetkit/effect": "^2.3.2",
+    "rivetkit": "^2.3.2",
+    "effect": "4.0.0-beta.66",
+    "@effect/platform-node": "4.0.0-beta.66"
+  }
+}
