@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
 import type { PipelineState, StepState } from '@audiocomic/actors';
-import { regeneratePanelAction, regeneratePageAction, exportProjectAction } from '@/lib/actions';
 import {
   startPipelineActor,
   pausePipelineActor,
@@ -31,11 +30,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Play, Pause, RotateCcw, SkipForward, RefreshCw, Plus, Download,
+  Play, Pause, RotateCcw, SkipForward, RefreshCw, Plus,
   AlertCircle, CheckCircle2, Clock, Loader2, Ban, ZapOff, Zap,
 } from 'lucide-react';
 import { PipelineFlow } from '@/components/PipelineFlow';
@@ -44,6 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ChapterCard, type ChapterCardChapter } from '@/components/ChapterCard';
 import { ChapterUploadModal } from '@/components/ChapterUploadModal';
 import { getBibleWikiActor } from '@/lib/actor-actions';
+import { CanvasTab } from '@/components/canvas/CanvasTab';
 
 export interface ProjectDetailData {
   project: Project;
@@ -211,188 +210,6 @@ function StepCard({
 // Artifacts tab
 // ---------------------------------------------------------------------------
 
-function ArtifactsTab({ detail, onRegeneratePanel, onRegeneratePage, onExport }: {
-  detail: ProjectDetailData;
-  onRegeneratePanel: (panelId: string) => void;
-  onRegeneratePage: (pageId: string) => void;
-  onExport: (type: 'pages' | 'mp4') => void;
-}) {
-  const [selectedPageIdx, setSelectedPageIdx] = useState(0);
-  const selectedPage = detail.pages[selectedPageIdx];
-
-  if (detail.pages.length === 0 && detail.exports.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-16 text-center">
-          <p className="text-muted-foreground">No artifacts yet. Run the pipeline to generate pages and exports.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Pages */}
-      {detail.pages.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Pages ({detail.pages.length})
-            </h3>
-          </div>
-
-          {/* Page selector */}
-          <div className="flex gap-2 flex-wrap">
-            {detail.pages.map((p, i) => (
-              <Button
-                key={p.id}
-                size="sm"
-                variant={i === selectedPageIdx ? 'default' : 'outline'}
-                onClick={() => setSelectedPageIdx(i)}
-                className="h-8 w-8 p-0"
-              >
-                {i + 1}
-              </Button>
-            ))}
-          </div>
-
-          {/* Selected page */}
-          {selectedPage && (
-            <div className="flex flex-col gap-4">
-              {selectedPage.compositeUrl && (
-                <Card className="overflow-hidden">
-                  <img
-                    src={selectedPage.compositeUrl}
-                    alt={`Page ${selectedPageIdx + 1}`}
-                    className="w-full"
-                  />
-                </Card>
-              )}
-
-              {/* Panels */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {selectedPage.panels.map((panel) => (
-                  <Card key={panel.id} className="overflow-hidden">
-                    <CardContent className="p-4">
-                      <p className="text-xs font-medium text-muted-foreground mb-2">
-                        Panel {panel.index + 1}
-                      </p>
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
-                        {panel.dialogueLines?.map(d => d.text).join(' ') ?? ''}
-                      </p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onRegeneratePanel(panel.id)}
-                      >
-                        <RotateCcw className="h-3 w-3 mr-1.5" />
-                        Regenerate
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <Separator />
-
-      {/* Story sections */}
-      {detail.sections.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Story Sections ({detail.sections.length})
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {detail.sections.slice(0, 12).map((s) => (
-              <Card key={s.id}>
-                <CardContent className="py-4">
-                  <p className="text-sm font-medium mb-1">{s.title}</p>
-                  <p className="text-xs text-muted-foreground line-clamp-3">{s.summary ?? ''}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Characters */}
-      {detail.characters.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Characters ({detail.characters.length})
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {detail.characters.map((c) => (
-              <Card key={c.id}>
-                <CardContent className="py-4">
-                  <p className="text-sm font-medium mb-1">{c.name}</p>
-                  <p className="text-xs text-muted-foreground line-clamp-3">{c.description ?? ''}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* World bible */}
-      {detail.worldBible && (
-        <div className="flex flex-col gap-4">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            World Bible
-          </h3>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-sm text-muted-foreground line-clamp-6">
-                {detail.worldBible.setting ?? 'No setting'}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <Separator />
-
-      {/* Exports */}
-      {detail.exports.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Exports
-          </h3>
-          <div className="flex gap-3 flex-wrap">
-            {detail.exports.map((exp) => (
-              <a key={exp.id} href={`/api/exports/${exp.id}/download`}>
-                <Card className="hover:border-primary/50 transition-colors">
-                  <CardContent className="py-3 px-4 flex items-center gap-3">
-                    <Download className="h-4 w-4 text-primary" />
-                    <div>
-                      <p className="text-sm font-medium">{exp.type}</p>
-                      <p className="text-xs text-muted-foreground">{Math.round((exp.sizeBytes ?? 0) / 1024)} KB</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Export actions */}
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={() => onExport('pages')}>
-          <Download className="h-4 w-4 mr-2" />
-          Export Pages (ZIP)
-        </Button>
-        <Button variant="outline" onClick={() => onExport('mp4')}>
-          <Download className="h-4 w-4 mr-2" />
-          Export Motion Comic (MP4)
-        </Button>
-      </div>
-    </div>
-  );
-}
 // ---------------------------------------------------------------------------
 // Chapters tab
 // ---------------------------------------------------------------------------
@@ -898,19 +715,6 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
     setPipelineBusy(false);
   };
 
-  // --- Legacy actions ---
-  const onRegeneratePanel = async (panelId: string) => {
-    await regeneratePanelAction(projectId, panelId);
-    await refreshDetail();
-  };
-  const onRegeneratePage = async (pageId: string) => {
-    await regeneratePageAction(projectId, pageId);
-    await refreshDetail();
-  };
-  const onExport = async (type: 'pages' | 'mp4') => {
-    await exportProjectAction(projectId, type);
-    await refreshDetail();
-  };
 
   const steps = pipelineState?.steps ?? [];
   const pipelineStatus = pipelineState?.status ?? 'idle';
@@ -943,14 +747,19 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue="pipeline">
+      <Tabs defaultValue={detail.pages.length > 0 ? 'canvas' : 'chapters'}>
         <TabsList className="mb-6">
+          <TabsTrigger value="canvas">Canvas</TabsTrigger>
           <TabsTrigger value="chapters">Chapters</TabsTrigger>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
-          <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
+
+        {/* Canvas tab */}
+        <TabsContent value="canvas" className="h-[calc(100vh-220px)]">
+          <CanvasTab projectId={projectId} />
+        </TabsContent>
 
         {/* Chapters tab */}
         <TabsContent value="chapters">
@@ -1093,33 +902,6 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           <KnowledgeTab characters={detail.characters} worldBible={detail.worldBible} />
         </TabsContent>
 
-        {/* Artifacts tab */}
-        <TabsContent value="artifacts" className="flex flex-col gap-4">
-          {chapters.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Chapter:</Label>
-              <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
-                <SelectTrigger className="w-[240px] h-8 text-sm">
-                  <SelectValue placeholder="All chapters" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All chapters</SelectItem>
-                  {chapters.map((ch) => (
-                    <SelectItem key={ch.id} value={ch.id}>
-                      Ch.{ch.index + 1}: {ch.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <ArtifactsTab
-            detail={detail}
-            onRegeneratePanel={onRegeneratePanel}
-            onRegeneratePage={onRegeneratePage}
-            onExport={onExport}
-          />
-        </TabsContent>
 
         {/* Settings tab */}
         <TabsContent value="settings">
