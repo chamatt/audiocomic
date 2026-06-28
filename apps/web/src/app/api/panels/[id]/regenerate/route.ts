@@ -75,15 +75,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       prompt: panel.renderPrompt,
       negativePrompt: panel.renderNegativePrompt,
       model: body.model ?? (await repo.projects.getById(panel.projectId))?.renderModel,
-      seed: panel.seed ?? Math.floor(Math.random() * 1_000_000_000),
+      // When a model is explicitly passed, use a random seed to bypass
+      // Pollinations' prompt+seed cache (which ignores the model param).
+      seed: body.model
+        ? Math.floor(Math.random() * 1_000_000_000)
+        : (panel.seed ?? Math.floor(Math.random() * 1_000_000_000)),
       width,
       height,
       version,
       createdAt: nowIso(),
       referenceImageKeys: [],
     };
-
-    log.info(`rendering panel ${panelId}`, { backend: getRenderer().backend, version });
+    log.info(`rendering panel ${panelId}`, {
+      backend: getRenderer().backend,
+      version,
+      model: renderReq.model,
+      seed: renderReq.seed,
+    });
 
     // Persist the request (non-fatal if it fails).
     try {
