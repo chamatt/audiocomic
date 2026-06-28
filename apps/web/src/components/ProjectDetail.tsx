@@ -1,23 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
-import type { PipelineState, StepState } from '@audiocomic/actors';
 import {
-  startPipelineActor,
-  pausePipelineActor,
-  resumePipelineActor,
-  retryStepActor,
-  skipStepActor,
-  runStepActor,
-  invalidateStepActor,
-  getPipelineStatusActor,
-  schedulePipelineActor,
-  cancelScheduleActor,
   createProjectActor,
   createBibleActor,
   linkBibleActor,
-  type ActorResult,
+  getBibleWikiActor,
 } from '@/lib/actor-actions';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -26,19 +15,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Play, Pause, RotateCcw, SkipForward, RefreshCw, Plus,
-  AlertCircle, CheckCircle2, Clock, Loader2, Ban, ZapOff, Zap, ExternalLink,
+  Pause, RefreshCw,
+  AlertCircle, CheckCircle2, Clock, Loader2, SkipForward,
 } from 'lucide-react';
-import { PipelineFlow } from '@/components/PipelineFlow';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { ChapterCard, type ChapterCardChapter } from '@/components/ChapterCard';
-import { ChapterUploadModal } from '@/components/ChapterUploadModal';
-import { getBibleWikiActor } from '@/lib/actor-actions';
 import { CanvasTab } from '@/components/canvas/CanvasTab';
+import { ChapterBoard } from '@/components/ChapterBoard';
+import { useCanvasStore } from '@/stores/canvas-store';
 
 export interface ProjectDetailData {
   project: Project;
@@ -82,133 +65,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step card
-// ---------------------------------------------------------------------------
 
-function StepCard({
-  step,
-  busy,
-  onRun,
-  onRetry,
-  onSkip,
-  onInvalidate,
-}: {
-  step: StepState;
-  busy: boolean;
-  onRun: (id: string) => void;
-  onRetry: (id: string) => void;
-  onSkip: (id: string) => void;
-  onInvalidate: (id: string) => void;
-}) {
-  const isRunning = step.status === 'running';
-  const isCompleted = step.status === 'completed';
-  const isSkipped = step.status === 'skipped';
-
-  return (
-    <Card className={cn(
-      'transition-colors',
-      isRunning && 'border-warning/50',
-      step.status === 'failed' && 'border-destructive/50',
-    )}>
-      <CardContent className="py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <StatusBadge status={step.status} />
-            <div className="min-w-0 flex-1">
-              <p className={cn(
-                'text-sm font-medium truncate',
-                isSkipped && 'line-through text-muted-foreground',
-              )}>
-                {step.definition.name}
-              </p>
-              {step.summary && (
-                <p className="text-xs text-muted-foreground truncate mt-0.5">{step.summary}</p>
-              )}
-              {step.error && (
-                <p className="text-xs text-destructive truncate mt-0.5">{step.error}</p>
-              )}
-            </div>
-            {step.attempts > 0 && (
-              <span className="text-xs text-muted-foreground shrink-0">
-                attempt {step.attempts}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => onRun(step.definition.id)}
-                    disabled={busy || isRunning}
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Run step</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => onRetry(step.definition.id)}
-                    disabled={busy || isRunning || isCompleted}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Retry</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => onSkip(step.definition.id)}
-                    disabled={busy || isCompleted || isSkipped}
-                  >
-                    <SkipForward className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Skip</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => onInvalidate(step.definition.id)}
-                    disabled={busy || step.status === 'pending'}
-                  >
-                    <Ban className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Invalidate downstream</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Artifacts tab
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Chapters tab
-// ---------------------------------------------------------------------------
 
 interface WikiPageEntry {
   id: string;
@@ -218,213 +75,6 @@ interface WikiPageEntry {
   confidence: number;
 }
 
-function ChaptersTab({ projectId }: { projectId: string }) {
-  const [chapters, setChapters] = useState<ChapterCardChapter[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [addOpen, setAddOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [uploadChapter, setUploadChapter] = useState<{ id: string; title: string } | null>(null);
-  const [transcription, setTranscription] = useState<{
-    open: boolean;
-    chapterId: string;
-    chapterTitle: string;
-    text: string;
-    loading: boolean;
-  }>({ open: false, chapterId: '', chapterTitle: '', text: '', loading: false });
-
-  const refreshChapters = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/chapters`);
-      if (res.ok) {
-        const data = await res.json();
-        setChapters(data as ChapterCardChapter[]);
-      }
-    } catch {
-      /* ignore */
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    refreshChapters();
-  }, [refreshChapters]);
-
-  const onAddChapter = async () => {
-    if (!newTitle.trim()) return;
-    setAdding(true);
-    try {
-      const res = await fetch('/api/chapters', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, title: newTitle.trim(), description: newDescription.trim() || undefined }),
-      });
-      if (res.ok) {
-        setNewTitle('');
-        setNewDescription('');
-        setAddOpen(false);
-        await refreshChapters();
-      }
-    } catch {
-      /* ignore */
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const onUpload = (chapterId: string) => {
-    const ch = chapters.find((c) => c.id === chapterId);
-    setUploadChapter({ id: chapterId, title: ch?.title ?? 'Chapter' });
-  };
-
-  const onViewTranscription = async (chapterId: string) => {
-    const ch = chapters.find((c) => c.id === chapterId);
-    setTranscription({
-      open: true,
-      chapterId,
-      chapterTitle: ch?.title ?? 'Chapter',
-      text: '',
-      loading: true,
-    });
-    try {
-      const res = await fetch(`/api/chapters/${chapterId}/transcription`);
-      if (res.ok) {
-        const data = await res.json();
-        const chunks = (data?.chunks ?? []) as { text?: string; content?: string }[];
-        const text = chunks.map((c) => c.text ?? c.content ?? '').filter(Boolean).join('\n\n');
-        setTranscription((prev) => ({ ...prev, text: text || '(no transcription available)', loading: false }));
-      } else {
-        setTranscription((prev) => ({ ...prev, text: '(failed to load transcription)', loading: false }));
-      }
-    } catch {
-      setTranscription((prev) => ({ ...prev, text: '(failed to load transcription)', loading: false }));
-    }
-  };
-
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Chapters</h2>
-          <p className="text-sm text-muted-foreground">
-            {chapters.length} chapter{chapters.length === 1 ? '' : 's'}
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Add Chapter
-        </Button>
-      </div>
-
-      {loading ? (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-            Loading chapters…
-          </CardContent>
-        </Card>
-      ) : chapters.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground mb-4">No chapters yet. Add one to get started.</p>
-            <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Chapter
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {chapters.map((chapter) => (
-            <ChapterCard
-              key={chapter.id}
-              chapter={chapter}
-              onUpload={onUpload}
-              onViewTranscription={onViewTranscription}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Add chapter dialog */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Chapter</DialogTitle>
-            <DialogDescription>Create a new chapter for this project.</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4 py-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="chapter-title">Title</Label>
-              <Input
-                id="chapter-title"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Chapter title"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="chapter-description">Description</Label>
-              <Textarea
-                id="chapter-description"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Optional description"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={adding}>
-              Cancel
-            </Button>
-            <Button onClick={onAddChapter} disabled={adding || !newTitle.trim()}>
-              {adding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-              Add
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Upload modal */}
-      {uploadChapter && (
-        <ChapterUploadModal
-          open={true}
-          onOpenChange={(open) => { if (!open) setUploadChapter(null); }}
-          chapterId={uploadChapter.id}
-          chapterTitle={uploadChapter.title}
-          onUploaded={refreshChapters}
-        />
-      )}
-
-      {/* Transcription dialog */}
-      <Dialog
-        open={transcription.open}
-        onOpenChange={(open) => setTranscription((prev) => ({ ...prev, open }))}
-      >
-        <DialogContent className="max-w-2xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle>Transcription — {transcription.chapterTitle}</DialogTitle>
-            <DialogDescription>Full transcription text for this chapter.</DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="max-h-[55vh] pr-4">
-            {transcription.loading ? (
-              <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading transcription…
-              </div>
-            ) : (
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{transcription.text}</p>
-            )}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Knowledge tab
@@ -596,15 +246,9 @@ function KnowledgeTab({
 
 export function ProjectDetail({ projectId, initialProject, initialDetail }: Props) {
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
-  const [pipelineKey] = useState(projectId);
-  const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
-  const [pipelineError, setPipelineError] = useState<string | null>(null);
-  const [pipelineBusy, setPipelineBusy] = useState(false);
-  const [actorsReady, setActorsReady] = useState(false);
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
-  const [chapters, setChapters] = useState<{ id: string; title: string; index: number; status: string }[]>([]);
   const [activeTab, setActiveTab] = useState<string>(detail.pages.length > 0 ? 'canvas' : 'chapters');
   const project = detail.project;
+  const { selectChapter } = useCanvasStore();
 
   // --- Data refresh ---
   const refreshDetail = useCallback(async () => {
@@ -619,7 +263,6 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
 
   // --- Lazy actor init ---
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       const projectRes = await createProjectActor(project.name, project.description ?? '');
       if (projectRes.ok) {
@@ -628,105 +271,14 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           await linkBibleActor(projectRes.data.key, bibleRes.data.content.id);
         }
       }
-      if (!cancelled) setActorsReady(true);
     })();
-    return () => { cancelled = true; };
   }, [project.name, project.description]);
 
-  // --- Pipeline refresh ---
-  const refreshPipeline = useCallback(async () => {
-    const res = await getPipelineStatusActor(pipelineKey);
-    if (res.ok) {
-      setPipelineState(res.data);
-      setPipelineError(null);
-    } else {
-      setPipelineError(res.error);
-    }
-  }, [pipelineKey]);
-
-  useEffect(() => {
-    if (actorsReady) refreshPipeline();
-  }, [actorsReady, refreshPipeline]);
-
-  // Fetch chapters and poll while any are transcribing.
-  // NOTE: chapters is NOT in the deps array — setChapters creates a new
-  // array reference each call, which would re-trigger this effect and
-  // cause an infinite fetch loop. We use a ref to read the latest state
-  // inside the interval and self-terminate when transcription is done.
-  const chaptersRef = useRef(chapters);
-  chaptersRef.current = chapters;
-  useEffect(() => {
-    let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | undefined;
-    const fetchChapters = async () => {
-      try {
-        const res = await fetch(`/api/projects/${projectId}/chapters`);
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          setChapters(data.chapters ?? []);
-          // Stop polling once no chapter is transcribing
-          const stillWorking = (data.chapters ?? []).some(
-            (c: { status: string }) => c.status === 'transcribing' || c.status === 'pending',
-          );
-          if (!stillWorking && interval) {
-            clearInterval(interval);
-            interval = undefined;
-          }
-        }
-      } catch { /* ignore */ }
-    };
-    fetchChapters();
-    // Only start polling if something is currently transcribing
-    if (chaptersRef.current.some((c) => c.status === 'transcribing' || c.status === 'pending')) {
-      interval = setInterval(fetchChapters, 3000);
-    }
-    return () => { cancelled = true; if (interval) clearInterval(interval); };
-  }, [projectId]);
-
-  const actorRunning = pipelineState?.status === 'running';
-  useEffect(() => {
-    if (!actorRunning) return;
-    const interval = setInterval(refreshPipeline, 2000);
-    return () => clearInterval(interval);
-  }, [actorRunning, refreshPipeline]);
-
-  const transcribedCount = chapters.filter((c) => c.status === 'transcribed' || c.status === 'completed').length;
-  const allTranscribed = chapters.length > 0 && transcribedCount === chapters.length;
-
-  // --- Pipeline actions ---
-  const doAction = async (label: string, fn: () => Promise<ActorResult<unknown>>) => {
-    setPipelineBusy(true);
-    setPipelineError(null);
-    const res = await fn();
-    if (!res.ok) setPipelineError(`${label}: ${res.error}`);
-    await refreshPipeline();
-    setPipelineBusy(false);
-  };
-
-  const onStart = () => doAction('Start', () => startPipelineActor(pipelineKey));
-  const onPause = () => doAction('Pause', () => pausePipelineActor(pipelineKey));
-  const onResume = () => doAction('Resume', () => resumePipelineActor(pipelineKey));
-  const onRetry = (stepId: string) => doAction(`Retry ${stepId}`, () => retryStepActor(pipelineKey, stepId));
-  const onSkip = (stepId: string) => doAction(`Skip ${stepId}`, () => skipStepActor(pipelineKey, stepId));
-  const onRunStep = (stepId: string) => doAction(`Run ${stepId}`, () => runStepActor(pipelineKey, stepId));
-  const onInvalidate = (stepId: string) => doAction(`Invalidate ${stepId}`, () => invalidateStepActor(pipelineKey, stepId));
-
-
-
-  const steps = pipelineState?.steps ?? [];
-  const pipelineStatus = pipelineState?.status ?? 'idle';
-  const planChaptersDone = steps.some((s) => s.definition.id === 'plan_chapters' && s.status === 'completed');
-  const renderPanelsStarted = steps.some((s) => s.definition.id === 'render_panels' && s.status !== 'pending');
-  const atReviewCheckpoint = pipelineStatus === 'paused' && planChaptersDone && !renderPanelsStarted;
-
-  // Auto-switch to Canvas when pipeline completes
-  const prevStatus = useRef(pipelineStatus);
-  useEffect(() => {
-    if (prevStatus.current === 'running' && pipelineStatus === 'completed') {
-      setActiveTab('canvas');
-    }
-    prevStatus.current = pipelineStatus;
-  }, [pipelineStatus]);
+  // --- Chapter review handler: switch to canvas tab + set selected chapter ---
+  const handleChapterReview = useCallback((chapterId: string) => {
+    selectChapter(chapterId);
+    setActiveTab('canvas');
+  }, [selectChapter]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -744,184 +296,24 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
         </div>
       </div>
 
-      {/* Error banner */}
-      {pipelineError && (
-        <Card className="mb-6 border-destructive/50">
-          <CardContent className="py-3 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-            <p className="text-sm text-destructive">{pipelineError}</p>
-          </CardContent>
-        </Card>
-      )}
-
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6">
-          <TabsTrigger value="canvas">Canvas</TabsTrigger>
           <TabsTrigger value="chapters">Chapters</TabsTrigger>
-          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+          <TabsTrigger value="canvas">Canvas</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
+
+        {/* Chapters tab */}
+        <TabsContent value="chapters">
+          <ChapterBoard projectId={projectId} onReview={handleChapterReview} />
+        </TabsContent>
 
         {/* Canvas tab */}
         <TabsContent value="canvas" className="h-[calc(100vh-220px)]">
           <CanvasTab projectId={projectId} />
         </TabsContent>
 
-        {/* Chapters tab */}
-        <TabsContent value="chapters">
-          <ChaptersTab projectId={projectId} />
-        </TabsContent>
-
-        {/* Pipeline tab */}
-        <TabsContent value="pipeline" className="flex flex-col gap-6">
-          {/* Chapter transcription status */}
-          {chapters.length > 0 && (
-            <div className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">
-                {chapters.filter((ch) => ch.status === 'transcribed' || ch.status === 'completed').length}
-                {' / '}
-                {chapters.length} chapters transcribed
-              </span>
-            </div>
-          )}
-          {/* Ready to start prompt */}
-          {allTranscribed && pipelineStatus === 'idle' && (
-            <Card className="border-primary/50 bg-primary/5">
-              <CardContent className="flex items-center justify-between gap-4 py-4">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-semibold">All chapters transcribed</p>
-                    <p className="text-sm text-muted-foreground">
-                      {chapters.length} chapters ready. Click Start to build the knowledge base and plan chapters.
-                    </p>
-                  </div>
-                </div>
-                <Button size="sm" onClick={onStart} disabled={pipelineBusy}>
-                  <Play className="h-3.5 w-3.5 mr-1.5" />
-                  Start Pipeline
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          {/* Pipeline controls */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <StatusBadge status={pipelineStatus} />
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={onStart}
-                disabled={pipelineBusy || pipelineStatus === 'running' || transcribedCount === 0}
-              >
-                <Play className="h-3.5 w-3.5 mr-1.5" />
-                Start
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onPause}
-                disabled={pipelineBusy || pipelineStatus !== 'running'}
-              >
-                <Pause className="h-3.5 w-3.5 mr-1.5" />
-                Pause
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onResume}
-                disabled={pipelineBusy || pipelineStatus !== 'paused'}
-              >
-                <Play className="h-3.5 w-3.5 mr-1.5" />
-                Resume
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={refreshPipeline}
-                disabled={pipelineBusy}
-              >
-                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          {/* Review checkpoint banner */}
-          {atReviewCheckpoint && (
-            <Card className="border-primary/50 bg-primary/5">
-              <CardContent className="flex items-center justify-between gap-4 py-4">
-                <div className="flex items-center gap-3">
-                  <AlertCircle className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      Chapters are planned with pages and prompts ready. Review them on the Canvas tab,
-                      render individual panels, or click Resume to render all and continue.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setActiveTab('canvas')}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                    Go to Canvas
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={onResume}
-                    disabled={pipelineBusy}
-                  >
-                    <Play className="h-3.5 w-3.5 mr-1.5" />
-                    Render All & Continue
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Flow chart + step list */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-            <Card className="overflow-hidden">
-              <div className="h-[600px] w-full">
-                <PipelineFlow
-                  pipelineKey={pipelineKey}
-                  state={pipelineState}
-                  onRunStep={onRunStep}
-                  onRetryStep={onRetry}
-                  onSkipStep={onSkip}
-                  onInvalidateStep={onInvalidate}
-                  onRunAll={onStart}
-                  onPause={onPause}
-                  onResume={onResume}
-                  onSelectStep={setSelectedStepId}
-                  selectedStepId={selectedStepId}
-                />
-              </div>
-            </Card>
-            <ScrollArea className="h-[600px] pr-4">
-              <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Steps ({steps.length})
-                </p>
-                {steps.map((step) => (
-                  <StepCard
-                    key={step.definition.id}
-                    step={step}
-                    busy={pipelineBusy}
-                    onRun={onRunStep}
-                    onRetry={onRetry}
-                    onSkip={onSkip}
-                    onInvalidate={onInvalidate}
-                  />
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
-        </TabsContent>
 
         {/* Knowledge tab */}
         <TabsContent value="knowledge">

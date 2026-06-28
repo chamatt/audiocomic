@@ -8,6 +8,9 @@ export interface CanvasState {
   selectedPageId: string | null;
   selectedBubbleId: string | null;
 
+  // Selected chapter (drives canvas page filtering + board→canvas handoff)
+  selectedChapterId: string | null;
+
   // Mode
   mode: CanvasMode;
 
@@ -18,6 +21,7 @@ export interface CanvasState {
   selectPanel: (panelId: string | null) => void;
   selectPage: (pageId: string | null) => void;
   selectBubble: (bubbleId: string | null) => void;
+  selectChapter: (id: string | null) => void;
   setMode: (mode: CanvasMode) => void;
   setZoom: (zoom: number) => void;
 }
@@ -26,6 +30,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   selectedPanelId: null,
   selectedPageId: null,
   selectedBubbleId: null,
+  selectedChapterId: null,
   mode: 'select',
   zoom: 1,
 
@@ -37,6 +42,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
   selectPage: (pageId) => set({ selectedPageId: pageId }),
   selectBubble: (bubbleId) => set({ selectedBubbleId: bubbleId }),
+  selectChapter: (id) => set({ selectedChapterId: id }),
   setMode: (mode) => set({ mode }),
   setZoom: (zoom) => set({ zoom }),
 }));

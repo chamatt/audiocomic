@@ -12,6 +12,13 @@ import { Action, Actor } from "@rivetkit/effect";
  * working snapshot, not an audit log; persistence of the canonical row lives
  * in the `chapters` table via the repository.
  */
+export const StageProgress = Schema.Struct({
+	current: Schema.Number,
+	total: Schema.Number,
+	detail: Schema.optional(Schema.String),
+});
+export type StageProgress = Schema.Schema.Type<typeof StageProgress>;
+
 export const ChapterState = Schema.Struct({
 	id: Schema.String,
 	projectId: Schema.String,
@@ -20,6 +27,8 @@ export const ChapterState = Schema.Struct({
 	description: Schema.optional(Schema.String),
 	sourceAssetId: Schema.optional(Schema.String),
 	status: Schema.String,
+	stage: Schema.String,
+	stageProgress: Schema.optional(StageProgress),
 	durationSec: Schema.optional(Schema.Number),
 	transcriptionStatus: Schema.String,
 	pipelineId: Schema.optional(Schema.String),
@@ -90,9 +99,46 @@ export const Chapter = Actor.make("Chapter", {
 			success: ChapterState,
 		}),
 
+		// Set the per-chapter pipeline stage and optional progress.
+		// stage: pending|transcribing|ingesting|planning|ready_for_review|rendering|composing|done|failed
+		Action.make("SetStage", {
+			payload: {
+				stage: Schema.String,
+				progress: Schema.optional(StageProgress),
+			},
+			success: ChapterState,
+		}),
+
 		// Start background transcription of the linked source asset.
 		// Returns immediately with transcriptionStatus === "running".
+		// After transcription completes, auto-advances to ingest → plan.
 		Action.make("StartTranscription", {
+			success: ChapterState,
+		}),
+
+		// Start background knowledge ingestion for this chapter.
+		// Embeds transcript chunks + runs wiki ingest + bible builder.
+		// Auto-advances to plan after completion.
+		Action.make("StartIngest", {
+			success: ChapterState,
+		}),
+
+		// Start background story planning for this chapter.
+		// Segments transcript → plans story → plans pages → composes prompts.
+		// Sets stage to ready_for_review after completion.
+		Action.make("StartPlan", {
+			success: ChapterState,
+		}),
+
+		// Start background panel rendering for this chapter.
+		// Renders all unrendered panels. Auto-advances to compose.
+		Action.make("StartRender", {
+			success: ChapterState,
+		}),
+
+		// Start background composition for this chapter.
+		// Runs panel_qa + compose_pages + lettering. Sets stage to done.
+		Action.make("StartCompose", {
 			success: ChapterState,
 		}),
 

@@ -358,6 +358,56 @@ export async function startChapterTranscriptionActor(chapterId: string, projectI
   );
 }
 
+export async function startChapterIngestActor(chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.StartIngest(undefined);
+    }),
+  );
+}
+
+export async function startChapterPlanActor(chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.StartPlan(undefined);
+    }),
+  );
+}
+
+export async function startChapterRenderActor(chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.StartRender(undefined);
+    }),
+  );
+}
+
+export async function startChapterComposeActor(chapterId: string): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.StartCompose(undefined);
+    }),
+  );
+}
+
+export async function setChapterStageActor(chapterId: string, stage: string, progress?: { current: number; total: number; detail?: string }): Promise<ActorResult<unknown>> {
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      return yield* handle.SetStage({ stage, progress });
+    }),
+  );
+}
+
 export async function addChapterToProjectActor(projectKey: string, chapterId: string, title: string, index: number): Promise<ActorResult<ProjectConfig>> {
   return run(
     Effect.gen(function* () {

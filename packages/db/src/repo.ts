@@ -233,6 +233,12 @@ export interface Repository {
   letteringSpecs: EntityRepo<LetteringSpecType, Row<typeof schema.letteringSpecs>>;
   narrationTimelines: EntityRepo<NarrationTimelineType, Row<typeof schema.narrationTimelines>>;
   exportBundles: EntityRepo<ExportBundleType, Row<typeof schema.exportBundles>>;
+  chapterIngestLog: {
+    insert(row: { chapterId: string; projectId: string; embeddingsCount: number; wikiPagesCount: number }): Promise<void>;
+    getByChapterId(chapterId: string): Promise<Row<typeof schema.chapterIngestLog> | null>;
+    getByProjectId(projectId: string): Promise<Row<typeof schema.chapterIngestLog>[]>;
+    deleteByChapterId(chapterId: string): Promise<void>;
+  };
 
   /** Write a pgvector embedding for a row that owns an `embedding` column. */
   setEmbedding(
@@ -546,6 +552,33 @@ export function createRepository(db: Db): Repository {
     // For MVP, settings are read from env defaults. This is a no-op.
     // In production, this would persist to a settings table.
   };
+
+  // chapterIngestLog — tracks which chapters have been ingested into the KB
+  const chapterIngestLog: Repository['chapterIngestLog'] = {
+    async insert(row) {
+      await db.insert(schema.chapterIngestLog)
+        .values({
+          chapterId: row.chapterId,
+          projectId: row.projectId,
+          embeddingsCount: row.embeddingsCount,
+          wikiPagesCount: row.wikiPagesCount,
+        })
+        .onConflictDoNothing();
+    },
+    async getByChapterId(chapterId: string) {
+      const [row] = await db.select().from(schema.chapterIngestLog)
+        .where(eq(schema.chapterIngestLog.chapterId, chapterId));
+      return row ?? null;
+    },
+    async getByProjectId(projectId: string) {
+      return db.select().from(schema.chapterIngestLog)
+        .where(eq(schema.chapterIngestLog.projectId, projectId));
+    },
+    async deleteByChapterId(chapterId: string) {
+      await db.delete(schema.chapterIngestLog)
+        .where(eq(schema.chapterIngestLog.chapterId, chapterId));
+    },
+  };
   return {
     projects,
     sourceAssets,
@@ -565,6 +598,7 @@ export function createRepository(db: Db): Repository {
     letteringSpecs,
     narrationTimelines,
     exportBundles,
+    chapterIngestLog,
     jobs,
     chapters,
     characterStates,

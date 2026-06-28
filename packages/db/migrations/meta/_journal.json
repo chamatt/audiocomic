@@ -15,6 +15,13 @@
       "when": 1733000001000,
       "tag": "0002_add_chapter_id_to_pages_panels",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1733000002000,
+      "tag": "0003_per_chapter_stages",
+      "breakpoints": true
     }
   ]
 }

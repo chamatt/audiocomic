@@ -620,6 +620,19 @@ export const TranscriptionStatus = z.enum([
 ]);
 export type TranscriptionStatus = z.infer<typeof TranscriptionStatus>;
 
+export const ChapterStage = z.enum([
+  'pending', 'transcribing', 'ingesting', 'planning',
+  'ready_for_review', 'rendering', 'composing', 'done', 'failed',
+]);
+export type ChapterStage = z.infer<typeof ChapterStage>;
+
+export const StageProgress = z.object({
+  current: z.number(),
+  total: z.number(),
+  detail: z.string().optional(),
+});
+export type StageProgress = z.infer<typeof StageProgress>;
+
 export const Chapter = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
@@ -628,6 +641,8 @@ export const Chapter = z.object({
   description: z.string().optional(),
   sourceAssetId: z.string().uuid().optional(),
   status: ChapterStatus.default('pending'),
+  stage: ChapterStage.default('pending'),
+  stageProgress: StageProgress.nullable().optional(),
   durationSec: z.number().positive().optional(),
   transcriptionStatus: TranscriptionStatus.default('pending'),
   createdAt: z.string().datetime(),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { PanelSpec, BoundingBox, LetteringBox } from '@audiocomic/domain';
 import { ComicCanvas } from './ComicCanvas';
 import { PanelEditor } from './PanelEditor';
@@ -9,7 +9,11 @@ import { PageThumbnailBar } from './PageThumbnailBar';
 import { useCanvasStore } from '@/stores/canvas-store';
 import { useCanvasData } from '@/lib/canvas/use-canvas-data';
 import { throttle } from '@/lib/canvas/throttle';
+import { startChapterRenderActor } from '@/lib/actor-actions';
 import type { CanvasPageData } from './types';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { KnowledgePanel } from './KnowledgePanel';
 
 interface CanvasTabProps {
   projectId: string;
@@ -18,7 +22,30 @@ interface CanvasTabProps {
 export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const { pages, loading, error, refresh, updatePanel, updatePanelBbox, updateLettering } =
     useCanvasData(projectId);
-  const { selectedPanelId, selectedPageId, selectPage } = useCanvasStore();
+  const { selectedPanelId, selectedPageId, selectPage, selectedChapterId, selectChapter } = useCanvasStore();
+
+  // Chapter metadata for the selector bar (id + title + stage)
+  interface ChapterMeta {
+    id: string;
+    index: number;
+    title: string;
+    stage: string;
+  }
+  const [chapters, setChapters] = useState<ChapterMeta[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchChapters = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/chapters`);
+        if (res.ok && !cancelled) {
+          const data = await res.json() as ChapterMeta[];
+          setChapters(data);
+        }
+      } catch { /* ignore */ }
+    };
+    void fetchChapters();
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   // Convert pages to canvas format
   const canvasPages: CanvasPageData[] = useMemo(
@@ -39,15 +66,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [pages],
   );
 
-  // Chapter filter
-  const [selectedChapterId, setSelectedChapterId] = useState<string>('all');
-  const chapterIds = useMemo(() => {
-    const ids = new Set<string>();
-    pages.forEach((p) => { if (p.chapterId) ids.add(p.chapterId); });
-    return Array.from(ids);
-  }, [pages]);
+  // Filter pages by selected chapter (from store); null = show all
   const filteredPages = useMemo(() => {
-    if (selectedChapterId === 'all') return canvasPages;
+    if (!selectedChapterId) return canvasPages;
     return canvasPages.filter((p) => p.chapterId === selectedChapterId);
   }, [canvasPages, selectedChapterId]);
 
@@ -244,6 +265,28 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [projectId],
   );
 
+  // Render the currently selected chapter (only valid at ready_for_review stage)
+  const [rendering, setRendering] = useState(false);
+  const handleRenderChapter = useCallback(async () => {
+    if (!selectedChapterId) return;
+    setRendering(true);
+    try {
+      await startChapterRenderActor(selectedChapterId);
+    } catch { /* ignore */ } finally {
+      setRendering(false);
+    }
+  }, [selectedChapterId]);
+
+  // The selected chapter's stage (for render button visibility)
+  const selectedChapterStage = useMemo(() => {
+    if (!selectedChapterId) return null;
+    const ch = chapters.find((c) => c.id === selectedChapterId);
+    return ch?.stage ?? null;
+  }, [chapters, selectedChapterId]);
+
+  // Knowledge panel toggle
+  const [showKnowledge, setShowKnowledge] = useState(false);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -287,28 +330,60 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           onPatch={handlePanelPatch}
           onRegenerate={handleRegenerate}
         />
-      </div>
 
-      {/* Chapter filter + page thumbnails */}
-      <div className="border-t bg-background/95 backdrop-blur">
-        {chapterIds.length > 1 && (
-          <div className="flex items-center gap-2 px-3 py-1 border-b">
-            <span className="text-xs text-muted-foreground font-medium">Chapter:</span>
-            <select
-              className="text-xs bg-transparent border rounded px-2 py-0.5"
-              value={selectedChapterId}
-              onChange={(e) => setSelectedChapterId(e.target.value)}
-            >
-              <option value="all">All chapters</option>
-              {chapterIds.map((id, i) => (
-                <option key={id} value={id}>Chapter {i + 1}</option>
-              ))}
-            </select>
-            <span className="text-xs text-muted-foreground">
-              {filteredPages.length} page{filteredPages.length !== 1 ? 's' : ''}
-            </span>
+        {showKnowledge && (
+          <div className="w-72 border-l overflow-hidden">
+            <KnowledgePanel projectId={projectId} />
           </div>
         )}
+      </div>
+
+      {/* Chapter selector + page thumbnails */}
+      <div className="border-t bg-background/95 backdrop-blur">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b overflow-x-auto">
+          <span className="text-xs text-muted-foreground font-medium shrink-0">Chapter:</span>
+          {chapters.map((ch) => (
+            <Button
+              key={ch.id}
+              size="sm"
+              variant={selectedChapterId === ch.id ? 'default' : 'outline'}
+              className={cn('h-7 px-2.5 text-xs shrink-0')}
+              onClick={() => selectChapter(ch.id)}
+            >
+              {ch.index}. {ch.title}
+            </Button>
+          ))}
+          <Button
+            size="sm"
+            variant={selectedChapterId === null ? 'default' : 'outline'}
+            className={cn('h-7 px-2.5 text-xs shrink-0')}
+            onClick={() => selectChapter(null)}
+          >
+            All
+          </Button>
+          <div className="flex-1" />
+          {selectedChapterStage === 'ready_for_review' && (
+            <Button
+              size="sm"
+              className="h-7 shrink-0"
+              disabled={rendering}
+              onClick={handleRenderChapter}
+            >
+              {rendering ? 'Rendering…' : 'Render this chapter'}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant={showKnowledge ? 'default' : 'outline'}
+            className="h-7 shrink-0"
+            onClick={() => setShowKnowledge(!showKnowledge)}
+          >
+            📖 KB
+          </Button>
+          <span className="text-xs text-muted-foreground shrink-0">
+            {filteredPages.length} page{filteredPages.length !== 1 ? 's' : ''}
+          </span>
+        </div>
         <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
       </div>
     </div>

@@ -481,6 +481,8 @@ export const chapters = pgTable(
     description: text('description'),
     sourceAssetId: uuid('source_asset_id'),
     status: text('status').notNull().default('pending'),
+    stage: text('stage').notNull().default('pending'),
+    stageProgress: jsonb('stage_progress'),
     durationSec: real('duration_sec'),
     transcriptionStatus: text('transcription_status').notNull().default('pending'),
     createdAt: createdAtCol(),
@@ -489,6 +491,24 @@ export const chapters = pgTable(
   (t) => [
     index('chapters_project_id_idx').on(t.projectId),
     index('chapters_project_order_idx').on(t.projectId, t.index),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Chapter ingest log — tracks which chapters have been ingested into the KB
+// ---------------------------------------------------------------------------
+
+export const chapterIngestLog = pgTable(
+  'chapter_ingest_log',
+  {
+    chapterId: uuid('chapter_id').primaryKey(),
+    projectId: projectFk(),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+    embeddingsCount: integer('embeddings_count').notNull().default(0),
+    wikiPagesCount: integer('wiki_pages_count').notNull().default(0),
+  },
+  (t) => [
+    index('chapter_ingest_log_project_idx').on(t.projectId),
   ],
 );
 
@@ -589,3 +609,4 @@ export type ChapterRow = typeof chapters.$inferSelect;
 export type CharacterStateRow = typeof characterStates.$inferSelect;
 export type KnowledgePageRow = typeof knowledgePages.$inferSelect;
 export type KnowledgeEmbeddingRow = typeof knowledgeEmbeddings.$inferSelect;
+export type ChapterIngestLogRow = typeof chapterIngestLog.$inferSelect;
