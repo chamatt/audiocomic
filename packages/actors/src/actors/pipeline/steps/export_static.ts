@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isComposePagesResult } from "./helpers.ts";
 import { uuid, nowIso, exportKey } from "@audiocomic/shared";
 import type { ExportBundle } from "@audiocomic/domain";
@@ -19,6 +19,8 @@ export interface ExportStaticResult {
 
 export const ExportStaticStep: StepExecutor = {
 	type: "export_static",
+	inputs: ["compose_pages"],
+	outputs: ["export_static"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -66,11 +68,15 @@ export const ExportStaticStep: StepExecutor = {
 			);
 
 			return {
-				step: "export_static" as const,
-				status: "completed" as const,
-				exportId,
-				sizeBytes: result.sizeBytes,
-			} satisfies ExportStaticResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "export_static" as const,
+					status: "completed" as const,
+					exportId,
+					sizeBytes: result.sizeBytes,
+				} satisfies ExportStaticResult,
+				summary: `Exported ${result.sizeBytes} bytes`,
+			} satisfies StepOutput;
 		}),
 };
 

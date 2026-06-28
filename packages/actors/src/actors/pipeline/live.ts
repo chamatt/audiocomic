@@ -1,7 +1,7 @@
 import { Actor, State } from "@rivetkit/effect";
 import { Cause, Duration, Effect, Exit, Schedule } from "effect";
 import { Pipeline, PipelineState } from "./api.ts";
-import { getStepExecutor, type StepContext } from "./steps/types.ts";
+import { getStepExecutor, type StepContext, type StepOutput } from "./steps/types.ts";
 import type { RetryPolicy, StepState } from "../../lib/schemas.ts";
 
 // ---------------------------------------------------------------------------
@@ -21,10 +21,10 @@ const DEFAULT_RETRY: RetryPolicy = {
  * a timeout becomes a failure so the retry schedule can catch it.
  */
 function withRetryAndTimeout(
-	execEffect: Effect.Effect<unknown, Error, unknown>,
+	execEffect: Effect.Effect<StepOutput, Error, unknown>,
 	retryPolicy: RetryPolicy | undefined,
 	stepId: string,
-): Effect.Effect<unknown, Error | Cause.TimeoutError, unknown> {
+): Effect.Effect<StepOutput, Error | Cause.TimeoutError, unknown> {
 	const rp = retryPolicy ?? DEFAULT_RETRY;
 
 	let effect = execEffect;
@@ -50,9 +50,111 @@ function findStep(
 ): { idx: number; step: StepState } | undefined {
 	const idx = steps.findIndex((s) => s.definition.id === stepId);
 	if (idx === -1) return undefined;
-	const step = steps[idx];
-	if (step === undefined) return undefined;
-	return { idx, step };
+	return { idx, step: steps[idx]! };
+}
+
+/**
+ * Topologically sort steps by their executor's `inputs` declarations.
+ * Steps with no inputs come first; steps with inputs come after all their deps.
+ * Independent branches can execute in any order relative to each other.
+ */
+function topoSort(steps: readonly StepState[]): StepState[] {
+	const stepMap = new Map(steps.map((s) => [s.definition.id, s]));
+	const visited = new Set<string>();
+	const result: StepState[] = [];
+
+	function visit(id: string): void {
+		if (visited.has(id)) return;
+		visited.add(id);
+		const step = stepMap.get(id);
+		if (step === undefined) return;
+		const executor = getStepExecutor(step.definition.type);
+		if (executor !== undefined) {
+			for (const dep of executor.inputs) {
+				visit(dep);
+			}
+		}
+		result.push(step);
+	}
+
+	for (const s of steps) {
+		visit(s.definition.id);
+	}
+
+	return result;
+}
+
+/**
+ * Compute a hash of all upstream step outputs that a step consumes.
+ * Used for stale detection — if the hash changes, the step is stale.
+ */
+function computeInputHash(
+	stepId: string,
+	steps: readonly StepState[],
+): string {
+	const executor = getStepExecutor(steps.find((s) => s.definition.id === stepId)?.definition.type ?? "");
+	if (executor === undefined) return "";
+
+	const parts: string[] = [];
+	for (const inputId of executor.inputs) {
+		const inputStep = findStep(steps, inputId);
+		if (inputStep !== undefined && inputStep.step.status === "completed") {
+			// Hash the input step's result + its own inputHash (transitive)
+			parts.push(`${inputId}:${inputStep.step.inputHash ?? ""}:${JSON.stringify(inputStep.step.result)}`);
+		}
+	}
+	// Simple hash — djb2
+	const str = parts.join("|");
+	let hash = 5381;
+	for (let i = 0; i < str.length; i++) {
+		hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+	}
+	return hash.toString(36);
+}
+
+/**
+ * Find all downstream steps that depend (transitively) on the given step ID.
+ * Used for cascade invalidation when a step is re-run.
+ */
+function findDownstream(
+	stepId: string,
+	steps: readonly StepState[],
+): string[] {
+	const downstream: string[] = [];
+	const visited = new Set<string>();
+
+	function visit(id: string): void {
+		if (visited.has(id)) return;
+		visited.add(id);
+		for (const s of steps) {
+			const executor = getStepExecutor(s.definition.type);
+			if (executor !== undefined && executor.inputs.includes(id)) {
+				if (!downstream.includes(s.definition.id)) {
+					downstream.push(s.definition.id);
+				}
+				visit(s.definition.id);
+			}
+		}
+	}
+
+	visit(stepId);
+	return downstream;
+}
+
+/** Maximum progress events to retain per step (ring buffer). */
+const MAX_PROGRESS_EVENTS = 100;
+
+/** Append a progress event to a step's ring buffer. */
+function appendProgressEvent(
+	step: StepState,
+	event: unknown,
+): unknown[] {
+	const existing = step.progressEvents ?? [];
+	const updated = [...existing, event];
+	if (updated.length > MAX_PROGRESS_EVENTS) {
+		return updated.slice(updated.length - MAX_PROGRESS_EVENTS);
+	}
+	return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,23 +164,184 @@ function findStep(
 /**
  * Live implementation of the `Pipeline` actor.
  *
- * State shape: `{ status, steps, schedule }` (see `PipelineState` in api.ts).
- * The step execution loop runs as a forked fiber so that `Pause`, `Resume`,
- * and `SkipStep` can be dispatched concurrently while steps are executing.
+ * The run loop is forked as a daemon fiber so action handlers (GetStatus,
+ * Pause, etc.) remain responsive while steps execute. The loop checks
+ * `state.status` between steps to support pause/resume.
  */
 export const PipelineLive = Pipeline.toLayer(
 	({ rawRivetkitContext, state }) => {
+		// Mutable ref for abort flag — checked by steps via ctx.shouldAbort.
+		let paused = false;
+
+		// -------------------------------------------------------------------
+		// Core step execution helper — shared by runLoop, RunStep, RetryStep.
+		// -------------------------------------------------------------------
+
+		function executeStep(
+			stepId: string,
+			steps: readonly StepState[],
+		): Effect.Effect<StepOutput, Error, unknown> {
+			return Effect.gen(function* () {
+				const found = findStep(steps, stepId);
+				if (found === undefined) {
+					return yield* Effect.die(new Error(`Step not found: ${stepId}`));
+				}
+				const { step } = found;
+
+				const executor = getStepExecutor(step.definition.type);
+				if (executor === undefined) {
+					return yield* Effect.die(
+						new Error(`No executor for step type: ${step.definition.type}`),
+					);
+				}
+
+				// Build previousResults from completed steps.
+				const previousResults = new Map<string, unknown>();
+				for (const s of steps) {
+					if (s.status === "completed" && s.result !== undefined) {
+						// Unwrap StepOutput if needed (result may be StepOutput or raw)
+						const result = s.result as { data?: unknown } | unknown;
+						if (typeof result === "object" && result !== null && "data" in result && "inputHash" in result) {
+							previousResults.set(s.definition.id, (result as StepOutput).data);
+						} else {
+							previousResults.set(s.definition.id, result);
+						}
+					}
+				}
+
+				// Compute input hash for stale detection.
+				const inputHash = computeInputHash(stepId, steps);
+
+				const ctx: StepContext = {
+					projectId: rawRivetkitContext.key[0] ?? rawRivetkitContext.actorId,
+					pipelineId: rawRivetkitContext.actorId,
+					stepId: step.definition.id,
+					config: step.definition.config,
+					inputHash,
+					previousResults,
+					rawRivetkitContext,
+					emit: (event) => {
+						const stamped = { ...event, timestamp: Date.now() };
+						rawRivetkitContext.broadcast("stepProgress", {
+							stepId: step.definition.id,
+							...stamped,
+						});
+						// Also append to ring buffer in state.
+						// Also append to ring buffer in state (fire-and-forget).
+						Effect.runFork(State.updateAndGet(state, (s) => ({
+							...s,
+							steps: s.steps.map((st) =>
+								st.definition.id === stepId
+									? { ...st, progressEvents: appendProgressEvent(st, stamped) }
+									: st,
+							),
+						})));
+					},
+					shouldAbort: () => paused,
+				};
+
+				return yield* executor.execute(ctx);
+			});
+		}
+
+		/** Mark a step as running, broadcast, return updated step. */
+		function markRunning(stepId: string): Effect.Effect<StepState, never, unknown> {
+			return Effect.gen(function* () {
+				const updated = yield* State.updateAndGet(state, (s) => ({
+					...s,
+					steps: s.steps.map((st) =>
+						st.definition.id === stepId
+							? {
+								...st,
+								status: "running" as const,
+								startedAt: Date.now(),
+								attempts: st.attempts + 1,
+								error: undefined,
+							}
+							: st,
+					),
+				})).pipe(Effect.orDie);
+				const found = findStep(updated.steps, stepId);
+				return found?.step ?? updated.steps[0]!;
+			});
+		}
+
+		/** Mark a step as completed with result, broadcast, return updated step. */
+		function markCompleted(stepId: string, output: StepOutput): Effect.Effect<StepState, never, unknown> {
+			return Effect.gen(function* () {
+				const completed = yield* State.updateAndGet(state, (s) => ({
+					...s,
+					steps: s.steps.map((st) =>
+						st.definition.id === stepId
+							? {
+								...st,
+								status: "completed" as const,
+								completedAt: Date.now(),
+								result: output,
+								inputHash: output.inputHash,
+								summary: output.summary,
+							}
+							: st,
+					),
+				})).pipe(Effect.orDie);
+				const found = findStep(completed.steps, stepId);
+				rawRivetkitContext.broadcast("stepCompleted", found?.step);
+				return found?.step ?? completed.steps[0]!;
+			});
+		}
+
+		/** Mark a step as failed with error, broadcast, return updated step. */
+		function markFailed(stepId: string, errorMsg: string): Effect.Effect<StepState, never, unknown> {
+			return Effect.gen(function* () {
+				const failed = yield* State.updateAndGet(state, (s) => ({
+					...s,
+					steps: s.steps.map((st) =>
+						st.definition.id === stepId
+							? {
+								...st,
+								status: "failed" as const,
+								error: errorMsg,
+								completedAt: Date.now(),
+							}
+							: st,
+					),
+				})).pipe(Effect.orDie);
+				const found = findStep(failed.steps, stepId);
+				rawRivetkitContext.broadcast("stepFailed", found?.step);
+				return found?.step ?? failed.steps[0]!;
+			});
+		}
+
+		/** Cascade invalidation: mark all downstream steps as stale. */
+		function invalidateDownstream(stepId: string): Effect.Effect<readonly StepState[], never, unknown> {
+			return Effect.gen(function* () {
+				const updated = yield* State.updateAndGet(state, (s) => {
+					const downstream = findDownstream(stepId, s.steps);
+					return {
+						...s,
+						steps: s.steps.map((st) =>
+							downstream.includes(st.definition.id) && st.status === "completed"
+								? { ...st, status: "stale" as const }
+								: st,
+						),
+					};
+				}).pipe(Effect.orDie);
+				return updated.steps;
+			});
+		}
+
 		// -------------------------------------------------------------------
 		// Step execution loop — forked into the actor scope by Start/Resume.
+		// Uses topological sort based on executor inputs declarations.
 		// -------------------------------------------------------------------
 
 		const runLoop: Effect.Effect<string, never, unknown> = Effect.gen(function* () {
 			const initial = yield* State.get(state).pipe(Effect.orDie);
 			rawRivetkitContext.broadcast("pipelineStarted", initial);
 
-			// Capture step IDs at launch; the loop re-reads state each
-			// iteration so pause/skip/status changes are observed live.
-			const stepIds = initial.steps.map((s) => s.definition.id);
+			// Topologically sort steps by their executor inputs.
+			const sortedSteps = topoSort(initial.steps);
+			const stepIds = sortedSteps.map((s) => s.definition.id);
 
 			for (const stepId of stepIds) {
 				// Check for pause between steps.
@@ -100,139 +363,61 @@ export const PipelineLive = Pipeline.toLayer(
 					continue;
 				}
 
-				// Dependency check — every declared dep must be completed or skipped.
-				const depsMet = step.definition.dependsOn.every((depId) => {
-					const dep = findStep(current.steps, depId);
-					return (
-						dep !== undefined &&
-						(dep.step.status === "completed" ||
-							dep.step.status === "skipped")
-					);
-				});
-				if (!depsMet) {
-					const blocked = yield* State.updateAndGet(state, (s) => ({
-						...s,
-						steps: s.steps.map((st) =>
-							st.definition.id === stepId
-								? {
-									...st,
-									status: "failed" as const,
-									error: `Unmet dependencies: ${step.definition.dependsOn.join(", ")}`,
-									completedAt: Date.now(),
-								}
-								: st,
-						),
-					})).pipe(Effect.orDie);
-					rawRivetkitContext.broadcast("stepFailed", blocked.steps[idx]);
+				// Skip stale steps — they need explicit re-run by user.
+				if (step.status === "stale") {
 					continue;
+				}
+
+				// Dependency check — every declared dep must be completed or skipped.
+				const executor = getStepExecutor(step.definition.type);
+				if (executor !== undefined) {
+					const depsMet = executor.inputs.every((depId) => {
+						const dep = findStep(current.steps, depId);
+						return (
+							dep !== undefined &&
+							(dep.step.status === "completed" || dep.step.status === "skipped")
+						);
+					});
+					if (!depsMet) {
+						const blocked = yield* State.updateAndGet(state, (s) => ({
+							...s,
+							steps: s.steps.map((st) =>
+								st.definition.id === stepId
+									? {
+										...st,
+										status: "failed" as const,
+										error: `Unmet dependencies: ${executor.inputs.join(", ")}`,
+										completedAt: Date.now(),
+									}
+									: st,
+							),
+						})).pipe(Effect.orDie);
+						rawRivetkitContext.broadcast("stepFailed", blocked.steps[idx]);
+						continue;
+					}
 				}
 
 				// Mark step as running.
-				const runningState = yield* State.updateAndGet(state, (s) => ({
-					...s,
-					steps: s.steps.map((st) =>
-						st.definition.id === stepId
-							? {
-								...st,
-								status: "running" as const,
-								startedAt: Date.now(),
-								attempts: st.attempts + 1,
-							}
-							: st,
-					),
-				})).pipe(Effect.orDie);
-				rawRivetkitContext.broadcast("stepStarted", runningState.steps[idx]);
-
-				// Resolve executor.
-				const executor = getStepExecutor(step.definition.type);
-				if (executor === undefined) {
-					const noExec = yield* State.updateAndGet(state, (s) => ({
-						...s,
-						steps: s.steps.map((st) =>
-							st.definition.id === stepId
-								? {
-									...st,
-									status: "failed" as const,
-									error: `No executor registered for step type: ${step.definition.type}`,
-									completedAt: Date.now(),
-								}
-								: st,
-						),
-					})).pipe(Effect.orDie);
-					rawRivetkitContext.broadcast("stepFailed", noExec.steps[idx]);
-					continue;
-				}
-
-				// Build step context with results from completed steps.
-				const previousResults = new Map<string, unknown>();
-				for (const s of current.steps) {
-					if (s.status === "completed" && s.result !== undefined) {
-						previousResults.set(s.definition.id, s.result);
-					}
-				}
-				const ctx: StepContext = {
-					projectId: rawRivetkitContext.key[0] ?? rawRivetkitContext.actorId,
-					pipelineId: rawRivetkitContext.actorId,
-					stepId: step.definition.id,
-					config: step.definition.config,
-					previousResults,
-					rawRivetkitContext,
-					emit: (event) => {
-						// Broadcast progress event to connected clients.
-						// The event includes the stepId so the UI can route it.
-						rawRivetkitContext.broadcast("stepProgress", {
-							stepId: step.definition.id,
-							...event,
-							timestamp: Date.now(),
-						});
-					},
-				};
+				const runningState = yield* markRunning(stepId);
+				rawRivetkitContext.broadcast("stepStarted", runningState);
 
 				// Execute with retry + timeout.
+				const freshState = yield* State.get(state).pipe(Effect.orDie);
 				const execEffect = withRetryAndTimeout(
-					executor.execute(ctx),
+					executeStep(stepId, freshState.steps),
 					step.definition.retryPolicy,
 					step.definition.id,
 				);
 				const exit = yield* execEffect.pipe(Effect.exit);
 
 				if (Exit.isSuccess(exit)) {
-					const completed = yield* State.updateAndGet(state, (s) => ({
-						...s,
-						steps: s.steps.map((st) =>
-							st.definition.id === stepId
-								? {
-									...st,
-									status: "completed" as const,
-									completedAt: Date.now(),
-									result: exit.value,
-								}
-								: st,
-						),
-					})).pipe(Effect.orDie);
-					rawRivetkitContext.broadcast(
-						"stepCompleted",
-						completed.steps[idx],
-					);
+					yield* markCompleted(stepId, exit.value);
 				} else {
 					const squashed = Cause.squash(exit.cause);
 					const errorMsg = squashed instanceof Error
 						? squashed.message
 						: String(squashed);
-					const failed = yield* State.updateAndGet(state, (s) => ({
-						...s,
-						steps: s.steps.map((st) =>
-							st.definition.id === stepId
-								? {
-									...st,
-									status: "failed" as const,
-									error: errorMsg,
-									completedAt: Date.now(),
-								}
-								: st,
-						),
-					})).pipe(Effect.orDie);
-					rawRivetkitContext.broadcast("stepFailed", failed.steps[idx]);
+					yield* markFailed(stepId, errorMsg);
 
 					// A failed step halts the pipeline.
 					const halted = yield* State.updateAndGet(state, (s) => ({
@@ -299,17 +484,19 @@ export const PipelineLive = Pipeline.toLayer(
 
 			Start: () =>
 				Effect.gen(function* () {
+					paused = false;
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "running" as const,
 					})).pipe(Effect.orDie);
-					// Fork the execution loop so Pause/Skip can be called concurrently.
+					// Fork the execution loop as a daemon so actions stay responsive.
 					yield* runLoop.pipe(Effect.forkDetach);
 					return updated.status;
 				}),
 
 			Pause: () =>
 				Effect.gen(function* () {
+					paused = true;
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "paused" as const,
@@ -320,6 +507,7 @@ export const PipelineLive = Pipeline.toLayer(
 
 			Resume: () =>
 				Effect.gen(function* () {
+					paused = false;
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "running" as const,
@@ -340,114 +528,33 @@ export const PipelineLive = Pipeline.toLayer(
 							new Error(`Step not found: ${payload.stepId}`),
 						);
 					}
-					const { idx, step } = found;
+					const { step } = found;
 
 					// Mark as running.
-					const running = yield* State.updateAndGet(state, (s) => ({
-						...s,
-						steps: s.steps.map((st) =>
-							st.definition.id === payload.stepId
-								? {
-									...st,
-									status: "running" as const,
-									startedAt: Date.now(),
-									attempts: st.attempts + 1,
-									error: undefined,
-								}
-								: st,
-						),
-					})).pipe(Effect.orDie);
-					rawRivetkitContext.broadcast("stepStarted", running.steps[idx]);
+					const runningState = yield* markRunning(payload.stepId);
+					rawRivetkitContext.broadcast("stepStarted", runningState);
 
-					// Build context.
-					const previousResults = new Map<string, unknown>();
-					for (const s of current.steps) {
-						if (s.status === "completed" && s.result !== undefined) {
-							previousResults.set(s.definition.id, s.result);
-						}
-					}
-					const ctx: StepContext = {
-						projectId: rawRivetkitContext.key[0] ?? rawRivetkitContext.actorId,
-						pipelineId: rawRivetkitContext.actorId,
-						stepId: step.definition.id,
-						config: step.definition.config,
-						previousResults,
-						rawRivetkitContext,
-						emit: (event) => {
-							rawRivetkitContext.broadcast("stepProgress", {
-								stepId: step.definition.id,
-								...event,
-								timestamp: Date.now(),
-							});
-						},
-					};
-
-					const executor = getStepExecutor(step.definition.type);
-					if (executor === undefined) {
-						const failed = yield* State.updateAndGet(state, (s) => ({
-							...s,
-							steps: s.steps.map((st) =>
-								st.definition.id === payload.stepId
-									? {
-										...st,
-										status: "failed" as const,
-										error: `No executor registered for step type: ${step.definition.type}`,
-										completedAt: Date.now(),
-									}
-									: st,
-							),
-						})).pipe(Effect.orDie);
-						rawRivetkitContext.broadcast("stepFailed", failed.steps[idx]);
-						return failed.steps[idx]!;
-					}
-
+					// Execute the single step.
+					const freshState = yield* State.get(state).pipe(Effect.orDie);
 					const execEffect = withRetryAndTimeout(
-						executor.execute(ctx),
+						executeStep(payload.stepId, freshState.steps),
 						step.definition.retryPolicy,
-						step.definition.id,
+						payload.stepId,
 					);
 					const exit = yield* execEffect.pipe(Effect.exit);
 
 					if (Exit.isSuccess(exit)) {
-						const completed = yield* State.updateAndGet(state, (s) => ({
-							...s,
-							steps: s.steps.map((st) =>
-								st.definition.id === payload.stepId
-									? {
-										...st,
-										status: "completed" as const,
-										completedAt: Date.now(),
-										result: exit.value,
-									}
-									: st,
-							),
-						})).pipe(Effect.orDie);
-						rawRivetkitContext.broadcast(
-							"stepCompleted",
-							completed.steps[idx],
-						);
-						return completed.steps[idx]!;
+						const completed = yield* markCompleted(payload.stepId, exit.value);
+						// Cascade: mark downstream as stale.
+						yield* invalidateDownstream(payload.stepId);
+						return completed;
 					}
 
 					const squashed = Cause.squash(exit.cause);
 					const errorMsg = squashed instanceof Error
 						? squashed.message
 						: String(squashed);
-					const failed = yield* State.updateAndGet(state, (s) => ({
-						...s,
-						steps: s.steps.map((st) =>
-							st.definition.id === payload.stepId
-								? {
-									...st,
-									status: "failed" as const,
-									error: errorMsg,
-									completedAt: Date.now(),
-								}
-								: st,
-						),
-					})).pipe(Effect.orDie);
-					rawRivetkitContext.broadcast("stepFailed", failed.steps[idx]);
-					return failed.steps[idx]!;
+					return yield* markFailed(payload.stepId, errorMsg);
 				}),
 
 			SkipStep: ({ payload }) =>
@@ -474,6 +581,86 @@ export const PipelineLive = Pipeline.toLayer(
 						);
 					}
 					return found.step;
+				}),
+
+			RunStep: ({ payload }) =>
+				Effect.gen(function* () {
+					const current = yield* State.get(state).pipe(Effect.orDie);
+					const found = findStep(current.steps, payload.stepId);
+					if (found === undefined) {
+						return yield* Effect.die(
+							new Error(`Step not found: ${payload.stepId}`),
+						);
+					}
+					const { step } = found;
+
+					// Mark as running.
+					const runningState = yield* markRunning(payload.stepId);
+					rawRivetkitContext.broadcast("stepStarted", runningState);
+
+					// Execute the single step using cached upstream outputs.
+					const freshState = yield* State.get(state).pipe(Effect.orDie);
+					const execEffect = withRetryAndTimeout(
+						executeStep(payload.stepId, freshState.steps),
+						step.definition.retryPolicy,
+						payload.stepId,
+					);
+					const exit = yield* execEffect.pipe(Effect.exit);
+
+					if (Exit.isSuccess(exit)) {
+						const completed = yield* markCompleted(payload.stepId, exit.value);
+						// Cascade: mark downstream as stale.
+						yield* invalidateDownstream(payload.stepId);
+						return completed;
+					}
+
+					const squashed = Cause.squash(exit.cause);
+					const errorMsg = squashed instanceof Error
+						? squashed.message
+						: String(squashed);
+					return yield* markFailed(payload.stepId, errorMsg);
+				}),
+
+			GetStepResult: ({ payload }) =>
+				Effect.gen(function* () {
+					const current = yield* State.get(state).pipe(Effect.orDie);
+					const found = findStep(current.steps, payload.stepId);
+					if (found === undefined) {
+						return yield* Effect.die(
+							new Error(`Step not found: ${payload.stepId}`),
+						);
+					}
+					return found.step.result;
+				}),
+
+			GetStepLogs: ({ payload }) =>
+				Effect.gen(function* () {
+					const current = yield* State.get(state).pipe(Effect.orDie);
+					const found = findStep(current.steps, payload.stepId);
+					if (found === undefined) {
+						return yield* Effect.die(
+							new Error(`Step not found: ${payload.stepId}`),
+						);
+					}
+					return found.step.progressEvents ?? [];
+				}),
+
+			InvalidateStep: ({ payload }) =>
+				Effect.gen(function* () {
+					// Mark the step itself as stale, then cascade to downstream.
+					const updated = yield* State.updateAndGet(state, (s) => {
+						const downstream = findDownstream(payload.stepId, s.steps);
+						const allIds = [payload.stepId, ...downstream];
+						return {
+							...s,
+							steps: s.steps.map((st) =>
+								allIds.includes(st.definition.id) && st.status === "completed"
+									? { ...st, status: "stale" as const }
+									: st,
+							),
+						};
+					}).pipe(Effect.orDie);
+					return updated.steps;
 				}),
 
 			// -- Cron scheduling -------------------------------------------------

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanPagesResult, isRenderPanelsResult } from "./helpers.ts";
 import type { PanelSpec } from "@audiocomic/domain";
 
@@ -28,6 +28,8 @@ function isPanelSpec(v: unknown): v is PanelSpec {
 
 export const PanelQaStep: StepExecutor = {
 	type: "panel_qa",
+	inputs: ["render_panels", "plan_pages"],
+	outputs: ["panel_qa"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -56,10 +58,14 @@ export const PanelQaStep: StepExecutor = {
 			);
 
 			return {
-				step: "panel_qa" as const,
-				status: "completed" as const,
-				passedCount,
-			} satisfies PanelQaResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "panel_qa" as const,
+					status: "completed" as const,
+					passedCount,
+				} satisfies PanelQaResult,
+				summary: `${passedCount} panels passed QA`,
+			} satisfies StepOutput;
 		}),
 };
 

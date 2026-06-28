@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isComposePagesResult, isPlanPagesResult } from "./helpers.ts";
 import { uuid, nowIso, letteringKey } from "@audiocomic/shared";
 import type { PageSpec, PanelSpec, LetteringSpec, LetteringBox } from "@audiocomic/domain";
@@ -15,6 +15,8 @@ import type { PageSpec, PanelSpec, LetteringSpec, LetteringBox } from "@audiocom
  */
 export const LetteringStep: StepExecutor = {
 	type: "lettering",
+	inputs: ["compose_pages", "plan_pages"],
+	outputs: ["lettering"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -89,10 +91,14 @@ export const LetteringStep: StepExecutor = {
 			);
 
 			return {
-				step: "lettering" as const,
-				status: "completed" as const,
-				letteringKeys,
-			};
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "lettering" as const,
+					status: "completed" as const,
+					letteringKeys,
+				},
+				summary: `${letteringKeys.size} pages lettered`,
+			} satisfies StepOutput;
 		}),
 };
 

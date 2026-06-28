@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanPagesResult, isPlanStoryResult } from "./helpers.ts";
 import { validatePageLayout, validatePanelSectionRefs } from "@audiocomic/domain";
 import type { PageSpec, PanelSpec } from "@audiocomic/domain";
@@ -78,6 +78,8 @@ function isSectionWithId(v: unknown): v is { id: string } {
 
 export const ValidateLayoutStep: StepExecutor = {
 	type: "validate_layout",
+	inputs: ["plan_pages", "plan_story"] as const,
+	outputs: ["validate_layout"] as const,
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -135,11 +137,15 @@ export const ValidateLayoutStep: StepExecutor = {
 			);
 
 			return {
-				step: "validate_layout" as const,
-				status: "completed" as const,
-				validPages,
-				invalidPages,
-			};
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "validate_layout" as const,
+					status: "completed" as const,
+					validPages,
+					invalidPages,
+				},
+				summary: `${validPages} valid, ${invalidPages} invalid`,
+			} satisfies StepOutput;
 		}),
 };
 

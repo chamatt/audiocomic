@@ -99,14 +99,17 @@ Usage: bun packages/actors/cli.ts <command> [options]
 Commands:
   status <key>                          Show pipeline status + all steps
   run <key> [--from <step>] [--to <step>]  Run pipeline (or a slice)
+  run-step <key> <stepId>               Run a single step in isolation
   add <key> <type> [--id <id>] [--config <json>]  Add a single step
   add-all <key> [--input <path>]        Add all 15 steps with defaults
-  add-range <key> --from <step> [--to <step>] [--input <path>]  Add a range of steps
+  add-range <key> --from <step> [--to <step>] [--input <path>]  Add a range
   pause <key>                           Pause running pipeline
   resume <key>                          Resume paused pipeline
   retry <key> <stepId>                  Retry a failed step
   skip <key> <stepId>                   Skip a failed step
   result <key> <stepId>                 Show a step's result (JSON)
+  logs <key> <stepId>                   Show a step's progress events
+  invalidate <key> <stepId>             Mark step + downstream as stale
   watch <key> [--timeout <ms>]          Poll status until terminal
 
 Examples:
@@ -116,13 +119,14 @@ Examples:
   cli.ts run myproj
   cli.ts result myproj transcribe
 
-  # Add a range: plan_story through render_panels
-  cli.ts add-range myproj --from plan_story --to render_panels
-  cli.ts run myproj
-
-  # Full pipeline with audio input
+  # Run a single step in isolation (uses cached upstream outputs)
   cli.ts add-all myproj --input /path/to/audio.m4b
-  cli.ts run myproj
+  cli.ts run myproj  # run full pipeline first
+  cli.ts run-step myproj plan_story  # re-run just plan_story
+
+  # Invalidate a step and its downstream dependents
+  cli.ts invalidate myproj plan_story
+  cli.ts logs myproj plan_story  # see progress events
 `);
 }
 
@@ -186,6 +190,38 @@ async function skipStep(key: string, stepId: string): Promise<StepState> {
   }));
 }
 
+async function runStep(key: string, stepId: string): Promise<StepState> {
+  return run(Effect.gen(function* () {
+    const accessor = yield* Pipeline.client;
+    const handle = accessor.getOrCreate(key);
+    return yield* handle.RunStep({ stepId });
+  }));
+}
+
+async function getStepResult(key: string, stepId: string): Promise<unknown> {
+  return run(Effect.gen(function* () {
+    const accessor = yield* Pipeline.client;
+    const handle = accessor.getOrCreate(key);
+    return yield* handle.GetStepResult({ stepId });
+  }));
+}
+
+async function getStepLogs(key: string, stepId: string): Promise<unknown[]> {
+  return run(Effect.gen(function* () {
+    const accessor = yield* Pipeline.client;
+    const handle = accessor.getOrCreate(key);
+    return yield* handle.GetStepLogs({ stepId });
+  }));
+}
+
+async function invalidateStep(key: string, stepId: string): Promise<StepState[]> {
+  return run(Effect.gen(function* () {
+    const accessor = yield* Pipeline.client;
+    const handle = accessor.getOrCreate(key);
+    return yield* handle.InvalidateStep({ stepId });
+  }));
+}
+
 // ─── Display ────────────────────────────────────────────────────────────────
 
 const STATUS_ICONS: Record<string, string> = {
@@ -195,6 +231,7 @@ const STATUS_ICONS: Record<string, string> = {
   completed: "✓",
   failed: "✗",
   skipped: "→",
+  stale: "⚠",
 };
 
 function printStatus(state: PipelineState): void {
@@ -202,7 +239,9 @@ function printStatus(state: PipelineState): void {
   console.log(`  Steps:    ${state.steps.length}`);
   const completed = state.steps.filter((s) => s.status === "completed").length;
   const failed = state.steps.filter((s) => s.status === "failed").length;
-  console.log(`  Progress: ${completed}/${state.steps.length} completed, ${failed} failed\n`);
+  const stale = state.steps.filter((s) => s.status === "stale").length;
+  const staleStr = stale > 0 ? `, ${stale} stale` : "";
+  console.log(`  Progress: ${completed}/${state.steps.length} completed, ${failed} failed${staleStr}\n`);
   for (const step of state.steps) {
     const icon = STATUS_ICONS[step.status] ?? "?";
     const time = step.completedAt !== undefined
@@ -210,8 +249,9 @@ function printStatus(state: PipelineState): void {
       : step.startedAt !== undefined
         ? "running..."
         : "";
+    const summary = step.summary !== undefined ? `  ${step.summary}` : "";
     const err = step.error !== undefined ? `  ⚠ ${step.error}` : "";
-    console.log(`  ${icon} ${step.definition.id.padEnd(16)} ${step.status.padEnd(10)} ${time.padEnd(12)}${err}`);
+    console.log(`  ${icon} ${step.definition.id.padEnd(16)} ${step.status.padEnd(10)} ${time.padEnd(12)}${summary}${err}`);
   }
   console.log();
 }
@@ -226,8 +266,18 @@ function printResult(step: StepState): void {
     console.log("  No result.\n");
     return;
   }
-  console.log("  Result:");
-  console.log(JSON.stringify(step.result, null, 2));
+  // Unwrap StepOutput if present
+  const result = step.result as { data?: unknown; summary?: string; inputHash?: string } | unknown;
+  if (typeof result === "object" && result !== null && "data" in result && "inputHash" in result) {
+    const output = result as { data: unknown; summary: string; inputHash: string };
+    console.log(`  Summary: ${output.summary}`);
+    console.log(`  InputHash: ${output.inputHash}`);
+    console.log("  Data:");
+    console.log(JSON.stringify(output.data, null, 2));
+  } else {
+    console.log("  Result:");
+    console.log(JSON.stringify(result, null, 2));
+  }
   console.log();
 }
 
@@ -398,6 +448,37 @@ async function cmdResult(key: string, stepId: string): Promise<void> {
   printResult(step);
 }
 
+async function cmdRunStep(key: string, stepId: string): Promise<void> {
+  console.log(`▶ Running step "${stepId}" in pipeline "${key}"...`);
+  const step = await runStep(key, stepId);
+  console.log(`✓ Step "${stepId}": ${step.status}`);
+  if (step.summary !== undefined) console.log(`  ${step.summary}`);
+  if (step.error !== undefined) console.log(`  ⚠ ${step.error}`);
+}
+
+async function cmdLogs(key: string, stepId: string): Promise<void> {
+  const logs = await getStepLogs(key, stepId);
+  console.log(`\n  Logs for step "${stepId}" (${logs.length} events):\n`);
+  for (const event of logs) {
+    const e = event as { type?: string; label?: string; detail?: string; elapsed?: number; chunkIndex?: number; timestamp?: number };
+    const time = e.timestamp !== undefined ? new Date(e.timestamp).toISOString().slice(11, 19) : "?";
+    const elapsed = e.elapsed !== undefined ? ` ${e.elapsed}s` : "";
+    const chunk = e.chunkIndex !== undefined ? ` #${e.chunkIndex}` : "";
+    const detail = e.detail !== undefined ? ` ${e.detail}` : "";
+    console.log(`  [${time}] ${e.type ?? "?"} ${e.label ?? ""}${elapsed}${chunk}${detail}`);
+  }
+  console.log();
+}
+
+async function cmdInvalidate(key: string, stepId: string): Promise<void> {
+  const steps = await invalidateStep(key, stepId);
+  const stale = steps.filter((s) => s.status === "stale");
+  console.log(`⚠ Invalidated step "${stepId}" + ${stale.length} downstream step(s):`);
+  for (const s of stale) {
+    console.log(`  ⚠ ${s.definition.id}`);
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -457,6 +538,21 @@ async function main(): Promise<void> {
       case "result": {
         if (positional.length < 2) { console.error("Usage: result <key> <stepId>"); process.exit(1); }
         await cmdResult(positional[0], positional[1]);
+        break;
+      }
+      case "run-step": {
+        if (positional.length < 2) { console.error("Usage: run-step <key> <stepId>"); process.exit(1); }
+        await cmdRunStep(positional[0], positional[1]);
+        break;
+      }
+      case "logs": {
+        if (positional.length < 2) { console.error("Usage: logs <key> <stepId>"); process.exit(1); }
+        await cmdLogs(positional[0], positional[1]);
+        break;
+      }
+      case "invalidate": {
+        if (positional.length < 2) { console.error("Usage: invalidate <key> <stepId>"); process.exit(1); }
+        await cmdInvalidate(positional[0], positional[1]);
         break;
       }
       case "watch": {

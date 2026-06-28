@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanPagesResult, isRenderPanelsResult } from "./helpers.ts";
 import { uuid, nowIso, pageImageKey } from "@audiocomic/shared";
 import type { PageSpec, PanelSpec, PageComposite } from "@audiocomic/domain";
@@ -40,6 +40,8 @@ function isPageSpec(v: unknown): v is PageSpec {
 
 export const ComposePagesStep: StepExecutor = {
 	type: "compose_pages",
+	inputs: ["plan_pages", "render_panels"],
+	outputs: ["compose_pages"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -130,10 +132,14 @@ export const ComposePagesStep: StepExecutor = {
 			);
 
 			return {
-				step: "compose_pages" as const,
-				status: "completed" as const,
-				pageImageKeys,
-			} satisfies ComposePagesResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "compose_pages" as const,
+					status: "completed" as const,
+					pageImageKeys,
+				} satisfies ComposePagesResult,
+				summary: `${pageImageKeys.size} pages composed`,
+			} satisfies StepOutput;
 		}),
 };
 

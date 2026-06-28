@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isSegmentResult } from "./helpers.ts";
 import type { StorySection, CharacterProfile, WorldBible } from "@audiocomic/domain";
 
@@ -13,7 +13,9 @@ import type { StorySection, CharacterProfile, WorldBible } from "@audiocomic/dom
  */
 export const PlanStoryStep: StepExecutor = {
 	type: "plan_story",
-	execute: (ctx: StepContext) =>
+	inputs: ["segment"],
+	outputs: ["plan_story"],
+	execute: (ctx: StepContext): Effect.Effect<StepOutput, Error, unknown> =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
 			const segmentResult = getPrevResult(ctx, "segment", isSegmentResult);
@@ -55,11 +57,15 @@ export const PlanStoryStep: StepExecutor = {
 			);
 
 			return {
-				step: "plan_story" as const,
-				status: "completed" as const,
-				sections,
-				characters,
-				worldBible,
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "plan_story" as const,
+					status: "completed" as const,
+					sections,
+					characters,
+					worldBible,
+				},
+				summary: `${sections.length} sections, ${characters.length} characters`,
 			};
 		}),
 };

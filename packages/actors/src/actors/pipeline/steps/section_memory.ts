@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanStoryResult } from "./helpers.ts";
 
 // ─── section_memory step ───
@@ -10,6 +10,8 @@ import { getPrevResult, isPlanStoryResult } from "./helpers.ts";
 
 export const SectionMemoryStep: StepExecutor = {
 	type: "section_memory",
+	inputs: ["plan_story"] as const,
+	outputs: ["section_memory"] as const,
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			// Verify the plan_story result is present and well-shaped; extract sections.
@@ -23,10 +25,14 @@ export const SectionMemoryStep: StepExecutor = {
 			);
 
 			return {
-				step: "section_memory" as const,
-				status: "completed" as const,
-				sectionCount,
-			};
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "section_memory" as const,
+					status: "completed" as const,
+					sectionCount,
+				},
+				summary: `${sectionCount} sections processed`,
+			} satisfies StepOutput;
 		}),
 };
 

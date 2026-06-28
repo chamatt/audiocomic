@@ -4,7 +4,7 @@ import { Schema } from "effect";
 // These map to the existing @audiocomic/domain Zod schemas
 
 export const StepStatus = Schema.Literals([
-	"pending", "running", "paused", "completed", "failed", "skipped",
+	"pending", "running", "paused", "completed", "failed", "skipped", "stale",
 ]);
 export type StepStatus = Schema.Schema.Type<typeof StepStatus>;
 
@@ -34,6 +34,12 @@ export const StepState = Schema.Struct({
 	error: Schema.optional(Schema.String),
 	attempts: Schema.Number,
 	result: Schema.optional(Schema.Unknown),
+	/** Hash of upstream inputs when this step last ran (for stale detection). */
+	inputHash: Schema.optional(Schema.String),
+	/** Human-readable summary of the step's output (for UI display). */
+	summary: Schema.optional(Schema.String),
+	/** Recent progress events (ring buffer, last 100). */
+	progressEvents: Schema.optional(Schema.Array(Schema.Unknown)),
 });
 export type StepState = Schema.Schema.Type<typeof StepState>;
 

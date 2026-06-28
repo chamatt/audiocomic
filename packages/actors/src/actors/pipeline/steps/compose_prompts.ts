@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanPagesResult, isPlanStoryResult } from "./helpers.ts";
 import type { PanelSpec, StorySection, CharacterProfile } from "@audiocomic/domain";
 
@@ -54,6 +54,8 @@ export interface ComposePromptsResult {
 
 export const ComposePromptsStep: StepExecutor = {
 	type: "compose_prompts",
+	inputs: ["plan_pages", "plan_story"] as const,
+	outputs: ["compose_prompts"] as const,
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -111,10 +113,14 @@ export const ComposePromptsStep: StepExecutor = {
 			);
 
 			return {
-				step: "compose_prompts" as const,
-				status: "completed" as const,
-				panelPrompts,
-			} satisfies ComposePromptsResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "compose_prompts" as const,
+					status: "completed" as const,
+					panelPrompts,
+				} satisfies ComposePromptsResult,
+				summary: `${panelPrompts.size} panel prompts`,
+			} satisfies StepOutput;
 		}),
 };
 

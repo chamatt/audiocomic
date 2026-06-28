@@ -79,25 +79,50 @@ export interface DiarizationAdapter {
 // Story planner
 // ============================================================================
 
+/** Event types emitted by AI steps during execution. */
+export type ProgressEventType =
+	| "progress"
+	| "llm_chunk"
+	| "llm_done"
+	| "llm_error"
+	| "info"
+	| "warning"
+	| "substep_start"
+	| "substep_done"
+	| "substep_error"
+	| "output";
+
+/** Structured progress event emitted during AI step execution. */
+export interface ProgressEvent {
+	type: ProgressEventType;
+	label: string;
+	detail?: string;
+	current?: number;
+	total?: number;
+	chunkIndex?: number;
+	elapsed?: number;
+	partial?: unknown;
+}
+
 export interface StoryPlanInput {
-  projectId: string;
-  /** Full source text (transcript or uploaded text) */
-  text: string;
-  /** Optional genre / art-style hints to bias the plan */
-  genre?: string[];
-  artStyle?: string;
-  language?: string;
-  /** Override the LLM model id */
-  model?: string;
-  /** Target approximate panels per beat (default 1) */
-  panelsPerBeat?: number;
-  signal?: AbortSignal;
-  /**
-   * Progress emitter for streaming events to the UI.
-   * If provided, the planner emits structured events for each LLM pass
-   * and streaming chunk, enabling n8n-style live progress display.
-   */
-  emit?: (event: { type: string; label: string; detail?: string; current?: number; total?: number; chunkIndex?: number; elapsed?: number; partial?: unknown }) => void;
+	projectId: string;
+	/** Full source text (transcript or uploaded text) */
+	text: string;
+	/** Optional genre / art-style hints to bias the plan */
+	genre?: string[];
+	artStyle?: string;
+	language?: string;
+	/** Override the LLM model id */
+	model?: string;
+	/** Target approximate panels per beat (default 1) */
+	panelsPerBeat?: number;
+	signal?: AbortSignal;
+	/**
+	 * Progress emitter for streaming events to the UI.
+	 * If provided, the planner emits structured events for each LLM pass
+	 * and streaming chunk, enabling n8n-style live progress display.
+	 */
+	emit?: (event: ProgressEvent) => void;
 }
 
 export interface PanelHint {

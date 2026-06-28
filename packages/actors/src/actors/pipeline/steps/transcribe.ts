@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isNormalizeResult } from "./helpers.ts";
 import { uuid } from "@audiocomic/shared";
 import type { TranscriptChunk } from "@audiocomic/domain";
@@ -14,14 +14,16 @@ import type { TranscriptChunk } from "@audiocomic/domain";
  */
 export const TranscribeStep: StepExecutor = {
 	type: "transcribe",
-	execute: (ctx: StepContext) =>
+	inputs: ["normalize"],
+	outputs: ["transcribe"],
+	execute: (ctx: StepContext): Effect.Effect<StepOutput, Error, unknown> =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
 			const normalizeResult = getPrevResult(ctx, "normalize", isNormalizeResult);
 
 			if (!normalizeResult.audioPath) {
 				yield* Effect.logInfo("transcribe: text modality, skipping audio transcription");
-				return { step: "transcribe" as const, status: "completed" as const, chunks: [], durationSec: 0 };
+				return { inputHash: ctx.inputHash ?? "", data: { step: "transcribe" as const, status: "completed" as const, chunks: [], durationSec: 0 }, summary: "Transcribed: 0 chunks (text modality)" };
 			}
 
 			const audioPath = normalizeResult.audioPath;
@@ -53,10 +55,14 @@ export const TranscribeStep: StepExecutor = {
 
 			yield* Effect.logInfo(`transcribe: ${chunks.length} chunks, duration=${result.durationSec ?? 0}s`);
 			return {
-				step: "transcribe" as const,
-				status: "completed" as const,
-				chunks,
-				durationSec: result.durationSec ?? 0,
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "transcribe" as const,
+					status: "completed" as const,
+					chunks,
+					durationSec: result.durationSec ?? 0,
+				},
+				summary: `Transcribed: ${chunks.length} chunks`,
 			};
 		}),
 };

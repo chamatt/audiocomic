@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanStoryResult } from "./helpers.ts";
 
 // ─── build_bibles step ───
@@ -16,7 +16,9 @@ export interface BuildBiblesResult {
 
 export const BuildBiblesStep: StepExecutor = {
 	type: "build_bibles",
-	execute: (ctx: StepContext) =>
+	inputs: ["plan_story"],
+	outputs: ["build_bibles"],
+	execute: (ctx: StepContext): Effect.Effect<StepOutput, Error, unknown> =>
 		Effect.gen(function* () {
 			// Verify the plan_story result carries the bibles we expect.
 			const plan = getPrevResult(ctx, "plan_story", isPlanStoryResult);
@@ -29,11 +31,15 @@ export const BuildBiblesStep: StepExecutor = {
 			);
 
 			return {
-				step: "build_bibles" as const,
-				status: "completed" as const,
-				sectionCount,
-				characterCount,
-			} satisfies BuildBiblesResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "build_bibles" as const,
+					status: "completed" as const,
+					sectionCount,
+					characterCount,
+				} satisfies BuildBiblesResult,
+				summary: `${sectionCount} sections, ${characterCount} characters`,
+			};
 		}),
 };
 

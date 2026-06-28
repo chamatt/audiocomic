@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isNormalizeResult, isTranscribeResult } from "./helpers.ts";
 import type { TranscriptChunk } from "@audiocomic/domain";
 
@@ -20,7 +20,9 @@ function isTranscriptChunk(v: unknown): v is TranscriptChunk {
 
 export const SegmentStep: StepExecutor = {
 	type: "segment",
-	execute: (ctx: StepContext) =>
+	inputs: ["transcribe", "normalize"],
+	outputs: ["segment"],
+	execute: (ctx: StepContext): Effect.Effect<StepOutput, Error, unknown> =>
 		Effect.gen(function* () {
 			const transcribeResult = getPrevResult(ctx, "transcribe", isTranscribeResult);
 			const chunks = transcribeResult.chunks;
@@ -57,10 +59,14 @@ export const SegmentStep: StepExecutor = {
 			);
 
 			return {
-				step: "segment" as const,
-				status: "completed" as const,
-				fullText,
-				chunkCount,
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "segment" as const,
+					status: "completed" as const,
+					fullText,
+					chunkCount,
+				},
+				summary: `Segmented: ${chunkCount} chunks, ${fullText.length} chars`,
 			};
 		}),
 };

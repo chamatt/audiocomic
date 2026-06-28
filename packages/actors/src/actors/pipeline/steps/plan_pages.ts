@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isPlanStoryResult } from "./helpers.ts";
 import { uuid } from "@audiocomic/shared";
 import type { StorySection, PageSpec, PanelSpec } from "@audiocomic/domain";
@@ -49,6 +49,8 @@ function sampleEvenly<T>(items: T[], max: number): T[] {
 
 export const PlanPagesStep: StepExecutor = {
 	type: "plan_pages",
+	inputs: ["plan_story"] as const,
+	outputs: ["plan_pages"] as const,
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -146,11 +148,15 @@ export const PlanPagesStep: StepExecutor = {
 			}).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
 
 			return {
-				step: "plan_pages" as const,
-				status: "completed" as const,
-				pages,
-				panels,
-			} satisfies PlanPagesResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "plan_pages" as const,
+					status: "completed" as const,
+					pages,
+					panels,
+				} satisfies PlanPagesResult,
+				summary: `${pages.length} pages, ${panels.length} panels`,
+			} satisfies StepOutput;
 		}),
 };
 

@@ -45,6 +45,22 @@ const SkipStepPayload = Schema.Struct({
 	stepId: Schema.String,
 });
 
+const RunStepPayload = Schema.Struct({
+	stepId: Schema.String,
+});
+
+const GetStepResultPayload = Schema.Struct({
+	stepId: Schema.String,
+});
+
+const GetStepLogsPayload = Schema.Struct({
+	stepId: Schema.String,
+});
+
+const InvalidateStepPayload = Schema.Struct({
+	stepId: Schema.String,
+});
+
 const SchedulePayload = Schema.Struct({
 	intervalMs: Schema.Number,
 });
@@ -88,6 +104,22 @@ export const Pipeline = Actor.make("pipeline", {
 		Action.make("SkipStep", {
 			payload: SkipStepPayload,
 			success: StepState,
+		}),
+		Action.make("RunStep", {
+			payload: RunStepPayload,
+			success: StepState,
+		}),
+		Action.make("GetStepResult", {
+			payload: GetStepResultPayload,
+			success: Schema.Unknown,
+		}),
+		Action.make("GetStepLogs", {
+			payload: GetStepLogsPayload,
+			success: Schema.Array(Schema.Unknown),
+		}),
+		Action.make("InvalidateStep", {
+			payload: InvalidateStepPayload,
+			success: Schema.Array(StepState),
 		}),
 		Action.make("Schedule", {
 			payload: SchedulePayload,

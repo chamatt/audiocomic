@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import {
 	getPrevResult,
 	isComposePagesResult,
@@ -53,6 +53,8 @@ const isPageLike = (v: unknown): v is PageSpec =>
 
 export const ExportMotionStep: StepExecutor = {
 	type: "export_motion",
+	inputs: ["compose_pages", "plan_pages", "transcribe", "normalize"],
+	outputs: ["export_motion"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -132,12 +134,16 @@ export const ExportMotionStep: StepExecutor = {
 					"export_motion: no panels to animate — skipping motion export",
 				);
 				return {
-					step: "export_motion" as const,
-					status: "completed" as const,
-					exportId: "",
-					sizeBytes: 0,
-					durationSec: 0,
-				} satisfies ExportMotionResult;
+					inputHash: ctx.inputHash ?? "",
+					data: {
+						step: "export_motion" as const,
+						status: "completed" as const,
+						exportId: "",
+						sizeBytes: 0,
+						durationSec: 0,
+					} satisfies ExportMotionResult,
+					summary: `Exported 0 bytes, 0s`,
+				} satisfies StepOutput;
 			}
 
 			const timeline: NarrationTimeline = {
@@ -211,12 +217,16 @@ export const ExportMotionStep: StepExecutor = {
 			);
 
 			return {
-				step: "export_motion" as const,
-				status: "completed" as const,
-				exportId: motionExportId,
-				sizeBytes: motionResult.sizeBytes,
-				durationSec: motionResult.durationSec,
-			} satisfies ExportMotionResult;
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "export_motion" as const,
+					status: "completed" as const,
+					exportId: motionExportId,
+					sizeBytes: motionResult.sizeBytes,
+					durationSec: motionResult.durationSec,
+				} satisfies ExportMotionResult,
+				summary: `Exported ${motionResult.sizeBytes} bytes, ${motionResult.durationSec}s`,
+			} satisfies StepOutput;
 		}),
 };
 

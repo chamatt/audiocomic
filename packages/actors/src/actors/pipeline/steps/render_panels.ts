@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
-import { registerStep, type StepExecutor, type StepContext } from "./types.ts";
+import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { getPrevResult, isComposePromptsResult, isPlanPagesResult, isPlanStoryResult } from "./helpers.ts";
 import { uuid, nowIso } from "@audiocomic/shared";
 import type { PanelRenderRequest, PanelRenderResult, PanelSpec, CharacterProfile } from "@audiocomic/domain";
@@ -12,6 +12,8 @@ function hasImageData(v: PanelRenderResult): v is PanelRenderResult & { imageDat
 
 export const RenderPanelsStep: StepExecutor = {
 	type: "render_panels",
+	inputs: ["compose_prompts", "plan_pages", "plan_story"] as const,
+	outputs: ["render_panels"] as const,
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
 			const bridge = yield* PipelineBridge;
@@ -101,12 +103,16 @@ export const RenderPanelsStep: StepExecutor = {
 
 			yield* Effect.logInfo(`render_panels: ${renderedCount} rendered, ${skippedCount} skipped`);
 			return {
-				step: "render_panels" as const,
-				status: "completed" as const,
-				renderedCount,
-				skippedCount,
-				panelImageKeys,
-			};
+				inputHash: ctx.inputHash ?? "",
+				data: {
+					step: "render_panels" as const,
+					status: "completed" as const,
+					renderedCount,
+					skippedCount,
+					panelImageKeys,
+				},
+				summary: `${renderedCount} panels rendered`,
+			} satisfies StepOutput;
 		}),
 };
 
