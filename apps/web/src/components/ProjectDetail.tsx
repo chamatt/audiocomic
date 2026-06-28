@@ -366,7 +366,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
       {detail.worldBible && (
         <div className="card">
           <h2 className="mb-2 font-bold" style={{ fontSize: 18 }}>World Bible</h2>
-          <p className="text-sm text-dim">{detail.worldBible.lore?.slice(0, 300) ?? 'No lore'}</p>
+          <p className="text-sm text-dim">{detail.worldBible.setting?.slice(0, 300) ?? 'No setting'}</p>
         </div>
       )}
 
@@ -413,7 +413,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                   <div key={panel.id} className="page-card">
                     <div className="page-card-body">
                       <h4 className="font-bold text-sm mb-2">Panel {panel.index + 1}</h4>
-                      <p className="text-sm text-dim mb-2">{panel.dialogue?.slice(0, 80) ?? ''}</p>
+                      <p className="text-sm text-dim mb-2">{panel.dialogueLines?.map(d => d.text).join(' ')?.slice(0, 80) ?? ''}</p>
                       <button className="text-sm" onClick={() => onRegeneratePanel(panel.id)}>
                         Regenerate
                       </button>

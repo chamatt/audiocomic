@@ -15,7 +15,8 @@
 import { Client } from "@rivetkit/effect";
 import { Effect } from "effect";
 import { Pipeline } from "./src/actors/pipeline/api.ts";
-import type { PipelineState, StepState, StepDefinition } from "./src/lib/schemas.ts";
+import type { PipelineState } from "./src/actors/pipeline/api.ts";
+import type { StepState, StepDefinition } from "./src/lib/schemas.ts";
 
 const endpoint = process.env.RIVET_ENDPOINT ?? "http://127.0.0.1:6420";
 const ClientLayer = Client.layer({ endpoint });
@@ -46,14 +47,14 @@ function assert(cond: boolean, msg: string): void {
 }
 
 async function run<A, E, R>(program: Effect.Effect<A, E, R>): Promise<A> {
-  return Effect.runPromise(program.pipe(Effect.provide(ClientLayer)));
+  return Effect.runPromise(program.pipe(Effect.provide(ClientLayer)) as Effect.Effect<A, E, never>);
 }
 
 async function getState(key: string): Promise<PipelineState> {
   return run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    return yield* handle.GetStatus();
+    return yield* handle.GetStatus({});
   }));
 }
 
@@ -69,7 +70,7 @@ async function startPipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Start();
+    yield* handle.Start({});
   }));
 }
 
@@ -77,7 +78,7 @@ async function pausePipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Pause();
+    yield* handle.Pause({});
   }));
 }
 
@@ -85,7 +86,7 @@ async function resumePipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Resume();
+    yield* handle.Resume({});
   }));
 }
 
@@ -128,7 +129,7 @@ async function main(): Promise<void> {
   log("  Verifying all steps are pending...");
   const pendingState = await getState(PIPELINE_KEY);
   assert(pendingState.steps.length === 15, "15 steps registered");
-  assert(pendingState.steps.every((s) => s.status === "pending"), "all steps pending");
+  assert(pendingState.steps.every((s: StepState) => s.status === "pending"), "all steps pending");
   assert(pendingState.status === "idle", "pipeline status is idle");
 
   log("  Starting pipeline...");
@@ -139,9 +140,9 @@ async function main(): Promise<void> {
   let state: PipelineState = pendingState;
   while (Date.now() - startTime < 30_000) {
     state = await getState(PIPELINE_KEY);
-    const completed = state.steps.filter((s) => s.status === "completed").length;
-    const failed = state.steps.filter((s) => s.status === "failed").length;
-    const running = state.steps.find((s) => s.status === "running");
+    const completed = state.steps.filter((s: StepState) => s.status === "completed").length;
+    const failed = state.steps.filter((s: StepState) => s.status === "failed").length;
+    const running = state.steps.find((s: StepState) => s.status === "running");
     process.stdout.write(`\r  status=${state.status} completed=${completed}/15 failed=${failed} running=${running?.definition.id ?? "-"}    `);
     if (state.status === "completed" || state.status === "failed") break;
     await new Promise((r) => setTimeout(r, 200));
@@ -158,9 +159,9 @@ async function main(): Promise<void> {
   }
 
   // normalize should have duration in result (real FFmpeg probe)
-  const normalizeStep = state.steps.find((s) => s.definition.id === "normalize");
+  const normalizeStep = state.steps.find((s: StepState) => s.definition.id === "normalize");
   assert(normalizeStep !== undefined, "normalize step exists");
-  const normalizeResult = normalizeStep.result as { duration?: number } | undefined;
+  const normalizeResult = normalizeStep!.result as { duration?: number } | undefined;
   assert(normalizeResult?.duration !== undefined, "normalize step probed audio duration");
   log(`  normalize result: duration=${normalizeResult!.duration}s`);
 
@@ -206,7 +207,7 @@ async function main(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 2000));
   const failState = await getState(FAIL_KEY);
-  const badStep = failState.steps.find((s) => s.definition.id === "bad-step");
+  const badStep = failState.steps.find((s: StepState) => s.definition.id === "bad-step");
   assert(badStep !== undefined, "bad step exists");
   assert(badStep!.status === "failed", "bad step failed as expected");
   assert(badStep!.error?.includes("No executor registered") ?? false, "error message mentions missing executor");

@@ -35,7 +35,7 @@ export const RenderPanelsStep: StepExecutor = {
 			ctx.emit({ type: "info", label: "render_panels", detail: `${panels.length} panels to render` });
 
 			for (let i = 0; i < panels.length; i++) {
-				const panel = panels[i];
+				const panel = panels[i]!;
 				const prompt = panelPrompts.get(panel.id);
 				if (!prompt) continue;
 

@@ -25,4 +25,4 @@ const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 console.log(`\nDone in ${elapsed}s`);
 console.log(`  sections: ${result.sections.length}`);
 console.log(`  characters: ${result.characters.length}`);
-console.log(`  panelHints: ${result.panelHints.length}`);
+console.log(`  panelHints: ${result.panelHints?.length ?? 0}`);

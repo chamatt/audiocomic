@@ -10,7 +10,9 @@ const endpoint = process.env.RIVET_ENDPOINT ?? "http://127.0.0.1:6420";
 const RivetClientLayer = Client.layer({ endpoint });
 
 export function runWithClient<A, E, R>(program: Effect.Effect<A, E, R>): Promise<A> {
-  return Effect.runPromise(program.pipe(Effect.provide(RivetClientLayer)));
+  return Effect.runPromise(
+    program.pipe(Effect.provide(RivetClientLayer)) as Effect.Effect<A, E, never>,
+  );
 }
 
 export const fileRegistryClient = FileRegistry.client;

@@ -90,8 +90,8 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
       return {
         ...page,
         panels,
-        compositeUrl: composites?.storageKey
-          ? `/api/assets/${composites.storageKey}`
+        compositeUrl: composites?.imageKey
+          ? `/api/assets/${composites.imageKey}`
           : undefined,
       };
     }),

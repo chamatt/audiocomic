@@ -49,11 +49,11 @@ export const ProviderSettings = z.object({
   transcriptionProvider: z.enum(['openai', 'deepgram', 'groq', 'assemblyai', 'fal']).optional(),
   llmProvider: z.enum(['openai', 'anthropic', 'google', 'groq', 'mistral']).optional(),
   llmModel: z.string().optional(),
-  imageProvider: z.enum(['comfyui', 'openai', 'fal', 'stability', 'placeholder']).optional(),
+  imageProvider: z.enum(['comfyui', 'openai', 'fal', 'stability', 'pollinations', 'placeholder']).optional(),
   imageModel: z.string().optional(),
   ttsProvider: z.enum(['openai', 'elevenlabs', 'coqui']).optional(),
   ttsVoice: z.string().optional(),
-  rendererBackend: z.enum(['comfyui', 'aisdk', 'placeholder']).optional(),
+  rendererBackend: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']).optional(),
 });
 export type ProviderSettings = z.infer<typeof ProviderSettings>;
 

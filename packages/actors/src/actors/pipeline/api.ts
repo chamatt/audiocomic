@@ -75,7 +75,7 @@ const SchedulePayload = Schema.Struct({
  * `StepExecutor` (see `./steps/types.ts`) keyed by `StepDefinition.type`.
  */
 export const Pipeline = Actor.make("pipeline", {
-	actionTimeoutMs: 600_000, // 10 minutes — long-running steps like plan_story can take 90-250s
+	...({ actionTimeoutMs: 600_000 } as unknown as Record<string, unknown>), // 10 min — patched into rivetkitActorOptionsKeys
 	actions: [
 		Action.make("AddStep", {
 			payload: AddStepPayload,

@@ -36,7 +36,8 @@
 import { Client } from "@rivetkit/effect";
 import { Effect } from "effect";
 import { Pipeline } from "./src/actors/pipeline/api.ts";
-import type { PipelineState, StepState, StepDefinition } from "./src/lib/schemas.ts";
+import type { PipelineState } from "./src/actors/pipeline/api.ts";
+import type { StepState, StepDefinition } from "./src/lib/schemas.ts";
 
 const endpoint = process.env.RIVET_ENDPOINT ?? "http://127.0.0.1:6420";
 const ClientLayer = Client.layer({ endpoint });
@@ -69,11 +70,12 @@ function parseArgs(argv: string[]): { cmd: string; positional: string[]; flags: 
     printUsage();
     process.exit(1);
   }
-  const cmd = args[0];
+  const cmd = args[0] ?? "";
   const positional: string[] = [];
   const flags: Record<string, string> = {};
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
+    if (a === undefined) continue;
     if (a.startsWith("--")) {
       const key = a.slice(2);
       const next = args[i + 1];
@@ -131,14 +133,14 @@ Examples:
 }
 
 async function run<A, E, R>(program: Effect.Effect<A, E, R>): Promise<A> {
-  return Effect.runPromise(program.pipe(Effect.provide(ClientLayer)));
+  return Effect.runPromise(program.pipe(Effect.provide(ClientLayer)) as Effect.Effect<A, E, never>);
 }
 
 async function getState(key: string): Promise<PipelineState> {
   return run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    return yield* handle.GetStatus();
+    return yield* handle.GetStatus({});
   }));
 }
 
@@ -154,7 +156,7 @@ async function startPipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Start();
+    yield* handle.Start({});
   }));
 }
 
@@ -162,7 +164,7 @@ async function pausePipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Pause();
+    yield* handle.Pause({});
   }));
 }
 
@@ -170,7 +172,7 @@ async function resumePipeline(key: string): Promise<void> {
   await run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
-    yield* handle.Resume();
+    yield* handle.Resume({});
   }));
 }
 
@@ -206,7 +208,7 @@ async function getStepResult(key: string, stepId: string): Promise<unknown> {
   }));
 }
 
-async function getStepLogs(key: string, stepId: string): Promise<unknown[]> {
+async function getStepLogs(key: string, stepId: string): Promise<readonly unknown[]> {
   return run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
@@ -214,7 +216,7 @@ async function getStepLogs(key: string, stepId: string): Promise<unknown[]> {
   }));
 }
 
-async function invalidateStep(key: string, stepId: string): Promise<StepState[]> {
+async function invalidateStep(key: string, stepId: string): Promise<readonly StepState[]> {
   return run(Effect.gen(function* () {
     const accessor = yield* Pipeline.client;
     const handle = accessor.getOrCreate(key);
@@ -384,8 +386,8 @@ async function cmdRun(key: string, flags: Record<string, string>): Promise<void>
   // If --from/--to specified, mark steps outside the range as skipped
   // so the run loop only executes the requested slice.
   if (flags.from !== undefined || flags.to !== undefined) {
-    const fromId = flags.from ?? STEP_CATALOG[0].id;
-    const toId = flags.to ?? STEP_CATALOG[STEP_CATALOG.length - 1].id;
+    const fromId = flags.from ?? STEP_CATALOG[0]!.id;
+    const toId = flags.to ?? STEP_CATALOG[STEP_CATALOG.length - 1]!.id;
     const range = getStepRange(fromId, toId);
     const rangeIds = new Set(range.map((s) => s.id));
 
@@ -488,77 +490,77 @@ async function main(): Promise<void> {
     switch (cmd) {
       case "status": {
         if (positional.length < 1) { console.error("Usage: status <key>"); process.exit(1); }
-        await cmdStatus(positional[0]);
+        await cmdStatus(positional[0]!);
         break;
       }
       case "run": {
         if (positional.length < 1) { console.error("Usage: run <key> [--from <step>] [--to <step>]"); process.exit(1); }
-        await cmdRun(positional[0], flags);
+        await cmdRun(positional[0]!, flags);
         break;
       }
       case "add": {
         if (positional.length < 2) { console.error("Usage: add <key> <type> [--id <id>] [--config <json>]"); process.exit(1); }
-        await cmdAdd(positional[0], positional[1], flags);
+        await cmdAdd(positional[0]!, positional[1]!, flags);
         break;
       }
       case "add-all": {
         if (positional.length < 1) { console.error("Usage: add-all <key> --input <path>"); process.exit(1); }
-        await cmdAddAll(positional[0], flags);
+        await cmdAddAll(positional[0]!, flags);
         break;
       }
       case "add-range": {
         if (positional.length < 1) { console.error("Usage: add-range <key> --from <step> [--to <step>] [--input <path>]"); process.exit(1); }
-        await cmdAddRange(positional[0], flags);
+        await cmdAddRange(positional[0]!, flags);
         break;
       }
       case "pause": {
         if (positional.length < 1) { console.error("Usage: pause <key>"); process.exit(1); }
-        await pausePipeline(positional[0]);
-        console.log(`⏸ Paused pipeline "${positional[0]}"`);
+        await pausePipeline(positional[0]!);
+        console.log(`⏸ Paused pipeline "${positional[0]!}"`);
         break;
       }
       case "resume": {
         if (positional.length < 1) { console.error("Usage: resume <key>"); process.exit(1); }
-        await resumePipeline(positional[0]);
-        console.log(`▶ Resumed pipeline "${positional[0]}"`);
+        await resumePipeline(positional[0]!);
+        console.log(`▶ Resumed pipeline "${positional[0]!}"`);
         break;
       }
       case "retry": {
         if (positional.length < 2) { console.error("Usage: retry <key> <stepId>"); process.exit(1); }
-        const step = await retryStep(positional[0], positional[1]);
-        console.log(`↻ Retried step "${positional[1]}": ${step.status}`);
+        const step = await retryStep(positional[0]!, positional[1]!);
+        console.log(`↻ Retried step "${positional[1]!}": ${step.status}`);
         break;
       }
       case "skip": {
         if (positional.length < 2) { console.error("Usage: skip <key> <stepId>"); process.exit(1); }
-        const step = await skipStep(positional[0], positional[1]);
-        console.log(`→ Skipped step "${positional[1]}": ${step.status}`);
+        const step = await skipStep(positional[0]!, positional[1]!);
+        console.log(`→ Skipped step "${positional[1]!}": ${step.status}`);
         break;
       }
       case "result": {
         if (positional.length < 2) { console.error("Usage: result <key> <stepId>"); process.exit(1); }
-        await cmdResult(positional[0], positional[1]);
+        await cmdResult(positional[0]!, positional[1]!);
         break;
       }
       case "run-step": {
         if (positional.length < 2) { console.error("Usage: run-step <key> <stepId>"); process.exit(1); }
-        await cmdRunStep(positional[0], positional[1]);
+        await cmdRunStep(positional[0]!, positional[1]!);
         break;
       }
       case "logs": {
         if (positional.length < 2) { console.error("Usage: logs <key> <stepId>"); process.exit(1); }
-        await cmdLogs(positional[0], positional[1]);
+        await cmdLogs(positional[0]!, positional[1]!);
         break;
       }
       case "invalidate": {
         if (positional.length < 2) { console.error("Usage: invalidate <key> <stepId>"); process.exit(1); }
-        await cmdInvalidate(positional[0], positional[1]);
+        await cmdInvalidate(positional[0]!, positional[1]!);
         break;
       }
       case "watch": {
         if (positional.length < 1) { console.error("Usage: watch <key> [--timeout <ms>]"); process.exit(1); }
         const timeout = flags.timeout !== undefined ? parseInt(flags.timeout, 10) : 300_000;
-        await cmdWatch(positional[0], timeout);
+        await cmdWatch(positional[0]!, timeout);
         break;
       }
       default:

@@ -207,6 +207,24 @@ function resolveCharacterIds(
 }
 
 /**
+ * Options for schema-based object generation/streaming.
+ *
+ * Mirrors the `schema` overload (the `output: 'object'` variant) of the AI
+ * SDK's `generateObject`/`streamObject`. `Parameters<typeof generateObject>[0]`
+ * resolves to the *last* (no-schema) overload, which rejects `schema`, so the
+ * shape we actually use is described here instead.
+ */
+type StreamObjectOptions<T> = {
+  model: LanguageModelV1;
+  schema: z.Schema<T, z.ZodTypeDef, any>;
+  schemaName?: string;
+  schemaDescription?: string;
+  mode?: 'auto' | 'json' | 'tool';
+  system?: string;
+  prompt: string;
+  abortSignal?: AbortSignal;
+};
+/**
  * Stream an object from the LLM with live token-by-token progress.
  *
  * Uses streamObject's fullStream which emits { type: 'text-delta' } events
@@ -219,7 +237,7 @@ function resolveCharacterIds(
  */
 async function streamObjectWithProgress<T>(
   label: string,
-  opts: Parameters<typeof generateObject>[0],
+  opts: StreamObjectOptions<T>,
   emit?: (event: ProgressEvent) => void,
 ): Promise<T> {
   const start = Date.now();
@@ -227,10 +245,7 @@ async function streamObjectWithProgress<T>(
   const elapsedStr = () => ((Date.now() - start) / 1000).toFixed(1);
 
   try {
-    const { fullStream, object } = streamObject<T>({
-      ...opts,
-      partialObjectStream: true,
-    } as Parameters<typeof streamObject>[0]);
+    const { fullStream, object } = streamObject(opts);
 
     // Consume fullStream to get text-delta events for live token display.
     // streamObject handles schema enforcement internally.
