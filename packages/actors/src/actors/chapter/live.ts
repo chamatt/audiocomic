@@ -242,34 +242,38 @@ export const ChapterLive = Chapter.toLayer(
 				const chapterChunks = allChunks
 					.filter((c) => c.chapterId === current.id)
 					.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-				const chapterText = chapterChunks.map((c) => c.text).join("\\n\\n");
+			const chapterText = chapterChunks.map((c) => c.text).join("\n\n");
 
-				if (chapterText.length === 0) {
-					yield* setStage("failed", { current: 0, total: 0, detail: "No transcript text" });
-					return;
-				}
+			if (chapterText.length === 0) {
+				yield* setStage("failed", { current: 0, total: 0, detail: "No transcript text" });
+				return;
+			}
 
-				yield* setStage("planning", { current: 1, total: 4, detail: "Planning story" });
+			yield* setStage("planning", { current: 1, total: 4, detail: "Planning story (3-pass: scenes → beats → panels)" });
 
-				// 2. Plan story via Mastra agent.
-				const agent = bridge.getStoryPlannerAgent(current.projectId);
-				const storyResult = yield* Effect.tryPromise({
-					try: () => agent.planStory({ projectId: current.projectId, text: chapterText }),
-					catch: (e) => (e instanceof Error ? e : new Error(String(e))),
-				});
+			// 2. Plan story via the 3-pass Mastra agent.
+			//    Pass 1: uses KB tools (vector-query, character-lookup, world-lookup) for cross-chapter context
+			//    Pass 2: decomposes each scene into beats
+			//    Pass 3: generates panel hints per beat
+			const agent = bridge.getStoryPlannerAgent(current.projectId);
+			const storyResult = yield* Effect.tryPromise({
+				try: () => agent.planStory({ projectId: current.projectId, text: chapterText }),
+				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+			});
 
-				const sections: StorySection[] = storyResult.sections;
-				const characters: CharacterProfile[] = storyResult.characters;
-				const worldBible: WorldBible = storyResult.worldBible;
+			const sections: StorySection[] = storyResult.sections;
+			const characters: CharacterProfile[] = storyResult.characters;
+			const worldBible: WorldBible = storyResult.worldBible;
 
-				// Persist story data (non-fatal).
-				yield* Effect.tryPromise({
-					try: () => Promise.all([
-						Promise.all(sections.map((s) => bridge.repo.storySections.create(s))),
-						Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
-					]),
-					catch: (e) => new Error(`plan: DB persist failed (non-fatal): ${e}`),
-				}).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
+			// Persist story data (non-fatal).
+			yield* Effect.tryPromise({
+				try: () => Promise.all([
+					Promise.all(sections.map((s) => bridge.repo.storySections.create(s))),
+					Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
+					bridge.repo.worldBibles.create(worldBible),
+				]),
+				catch: (e) => new Error(`plan: DB persist failed (non-fatal): ${e}`),
+			}).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
 
 				yield* setStage("planning", { current: 2, total: 4, detail: "Planning pages" });
 
@@ -315,12 +319,8 @@ export const ChapterLive = Chapter.toLayer(
 							bbox: { x: 0.05, y: 0.05 + panelIdx * panelHeight, w: 0.9, h: panelHeight * 0.95 },
 							zIndex: panelIdx,
 							description: beat.summary,
-							cameraFraming: beat.cameraHint,
-							characters: beat.charactersPresent
-								.map((name) => characters.find((c) => c.name.toLowerCase() === name.toLowerCase()))
-								.filter((c): c is CharacterProfile => c !== undefined)
-								.map((c) => ({ characterId: c.id })),
-							dialogueLines: [],
+						characters: beat.charactersPresent.map((charId) => ({ characterId: charId })),
+						dialogueLines: [],
 							startSec: beat.startSec,
 							endSec: beat.endSec,
 							qaStatus: "pending",
@@ -345,6 +345,17 @@ export const ChapterLive = Chapter.toLayer(
 
 				yield* setStage("planning", { current: 3, total: 4, detail: "Composing prompts" });
 
+			// 3b. Enrich panels with hints from the 3-pass planner (descriptions, dialogue, camera).
+			if (storyResult.panelHints) {
+				const hintsByBeat = new Map(storyResult.panelHints.map((h) => [h.beatSectionId, h]));
+				for (const panel of panels) {
+					const hint = hintsByBeat.get(panel.storySectionId);
+					if (!hint) continue;
+					if (hint.description) panel.description = hint.description;
+					if (hint.cameraFraming) panel.cameraFraming = hint.cameraFraming;
+					if (hint.dialogueLines.length > 0) panel.dialogueLines = hint.dialogueLines;
+				}
+			}
 				// 4. Compose prompts for each panel.
 				const sectionMap = new Map<string, StorySection>(sections.map((s) => [s.id, s]));
 				for (const panel of panels) {

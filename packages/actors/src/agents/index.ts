@@ -20,33 +20,47 @@ const LLM_MODEL = process.env.DEFAULT_LLM_MODEL
 
 
 // ============================================================================
-// Structured output schemas for agent.generate()
+// Structured output schemas — 3-pass decomposition
 // ============================================================================
 
-const storyPlanSchema = z.object({
-  world: z.object({
-    setting: z.string(),
-    genre: z.array(z.string()),
-    tone: z.string(),
-    artStyle: z.string(),
-  }),
+const cameraFramingEnum = z.enum([
+  'wide', 'medium', 'close-up', 'extreme-close-up', 'overhead', 'low-angle', 'pov', 'establishing',
+]);
+
+const emotionalToneEnum = z.enum([
+  'neutral', 'tense', 'joyful', 'sad', 'angry', 'fearful',
+  'romantic', 'mysterious', 'epic', 'comedic', 'melancholic', 'hopeful',
+]);
+
+/** Pass 1: world + characters + chapters/scenes (uses KB tools for context) */
+const pass1Schema = z.object({
+  setting: z.string().describe('Overall world/setting description'),
+  genre: z.array(z.string()).default([]),
+  tone: z.string().optional(),
+  artStyle: z.string().optional(),
   characters: z.array(
     z.object({
       name: z.string(),
-      description: z.string(),
-      role: z.string(),
-      aliases: z.array(z.string()),
+      aliases: z.array(z.string()).default([]),
+      description: z.string().describe('Physical appearance and personality'),
+      role: z.string().describe('protagonist, antagonist, supporting, minor, or narrator'),
     }),
-  ),
-  sections: z.array(
+  ).default([]),
+  chapters: z.array(
     z.object({
-      level: z.enum(['chapter', 'scene', 'beat']),
-      title: z.string(),
-      summary: z.string(),
-      charactersPresent: z.array(z.string()),
-      emotionalTone: z.string(),
+      title: z.string().optional(),
+      summary: z.string().describe('Chapter summary'),
+      scenes: z.array(
+        z.object({
+          title: z.string().optional(),
+          summary: z.string().describe('Scene summary — a distinct narrative moment'),
+          textExcerpt: z.string().optional().describe('Verbatim source text for this scene'),
+          emotionalTone: emotionalToneEnum.default('neutral'),
+          charactersPresent: z.array(z.string()).default([]),
+        }),
+      ).default([]),
     }),
-  ),
+  ).default([]),
   characterStates: z.array(
     z.object({
       characterName: z.string(),
@@ -54,7 +68,47 @@ const storyPlanSchema = z.object({
       location: z.string(),
       mood: z.string(),
     }),
-  ),
+  ).default([]),
+});
+
+/** Pass 2: beats within a single scene */
+const pass2Schema = z.object({
+  beats: z.array(
+    z.object({
+      summary: z.string().describe('One visual moment — will become 1+ panels'),
+      text: z.string().optional().describe('Verbatim source text for this beat'),
+      emotionalTone: emotionalToneEnum.default('neutral'),
+      cameraHint: cameraFramingEnum.optional(),
+      charactersPresent: z.array(z.string()).default([]),
+      objects: z.array(z.string()).default([]),
+    }),
+  ).default([]),
+});
+
+/** Pass 3: panel allocation hints per beat */
+const pass3Schema = z.object({
+  panels: z.array(
+    z.object({
+      beatIndex: z.number().int().nonnegative(),
+      description: z.string().describe('Visual description of the panel'),
+      cameraFraming: cameraFramingEnum.optional(),
+      characters: z.array(
+        z.object({
+          name: z.string(),
+          pose: z.string().optional(),
+          expression: z.string().optional(),
+          position: z.enum(['left', 'center', 'right', 'background']).optional(),
+        }),
+      ).default([]),
+      dialogueLines: z.array(
+        z.object({
+          speaker: z.string(),
+          text: z.string(),
+          type: z.enum(['speech', 'thought', 'narration', 'sfx']).default('speech'),
+        }),
+      ).default([]),
+    }),
+  ).default([]),
 });
 
 const bibleBuildSchema = z.object({
@@ -100,7 +154,7 @@ const bibleBuildSchema = z.object({
 // ============================================================================
 
 export interface StoryPlannerAgentHandle {
-  /** Run the story planner agent with tool calls, returning structured plan output. */
+  /** Run the 3-pass story planner with KB tool calls, returning structured plan output. */
   planStory(input: {
     projectId: string;
     text: string;
@@ -109,6 +163,7 @@ export interface StoryPlannerAgentHandle {
     sections: StorySection[];
     characters: CharacterProfile[];
     worldBible: WorldBible;
+    panelHints?: import('@audiocomic/ai').PanelHint[];
   }>;
 }
 
@@ -142,19 +197,47 @@ function makeStoryPlannerAgent(ctx: ToolContext): Agent {
   return new Agent({
     id: `story-planner-${ctx.projectId}`,
     name: 'Story Planner',
-    instructions: `You are a story planner for an audiobook-to-comic system.
+    instructions: `You are a comic story planner. Decompose an audiobook chapter into a structured plan for adaptation into a narrated comic.
 
-When planning a chapter:
-1. Use character-lookup to get each character's current state and appearance
-2. Use character-timeline to check for outfit/state changes across chapters
-3. Use world-lookup to get the world setting, rules, and art style
-4. Use vector-query to find relevant events from other chapters
-5. Plan the story with consistency: characters should look and act the same
-   as in previous chapters unless there's a narrative reason for change
+STEP 1: Use the available tools to gather cross-chapter context:
+- Use vector-query to find relevant events and mentions from other chapters
+- Use character-lookup to get each character's current state and appearance
+- Use character-timeline to check for outfit/state changes across chapters
+- Use world-lookup to get the world setting, rules, and art style
 
-Output: structured JSON with world, characters, sections, and character states.`,
+STEP 2: Break the text into chapters and scenes. Each scene is a distinct narrative moment with its own location, time, and emotional tone. Include a short verbatim textExcerpt from the source for each scene so later passes can extract beats.
+
+STEP 3: Identify all characters, their physical appearance, and role. Characters should look and act the same as in previous chapters unless there's a narrative reason for change.
+
+Output: structured JSON with world setting, characters (with descriptions and roles), chapters (each containing scenes with summaries and text excerpts), and character states.`,
     model: LLM_MODEL,
     tools,
+  });
+}
+
+/**
+ * Create a beat decomposer agent for pass 2. No tools needed — just
+ * breaks a scene into visual beats. Uses the same model for consistency.
+ */
+function makeBeatDecomposerAgent(projectId: string): Agent {
+  return new Agent({
+    id: `beat-decomposer-${projectId}`,
+    name: 'Beat Decomposer',
+    instructions: `You are a comic beat breakdown assistant. Split the given scene into a sequence of narrative beats. Each beat is ONE visual moment that will become one or more comic panels. Aim for 3-8 beats per scene. Preserve the scene's emotional tone unless a beat clearly shifts it. Include a camera hint for each beat.`,
+    model: LLM_MODEL,
+  });
+}
+
+/**
+ * Create a panel layout agent for pass 3. No tools needed — just
+ * generates panel descriptions and dialogue per beat.
+ */
+function makePanelLayoutAgent(projectId: string): Agent {
+  return new Agent({
+    id: `panel-layout-${projectId}`,
+    name: 'Panel Layout',
+    instructions: `You are a comic layout planner. For each beat, propose 1 panel. Describe the visual content, camera framing, which characters appear and their pose/expression, and any dialogue/narration lines. beatIndex must match the supplied beat list order (0-based).`,
+    model: LLM_MODEL,
   });
 }
 
@@ -191,105 +274,199 @@ Output: structured JSON with knowledge updates.`,
 
 function makeStoryPlannerHandle(
   agent: Agent,
+  beatAgent: Agent,
+  panelAgent: Agent,
   projectId: string,
 ): StoryPlannerAgentHandle {
   return {
     async planStory({ text, emit }) {
-      emit?.({ type: 'progress', label: 'Story planner agent started' });
+      emit?.({ type: 'progress', label: 'Pass 1: Planning story structure' });
 
-      const response = await tryGenerateWithJsonFallback(
+      // ── Pass 1: chapters + scenes + world + characters (with KB tools) ──
+      const pass1Response = await tryGenerateWithJsonFallback(
         agent,
-        `Plan the comic adaptation for the following transcription. ` +
-          `Use the available tools to look up existing characters, world info, ` +
-          `and cross-chapter context before planning. ` +
-          `After using tools, produce the structured JSON output.\n\nTranscription:\n${text}`,
+        `Decompose this chapter transcript into a comic plan. ` +
+          `First use the available tools to look up existing characters, world info, ` +
+          `and cross-chapter context via vector search. ` +
+          `Then break the text into chapters and scenes with verbatim excerpts.\n\nTranscript:\n${text}`,
         {
           maxSteps: 15,
-          structuredOutput: { schema: storyPlanSchema },
+          structuredOutput: { schema: pass1Schema },
           prepareStep: async ({ stepNumber }) => {
-            // Steps 0-2: allow tool calls. Step 3+: force structured output without tools.
-            if (stepNumber < 3) {
-              return { toolChoice: 'auto' };
-            }
-            return {
-              tools: undefined,
-              toolChoice: 'none',
-              structuredOutput: { schema: storyPlanSchema },
-            };
+            if (stepNumber < 4) return { toolChoice: 'auto' };
+            return { tools: undefined, toolChoice: 'none', structuredOutput: { schema: pass1Schema } };
           },
         },
       );
 
-      const plan = response.object;
-      if (!plan) throw new Error('Story planner agent returned no structured output');
+      const pass1 = pass1Response.object;
+      if (!pass1) throw new Error('Pass 1: no structured output');
+      // Normalize — Zod .default([]) produces T | undefined in Mastra output
+      const pass1Chars = pass1.characters ?? [];
+      const pass1Chapters = pass1.chapters ?? [];
+      const pass1Genre = pass1.genre ?? [];
 
-      emit?.({ type: 'llm_done', label: 'Story planner agent completed', detail: `${plan.sections.length} sections planned` });
+      emit?.({ type: 'progress', label: `Pass 1 done: ${pass1Chapters.length} chapters, ${pass1Chars.length} characters` });
 
-      // Map agent output to domain types
-      const characters: CharacterProfile[] = plan.characters.map((c) => ({
-        id: uuid(),
-        projectId,
-        name: c.name,
-        description: c.description,
-        role: (['protagonist', 'antagonist', 'supporting', 'minor', 'narrator'] as const).includes(
-          c.role?.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator',
-        )
-          ? (c.role.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator')
-          : 'supporting',
-        aliases: c.aliases,
-        outfitRefs: [],
-        paletteNotes: [],
-        negativeConstraints: [],
-        locked: false,
-      }));
+      // ── Build characters + world bible ──
+      const nameToId = new Map<string, string>();
+
+      const characters: CharacterProfile[] = pass1Chars.map((c) => {
+        const id = uuid();
+        nameToId.set(c.name.toLowerCase(), id);
+        for (const alias of (c.aliases ?? [])) nameToId.set(alias.toLowerCase(), id);
+        return {
+          id,
+          projectId,
+          name: c.name,
+          aliases: c.aliases ?? [],
+          description: c.description,
+          role: (['protagonist', 'antagonist', 'supporting', 'minor', 'narrator'] as const).includes(
+            c.role?.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator',
+          )
+            ? (c.role.toLowerCase() as 'protagonist' | 'antagonist' | 'supporting' | 'minor' | 'narrator')
+            : 'supporting',
+          outfitRefs: [],
+          paletteNotes: [],
+          negativeConstraints: [],
+          locked: false,
+        };
+      });
 
       const worldBible: WorldBible = {
         id: uuid(),
         projectId,
-        setting: plan.world.setting,
-        genre: plan.world.genre,
-        tone: plan.world.tone,
-        artStyle: plan.world.artStyle,
+        setting: pass1.setting,
+        genre: pass1Genre,
+        tone: pass1.tone,
+        artStyle: pass1.artStyle,
         artStyleNegative: [],
         colorPalette: [],
         worldRules: [],
       };
 
-      // Build hierarchical sections from the flat list
+      // ── Build chapter + scene sections ──
       const sections: StorySection[] = [];
-      let chapterId: string | undefined;
-      let sceneId: string | undefined;
+      const sceneSections: { section: StorySection; excerpt: string }[] = [];
 
-      for (const s of plan.sections) {
-        const id = uuid();
-        if (s.level === 'chapter') {
-          chapterId = id;
-          sceneId = undefined;
-        } else if (s.level === 'scene') {
-          sceneId = id;
-        }
-        const parentId = s.level === 'chapter' ? undefined : s.level === 'scene' ? chapterId : sceneId;
-        const tone = ([
-          'neutral', 'tense', 'joyful', 'sad', 'angry', 'fearful',
-          'romantic', 'mysterious', 'epic', 'comedic', 'melancholic', 'hopeful',
-        ] as const).includes(s.emotionalTone as never)
-          ? (s.emotionalTone as never)
-          : 'neutral' as const;
+      let chapterIndex = 0;
+      for (const chapter of pass1Chapters) {
+        const chapterId = uuid();
         sections.push({
-          id,
+          id: chapterId,
           projectId,
-          parentId,
-          level: s.level,
-          index: sections.length,
-          title: s.title,
-          summary: s.summary,
-          charactersPresent: s.charactersPresent,
-          emotionalTone: tone,
+          level: 'chapter',
+          index: chapterIndex,
+          title: chapter.title,
+          summary: chapter.summary,
+          charactersPresent: [],
+          emotionalTone: 'neutral',
           objects: [],
+        });
+
+        let sceneIndex = 0;
+        for (const scene of (chapter.scenes ?? [])) {
+          const sceneId = uuid();
+          const sceneSection: StorySection = {
+            id: sceneId,
+            projectId,
+            parentId: chapterId,
+            level: 'scene',
+            index: sceneIndex,
+            title: scene.title,
+            summary: scene.summary,
+            text: scene.textExcerpt,
+            emotionalTone: scene.emotionalTone as StorySection['emotionalTone'],
+            charactersPresent: (scene.charactersPresent ?? [])
+              .map((name) => nameToId.get(name.toLowerCase()))
+              .filter((id): id is string => id !== undefined),
+            objects: [],
+          };
+          sections.push(sceneSection);
+          sceneSections.push({ section: sceneSection, excerpt: scene.textExcerpt ?? scene.summary });
+          sceneIndex++;
+        }
+        chapterIndex++;
+      }
+
+      emit?.({ type: 'progress', label: `Pass 2: Decomposing ${sceneSections.length} scenes into beats` });
+
+      // ── Pass 2: beats per scene (parallel, no tools needed) ──
+      const beatResults = await Promise.all(
+        sceneSections.map(async ({ section, excerpt }) => {
+          const pass2Response = await tryGenerateWithJsonFallback(
+            beatAgent,
+            `Scene summary: ${section.summary}\n\nSource excerpt:\n${excerpt}`,
+            { maxSteps: 3, structuredOutput: { schema: pass2Schema } },
+          );
+          return { section, beats: pass2Response.object?.beats ?? [] };
+        }),
+      );
+
+      // ── Build beat sections ──
+      const beatSectionLookup: { beatIndex: number; section: StorySection }[] = [];
+      for (const { section, beats } of beatResults) {
+        beats.forEach((beat, beatIndex) => {
+          const beatId = uuid();
+          const beatSection: StorySection = {
+            id: beatId,
+            projectId,
+            parentId: section.id,
+            level: 'beat',
+            index: beatIndex,
+            summary: beat.summary,
+            text: beat.text,
+            emotionalTone: beat.emotionalTone as StorySection['emotionalTone'],
+            cameraHint: beat.cameraHint as StorySection['cameraHint'],
+            charactersPresent: (beat.charactersPresent ?? [])
+              .map((name) => nameToId.get(name.toLowerCase()))
+              .filter((id): id is string => id !== undefined),
+            objects: beat.objects ?? [],
+          };
+          sections.push(beatSection);
+          beatSectionLookup.push({ beatIndex, section: beatSection });
         });
       }
 
-      return { sections, characters, worldBible };
+      emit?.({ type: 'progress', label: `Pass 2 done: ${beatSectionLookup.length} beats` });
+
+      // ── Pass 3: panel hints per scene (parallel, no tools needed) ──
+      const panelHintResults = await Promise.all(
+        beatResults.map(async ({ beats }) => {
+          if (beats.length === 0) return [];
+          const pass3Response = await tryGenerateWithJsonFallback(
+            panelAgent,
+            beats.map((b, i) =>
+              `Beat ${i}: ${b.summary}` +
+              (b.cameraHint ? ` [camera: ${b.cameraHint}]` : '') +
+              (b.charactersPresent?.length ? ` (characters: ${(b.charactersPresent ?? []).join(', ')})` : ''),
+            ).join('\n'),
+            { maxSteps: 3, structuredOutput: { schema: pass3Schema } },
+          );
+          return pass3Response.object?.panels ?? [];
+        }),
+      );
+
+      // ── Map pass 3 panels to PanelHints ──
+      const panelHints: import('@audiocomic/ai').PanelHint[] = [];
+      for (const panels of panelHintResults) {
+        for (const panel of panels) {
+          const beat = beatSectionLookup.find((b) => b.beatIndex === panel.beatIndex);
+          if (!beat) continue;
+          panelHints.push({
+            beatSectionId: beat.section.id,
+            beatIndex: panel.beatIndex,
+            description: panel.description,
+            cameraFraming: panel.cameraFraming as import('@audiocomic/domain').CameraFraming | undefined,
+            characters: panel.characters ?? [],
+            dialogueLines: (panel.dialogueLines ?? []).map((d) => ({ ...d, type: d.type ?? 'speech' })),
+          });
+        }
+      }
+
+      emit?.({ type: 'llm_done', label: 'Story planner completed', detail: `${sections.length} sections, ${panelHints.length} panel hints` });
+
+      return { sections, characters, worldBible, panelHints };
     },
   };
 }
@@ -423,10 +600,12 @@ export function createAgentHandles(ctx: ToolContext): {
   bibleBuilder: BibleBuilderAgentHandle;
 } {
   const storyAgent = makeStoryPlannerAgent(ctx);
+  const beatAgent = makeBeatDecomposerAgent(ctx.projectId);
+  const panelAgent = makePanelLayoutAgent(ctx.projectId);
   const bibleAgent = makeBibleBuilderAgent(ctx);
 
   return {
-    storyPlanner: makeStoryPlannerHandle(storyAgent, ctx.projectId),
+    storyPlanner: makeStoryPlannerHandle(storyAgent, beatAgent, panelAgent, ctx.projectId),
     bibleBuilder: makeBibleBuilderHandle(bibleAgent, ctx.repo, ctx.projectId),
   };
 }
