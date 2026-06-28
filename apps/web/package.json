@@ -14,6 +14,7 @@
     "@audiocomic/actors": "workspace:*",
     "@audiocomic/db": "workspace:*",
     "@audiocomic/domain": "workspace:*",
+    "@audiocomic/renderers": "workspace:*",
     "@audiocomic/shared": "workspace:*",
     "@audiocomic/storage": "workspace:*",
     "@audiocomic/workflows": "workspace:*",

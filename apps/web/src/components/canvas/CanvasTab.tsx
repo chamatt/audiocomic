@@ -288,19 +288,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           console.error("panel render failed", body);
           return;
         }
-        const { jobId } = (await res.json()) as { jobId: string };
-        // Poll for job completion every 2s (max 120s)
-        for (let i = 0; i < 60; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const jobRes = await fetch(`/api/jobs/${jobId}`);
-          if (!jobRes.ok) break;
-          const job = (await jobRes.json()) as { state: string };
-          if (job.state === "completed" || job.state === "done") {
-            await refresh();
-            break;
-          }
-          if (job.state === "failed") break;
-        }
+        // Render is synchronous — refresh canvas to pick up the new image.
+        await refresh();
       } catch (e) {
         console.error("panel render request failed", e);
       } finally {
@@ -324,6 +313,23 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   // Knowledge panel toggle
   const [showKnowledge, setShowKnowledge] = useState(false);
 
+  // Render all unrendered panels in the current chapter sequentially.
+  const [isRenderingAll, setIsRenderingAll] = useState(false);
+  const handleRenderAll = useCallback(async () => {
+    const chapterPages = pages.filter(
+      (p) => !selectedChapterId || p.chapterId === selectedChapterId,
+    );
+    const unrenderedPanels = chapterPages.flatMap((p) => p.panels).filter((p) => !p.renderResultId);
+    if (unrenderedPanels.length === 0) return;
+    setIsRenderingAll(true);
+    try {
+      for (const panel of unrenderedPanels) {
+        await handlePanelRender(panel.id);
+      }
+    } finally {
+      setIsRenderingAll(false);
+    }
+  }, [pages, selectedChapterId, handlePanelRender]);
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -401,9 +407,15 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           </Button>
           <div className="flex-1" />
           {selectedChapterStage === "ready_for_review" && (
-            <span className="text-xs text-muted-foreground shrink-0">
-              Click Render on any panel →
-            </span>
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 shrink-0"
+              disabled={isRenderingAll || renderingPanelIds.size > 0}
+              onClick={handleRenderAll}
+            >
+              {isRenderingAll ? "Rendering…" : "Render All"}
+            </Button>
           )}
           <Button
             size="sm"
