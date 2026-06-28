@@ -4,6 +4,7 @@ import { FileRegistry } from "@audiocomic/actors/src/actors/file-registry/api.ts
 import { Bible } from "@audiocomic/actors/src/actors/bible/api.ts";
 import { Project } from "@audiocomic/actors/src/actors/project/api.ts";
 import { Pipeline } from "@audiocomic/actors/src/actors/pipeline/api.ts";
+import { Chapter } from "@audiocomic/actors/src/actors/chapter/api.ts";
 
 const endpoint = process.env.RIVET_ENDPOINT ?? "http://127.0.0.1:6420";
 
@@ -19,3 +20,4 @@ export const fileRegistryClient = FileRegistry.client;
 export const bibleClient = Bible.client;
 export const projectClient = Project.client;
 export const pipelineClient = Pipeline.client;
+export const chapterClient = Chapter.client;

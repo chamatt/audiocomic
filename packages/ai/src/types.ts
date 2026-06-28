@@ -26,6 +26,8 @@ export type ImageProvider = 'openai' | 'fal' | 'stability' | 'comfyui' | 'placeh
 
 export interface TranscriptionOptions {
   projectId: string;
+  /** Optional chapter ID for multi-chapter projects */
+  chapterId?: string;
   /** BCP-47 language hint, e.g. "en" */
   language?: string;
   /** Optional prompt to bias Whisper decoding (context / spelling hints) */

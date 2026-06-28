@@ -67,6 +67,27 @@ export const FileMetadata = Schema.Struct({
 });
 export type FileMetadata = Schema.Schema.Type<typeof FileMetadata>;
 
+export const CharacterState = Schema.Struct({
+	characterId: Schema.String,
+	characterName: Schema.String,
+	chapterId: Schema.String,
+	chapterIndex: Schema.Number,
+	outfit: Schema.optional(Schema.String),
+	location: Schema.optional(Schema.String),
+	mood: Schema.optional(Schema.String),
+	notes: Schema.optional(Schema.String),
+});
+export type CharacterState = Schema.Schema.Type<typeof CharacterState>;
+
+export const WikiPage = Schema.Struct({
+	id: Schema.String,
+	type: Schema.String,
+	title: Schema.String,
+	content: Schema.String,
+	confidence: Schema.Number,
+});
+export type WikiPage = Schema.Schema.Type<typeof WikiPage>;
+
 export const BibleContent = Schema.Struct({
 	id: Schema.String,
 	title: Schema.String,
@@ -80,9 +101,20 @@ export const BibleContent = Schema.Struct({
 		title: Schema.String,
 		summary: Schema.String,
 	})),
+	characterStates: Schema.optional(Schema.Array(CharacterState)),
+	wikiPages: Schema.optional(Schema.Array(WikiPage)),
 	updatedAt: Schema.Number,
 });
 export type BibleContent = Schema.Schema.Type<typeof BibleContent>;
+
+export const ChapterSummary = Schema.Struct({
+	id: Schema.String,
+	title: Schema.String,
+	index: Schema.Number,
+	status: Schema.String,
+	transcriptionStatus: Schema.String,
+});
+export type ChapterSummary = Schema.Schema.Type<typeof ChapterSummary>;
 
 export const ProjectConfig = Schema.Struct({
 	id: Schema.String,
@@ -90,6 +122,8 @@ export const ProjectConfig = Schema.Struct({
 	description: Schema.String,
 	bibleId: Schema.optional(Schema.String),
 	pipelineIds: Schema.Array(Schema.String),
+	chapterIds: Schema.optional(Schema.Array(Schema.String)),
+	chapterSummaries: Schema.optional(Schema.Array(ChapterSummary)),
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 });

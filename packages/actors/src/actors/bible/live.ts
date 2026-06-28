@@ -1,6 +1,6 @@
 import { State } from "@rivetkit/effect";
 import { Effect, Layer } from "effect";
-import { BibleContent } from "../../lib/schemas.ts";
+import { BibleContent, CharacterState, WikiPage } from "../../lib/schemas.ts";
 import { Bible } from "./api.ts";
 
 /**
@@ -78,6 +78,135 @@ export const BibleLive = Bible.toLayer(
 						),
 						updatedAt: Date.now(),
 					})),
+
+				UpdateCharacterState: ({ payload }) =>
+					update((current) => {
+						const entry: CharacterState = {
+							characterId: payload.characterId,
+							characterName: payload.characterName,
+							chapterId: payload.chapterId,
+							chapterIndex: payload.chapterIndex,
+							outfit: payload.outfit,
+							location: payload.location,
+							mood: payload.mood,
+							notes: payload.notes,
+						};
+						const existing = (current.characterStates ?? []).findIndex(
+							(cs: CharacterState) =>
+								cs.characterId === payload.characterId &&
+								cs.chapterId === payload.chapterId,
+						);
+						const characterStates =
+							existing === -1
+								? [...(current.characterStates ?? []), entry]
+								: (current.characterStates ?? []).map((cs: CharacterState, i) =>
+										i === existing ? entry : cs,
+									);
+						return {
+							...current,
+							characterStates,
+							updatedAt: Date.now(),
+						};
+					}),
+
+				GetCharacterTimeline: ({ payload }) =>
+					getState().pipe(
+						Effect.map((content) =>
+							(content.characterStates ?? [])
+								.filter((cs: CharacterState) => cs.characterId === payload.characterId)
+								.sort((a: CharacterState, b: CharacterState) => a.chapterIndex - b.chapterIndex)
+								.map((cs: CharacterState) => ({
+									chapterId: cs.chapterId,
+									chapterIndex: cs.chapterIndex,
+									outfit: cs.outfit,
+									location: cs.location,
+									mood: cs.mood,
+									notes: cs.notes,
+								})),
+						),
+					),
+
+				MergeChapterKnowledge: ({ payload }) =>
+					update((current) => {
+						// Upsert characters into the roster by name.
+						const characters = [...current.characters];
+						for (const incoming of payload.characters) {
+							const idx = characters.findIndex(
+								(c) => c.name === incoming.name,
+							);
+							if (idx === -1) {
+								characters.push({
+									name: incoming.name,
+									description: incoming.description,
+								});
+							} else {
+								characters[idx] = {
+									name: incoming.name,
+									description: incoming.description,
+								};
+							}
+						}
+
+						// Upsert per-character state for this chapter.
+						const characterStates = [...(current.characterStates ?? [])];
+						for (const incoming of payload.characters) {
+							if (incoming.state === undefined) continue;
+							const characterId = incoming.name;
+							const existing = characterStates.findIndex(
+								(cs: CharacterState) =>
+									cs.characterId === characterId &&
+									cs.chapterId === payload.chapterId,
+							);
+							const entry: CharacterState = {
+								characterId,
+								characterName: incoming.name,
+								chapterId: payload.chapterId,
+								chapterIndex: 0,
+								outfit: incoming.state.outfit,
+								location: incoming.state.location,
+								mood: incoming.state.mood,
+								notes: incoming.state.notes,
+							};
+							if (existing === -1) {
+								characterStates.push(entry);
+							} else {
+								characterStates[existing] = entry;
+							}
+						}
+
+						// Dedupe wiki pages by title; incoming pages overwrite
+						// existing ones with the same title.
+						const wikiPages = [...(current.wikiPages ?? [])];
+						for (const incoming of payload.wikiPages) {
+							const idx = wikiPages.findIndex(
+								(wp: WikiPage) => wp.title === incoming.title,
+							);
+							const existing = idx !== -1 ? wikiPages[idx] : undefined;
+							const page = {
+								id: existing?.id ?? `${incoming.type}:${incoming.title}`,
+								type: incoming.type,
+								title: incoming.title,
+								content: incoming.content,
+								confidence: existing?.confidence ?? 1,
+							};
+							if (idx === -1) {
+								wikiPages.push(page);
+							} else {
+								wikiPages[idx] = page;
+							}
+						}
+
+						return {
+							...current,
+							characters,
+							characterStates,
+							wikiPages,
+							updatedAt: Date.now(),
+						};
+					}),
+
+				GetWiki: () =>
+					getState().pipe(Effect.map((content) => content.wikiPages ?? [])),
 			});
 		}),
 	{
@@ -89,6 +218,8 @@ export const BibleLive = Bible.toLayer(
 				lore: "",
 				characters: [],
 				chapters: [],
+				characterStates: [],
+				wikiPages: [],
 				updatedAt: Date.now(),
 			}),
 		},

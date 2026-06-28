@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Action, Actor } from "@rivetkit/effect";
 
-import { ProjectConfig } from "../../lib/schemas.ts";
+import { ProjectConfig, ChapterSummary } from "../../lib/schemas.ts";
 
 /**
  * Project actor — owns the mutable configuration for one AudioComic
@@ -44,6 +44,33 @@ export const Project = Actor.make("Project", {
 		// Detach a Pipeline actor from this project by id.
 		Action.make("RemovePipeline", {
 			payload: { pipelineId: Schema.String },
+			success: ProjectConfig,
+		}),
+
+		// Add a chapter to this project by id (idempotent).
+		Action.make("AddChapter", {
+			payload: {
+				chapterId: Schema.String,
+				title: Schema.String,
+				index: Schema.Number,
+			},
+			success: ProjectConfig,
+		}),
+
+		// Remove a chapter from this project by id.
+		Action.make("RemoveChapter", {
+			payload: { chapterId: Schema.String },
+			success: ProjectConfig,
+		}),
+
+		// List all chapters attached to this project with summary info.
+		Action.make("ListChapters", {
+			success: Schema.Array(ChapterSummary),
+		}),
+
+		// Reorder chapters by providing the full ordered list of chapter ids.
+		Action.make("ReorderChapters", {
+			payload: { chapterIds: Schema.Array(Schema.String) },
 			success: ProjectConfig,
 		}),
 	],

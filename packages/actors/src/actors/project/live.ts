@@ -5,6 +5,7 @@ import { Project } from "./api.ts";
 import {
 	ProjectConfig as ProjectConfigSchema,
 	type ProjectConfig,
+	type ChapterSummary,
 } from "../../lib/schemas.ts";
 
 /**
@@ -21,6 +22,8 @@ function freshConfig(): ProjectConfig {
 		description: "",
 		bibleId: undefined,
 		pipelineIds: [],
+		chapterIds: [],
+		chapterSummaries: [],
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -50,7 +53,7 @@ export const ProjectLive = Project.toLayer(
 				Effect.gen(function* () {
 					const updated = yield* State.updateAndGet(
 						wakeOptions.state,
-						(config): ProjectConfig => ({
+						(config: ProjectConfig): ProjectConfig => ({
 							...config,
 							name: payload.name,
 							updatedAt: Date.now(),
@@ -68,7 +71,7 @@ export const ProjectLive = Project.toLayer(
 				Effect.gen(function* () {
 					const updated = yield* State.updateAndGet(
 						wakeOptions.state,
-						(config): ProjectConfig => ({
+						(config: ProjectConfig): ProjectConfig => ({
 							...config,
 							description: payload.description,
 							updatedAt: Date.now(),
@@ -86,7 +89,7 @@ export const ProjectLive = Project.toLayer(
 				Effect.gen(function* () {
 					const updated = yield* State.updateAndGet(
 						wakeOptions.state,
-						(config): ProjectConfig => ({
+						(config: ProjectConfig): ProjectConfig => ({
 							...config,
 							bibleId: payload.bibleId,
 							updatedAt: Date.now(),
@@ -104,7 +107,7 @@ export const ProjectLive = Project.toLayer(
 				Effect.gen(function* () {
 					const updated = yield* State.updateAndGet(
 						wakeOptions.state,
-						(config): ProjectConfig => ({
+						(config: ProjectConfig): ProjectConfig => ({
 							...config,
 							pipelineIds: config.pipelineIds.includes(
 								payload.pipelineId,
@@ -126,13 +129,106 @@ export const ProjectLive = Project.toLayer(
 				Effect.gen(function* () {
 					const updated = yield* State.updateAndGet(
 						wakeOptions.state,
-						(config): ProjectConfig => ({
+						(config: ProjectConfig): ProjectConfig => ({
 							...config,
 							pipelineIds: config.pipelineIds.filter(
-								(id) => id !== payload.pipelineId,
+								(id: string) => id !== payload.pipelineId,
 							),
 							updatedAt: Date.now(),
 						}),
+					).pipe(Effect.orDie);
+
+					wakeOptions.rawRivetkitContext.broadcast(
+						"projectUpdated",
+						updated,
+					);
+					return updated;
+				}),
+
+			AddChapter: ({ payload }) =>
+				Effect.gen(function* () {
+					const summary: ChapterSummary = {
+						id: payload.chapterId,
+						title: payload.title,
+						index: payload.index,
+						status: "pending",
+						transcriptionStatus: "pending",
+					};
+					const updated = yield* State.updateAndGet(
+						wakeOptions.state,
+						(config: ProjectConfig): ProjectConfig => {
+							if ((config.chapterIds ?? []).includes(payload.chapterId)) {
+								return { ...config, updatedAt: Date.now() };
+							}
+							return {
+								...config,
+								chapterIds: [...(config.chapterIds ?? []), payload.chapterId],
+								chapterSummaries: [...(config.chapterSummaries ?? []), summary],
+								updatedAt: Date.now(),
+							};
+						},
+					).pipe(Effect.orDie);
+
+					wakeOptions.rawRivetkitContext.broadcast(
+						"projectUpdated",
+						updated,
+					);
+					return updated;
+				}),
+
+			RemoveChapter: ({ payload }) =>
+				Effect.gen(function* () {
+					const updated = yield* State.updateAndGet(
+						wakeOptions.state,
+						(config: ProjectConfig): ProjectConfig => ({
+							...config,
+							chapterIds: (config.chapterIds ?? []).filter(
+								(id: string) => id !== payload.chapterId,
+							),
+							chapterSummaries: (config.chapterSummaries ?? []).filter(
+								(s: ChapterSummary) => s.id !== payload.chapterId,
+							),
+							updatedAt: Date.now(),
+						}),
+					).pipe(Effect.orDie);
+
+					wakeOptions.rawRivetkitContext.broadcast(
+						"projectUpdated",
+						updated,
+					);
+					return updated;
+				}),
+
+			ListChapters: () =>
+				Effect.gen(function* () {
+					const config = yield* State.get(wakeOptions.state).pipe(
+						Effect.orDie,
+					);
+					return config.chapterSummaries ?? [];
+				}),
+
+			ReorderChapters: ({ payload }) =>
+				Effect.gen(function* () {
+					const updated = yield* State.updateAndGet(
+						wakeOptions.state,
+						(config: ProjectConfig): ProjectConfig => {
+							const reorderedSummaries: ChapterSummary[] = payload.chapterIds
+								.map((id: string, index: number) => {
+									const existing = (config.chapterSummaries ?? []).find(
+										(s: ChapterSummary) => s.id === id,
+									);
+									return existing
+										? { ...existing, index }
+										: null;
+								})
+								.filter((s: ChapterSummary | null): s is ChapterSummary => s !== null);
+							return {
+								...config,
+								chapterIds: payload.chapterIds,
+								chapterSummaries: reorderedSummaries,
+								updatedAt: Date.now(),
+							};
+						},
 					).pipe(Effect.orDie);
 
 					wakeOptions.rawRivetkitContext.broadcast(
