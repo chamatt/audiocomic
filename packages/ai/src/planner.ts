@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   generateObject,
+  streamObject,
   type LanguageModelV1,
 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -204,6 +205,53 @@ function resolveCharacterIds(
   return [...ids];
 }
 
+/**
+ * Stream an object from the LLM with live progress logging.
+ * Uses streamObject to show partial tokens as they arrive, then
+ * resolves to the final object. Falls back to generateObject if
+ * streaming fails.
+ */
+async function streamObjectWithProgress<T>(
+  label: string,
+  opts: Parameters<typeof generateObject>[0],
+  emit?: (event: { type: string; label: string; detail?: string; current?: number; total?: number; chunkIndex?: number; elapsed?: number; partial?: unknown }) => void,
+): Promise<T> {
+  const start = Date.now();
+  let tokenCount = 0;
+  const elapsedStr = () => ((Date.now() - start) / 1000).toFixed(1);
+  try {
+    const { partialObjectStream, object } = streamObject<T>({
+      ...opts,
+      partialObjectStream: true,
+    } as Parameters<typeof streamObject>[0]);
+    // Consume the partial stream to log progress + emit events
+    for await (const partial of partialObjectStream) {
+      tokenCount++;
+      if (tokenCount % 10 === 0) {
+        const elapsed = elapsedStr();
+        console.error(`[planner] ${label}: ${tokenCount} chunks in ${elapsed}s...`);
+        emit?.({ type: "llm_chunk", label, chunkIndex: tokenCount, elapsed: Number(elapsed), partial });
+      }
+    }
+    const result = await object;
+    const elapsed = elapsedStr();
+    console.error(`[planner] ${label}: done in ${elapsed}s (${tokenCount} chunks)`);
+    emit?.({ type: "llm_done", label, chunkIndex: tokenCount, elapsed: Number(elapsed) });
+    return result;
+  } catch (err) {
+    const elapsed = elapsedStr();
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[planner] ${label}: stream failed in ${elapsed}s (${msg}), falling back to generateObject`);
+    emit?.({ type: "llm_error", label, detail: msg, elapsed: Number(elapsed) });
+    // Fallback: non-streaming
+    const result = await generateObject(opts);
+    const elapsed2 = elapsedStr();
+    console.error(`[planner] ${label}: generateObject fallback done in ${elapsed2}s`);
+    emit?.({ type: "llm_done", label, detail: "fallback: generateObject", elapsed: Number(elapsed2) });
+    return result.object as T;
+  }
+}
+
 // ============================================================================
 // AI story planner
 // ============================================================================
@@ -227,7 +275,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < 3 && !pass1; attempt++) {
       try {
-        const result = await generateObject({
+        pass1 = await streamObjectWithProgress<Pass1Result>('pass1', {
           model: this.model,
           schema: Pass1Schema,
           schemaName: 'storyPlan',
@@ -246,8 +294,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
             .join(' '),
           prompt: text,
           abortSignal: input.signal,
-        });
-        pass1 = result.object;
+        }, input.emit);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         console.error(`[planner] pass 1 failed (attempt ${attempt + 1}/3): ${lastError.message}`);
@@ -343,7 +390,7 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     // ---- Pass 2: beats per scene (parallel) ----
     const beatSectionsByScene = await Promise.all(
       sceneSections.map(async ({ section, excerpt }) => {
-        const pass2 = await generateObject({
+        const pass2 = await streamObjectWithProgress<Pass2Result>(`pass2/scene${sceneSections.findIndex(s => s.section.id === section.id)}`, {
           model: this.model,
           schema: Pass2Schema,
           schemaName: 'sceneBeats',
@@ -354,8 +401,8 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
             ' Preserve the scene emotional tone unless a beat clearly shifts it.',
           prompt: `Scene summary: ${section.summary}\n\nSource excerpt:\n${excerpt}`,
           abortSignal: input.signal,
-        });
-        return { section, beats: pass2.object.beats };
+        }, input.emit);
+        return { section, beats: pass2.beats };
       }),
     );
 
@@ -391,7 +438,8 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
     const pass3Results = await Promise.all(
       beatSectionsByScene.map(async ({ section, beats }) => {
         if (beats.length === 0) return { section, panels: [] as Pass3Result['panels'] };
-        const pass3 = await generateObject({
+        const sceneIdx = beatSectionsByScene.findIndex(s => s.section.id === section.id);
+        const pass3 = await streamObjectWithProgress<Pass3Result>(`pass3/scene${sceneIdx}`, {
           model: this.model,
           schema: Pass3Schema,
           schemaName: 'panelHints',
@@ -409,8 +457,8 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
             )
             .join('\n'),
           abortSignal: input.signal,
-        });
-        return { section, panels: pass3.object.panels };
+        }, input.emit);
+        return { section, panels: pass3.panels };
       }),
     );
 

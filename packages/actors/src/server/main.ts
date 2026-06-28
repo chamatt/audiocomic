@@ -33,7 +33,15 @@ const ActorsLayer = Layer.mergeAll(
 	Layer.provide(Client.layer({ endpoint })),
 );
 
-const MainLayer = Registry.serve(ActorsLayer).pipe(Layer.provide(Registry.layer()));
+// Enable local SQLite persistence so actor state survives restarts.
+// The `sqlite` option is spread into Rivetkit.setup() by Registry.layer,
+// even though the TS type doesn't expose it.
+const MainLayer = Registry.serve(ActorsLayer).pipe(
+	Layer.provide(Registry.layer({
+		endpoint,
+		...({ sqlite: "local" } as unknown as Record<string, unknown>),
+	})),
+);
 
 Effect.gen(function* () {
 	yield* Effect.log("Starting AudioComic actor server...");

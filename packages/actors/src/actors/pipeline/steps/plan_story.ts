@@ -22,10 +22,14 @@ export const PlanStoryStep: StepExecutor = {
 			yield* Effect.logInfo(`plan_story: planning story for project ${ctx.projectId} (${fullText.length} chars)`);
 
 			const planner = bridge.getStoryPlanner();
-			const result = yield* Effect.tryPromise({
-				try: () => planner.planStory({ projectId: ctx.projectId, text: fullText }),
-				catch: (e) => e instanceof Error ? e : new Error(String(e)),
-			});
+		const result = yield* Effect.tryPromise({
+			try: () => planner.planStory({
+				projectId: ctx.projectId,
+				text: fullText,
+				emit: ctx.emit,
+			}),
+			catch: (e) => e instanceof Error ? e : new Error(String(e)),
+		});
 
 			const sections: StorySection[] = result.sections;
 			const characters: CharacterProfile[] = result.characters;

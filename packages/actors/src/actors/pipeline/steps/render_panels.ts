@@ -30,6 +30,7 @@ export const RenderPanelsStep: StepExecutor = {
 			let skippedCount = 0;
 
 			yield* Effect.logInfo(`render_panels: ${panels.length} panels to render (sequential)`);
+			ctx.emit({ type: "info", label: "render_panels", detail: `${panels.length} panels to render` });
 
 			for (let i = 0; i < panels.length; i++) {
 				const panel = panels[i];
@@ -45,8 +46,8 @@ export const RenderPanelsStep: StepExecutor = {
 					alreadyRendered = true;
 				}
 				if (alreadyRendered) continue;
-
-				yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] rendering panel ${panel.id}...`);
+			yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] rendering panel ${panel.id}...`);
+			ctx.emit({ type: "substep_start", label: `panel ${i + 1}/${panels.length}`, current: i + 1, total: panels.length, detail: panel.id });
 
 				const renderReq: PanelRenderRequest = {
 					id: uuid(),
@@ -91,7 +92,8 @@ export const RenderPanelsStep: StepExecutor = {
 
 				panelImageKeys.set(panel.id, result.imageKey);
 				renderedCount += 1;
-				yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] done in ${result.durationMs ?? 0}ms → ${result.imageKey}`);
+			yield* Effect.logInfo(`render_panels: [${i + 1}/${panels.length}] done in ${result.durationMs ?? 0}ms → ${result.imageKey}`);
+			ctx.emit({ type: "substep_done", label: `panel ${i + 1}/${panels.length}`, current: i + 1, total: panels.length, detail: `${result.durationMs ?? 0}ms → ${result.imageKey}` });
 				// Yield control briefly so the actor can process concurrent
 				// requests (GetStatus, Pause) between panel renders.
 				yield* Effect.sleep(10);

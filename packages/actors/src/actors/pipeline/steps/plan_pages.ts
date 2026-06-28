@@ -20,9 +20,8 @@ export interface PlanPagesResult {
 	panels: PanelSpec[];
 }
 
-const MAX_PAGES = 4;
-const BEATS_PER_PAGE = 3;
-const MAX_BEATS = MAX_PAGES * BEATS_PER_PAGE; // 12
+const DEFAULT_MAX_PAGES = 4;
+const DEFAULT_BEATS_PER_PAGE = 3;
 
 // plan_story exposes sections as unknown[]; narrow each element safely.
 // A beat section must carry a string id/summary and a charactersPresent array.
@@ -55,6 +54,13 @@ export const PlanPagesStep: StepExecutor = {
 			const bridge = yield* PipelineBridge;
 
 			// Read the plan_story result to get the section list, then keep beats.
+			// Read config overrides for panel count limits.
+			const cfg = ctx.config as Record<string, unknown>;
+			const maxPages = typeof cfg.maxPages === "number" ? cfg.maxPages : DEFAULT_MAX_PAGES;
+			const beatsPerPage = typeof cfg.beatsPerPage === "number" ? cfg.beatsPerPage : DEFAULT_BEATS_PER_PAGE;
+			const maxBeats = maxPages * beatsPerPage;
+
+			// Read the plan_story result to get the section list, then keep beats.
 			const plan = getPrevResult(ctx, "plan_story", isPlanStoryResult);
 			const beats = plan.sections.filter(isBeatSection);
 
@@ -64,16 +70,15 @@ export const PlanPagesStep: StepExecutor = {
 				);
 			}
 
-			// Cap to MAX_BEATS, sampling evenly if there are too many beats.
-			const selected = sampleEvenly(beats, MAX_BEATS);
-
+			// Cap to maxBeats, sampling evenly if there are too many beats.
+			const selected = sampleEvenly(beats, maxBeats);
 			const pages: PageSpec[] = [];
 			const panels: PanelSpec[] = [];
 
-			for (let pageIdx = 0; pageIdx < MAX_PAGES; pageIdx++) {
+			for (let pageIdx = 0; pageIdx < maxPages; pageIdx++) {
 				const pageBeats = selected.slice(
-					pageIdx * BEATS_PER_PAGE,
-					(pageIdx + 1) * BEATS_PER_PAGE,
+					pageIdx * beatsPerPage,
+					(pageIdx + 1) * beatsPerPage,
 				);
 				if (pageBeats.length === 0) break;
 
@@ -128,13 +133,17 @@ export const PlanPagesStep: StepExecutor = {
 				`plan_pages: ${pages.length} pages, ${panels.length} panels from ${beats.length} beats`,
 			);
 
-			// Persist pages and panels in parallel.
-			yield* Effect.tryPromise(() =>
-				Promise.all(pages.map((p) => bridge.repo.pageSpecs.create(p))),
-			);
-			yield* Effect.tryPromise(() =>
-				Promise.all(panels.map((p) => bridge.repo.panelSpecs.create(p))),
-			);
+			// Persist pages and panels (non-fatal if DB unavailable).
+			yield* Effect.tryPromise({
+				try: () => Promise.all([
+					Promise.all(pages.map((p) => bridge.repo.pageSpecs.create(p))),
+					Promise.all(panels.map((p) => bridge.repo.panelSpecs.create(p))),
+				]),
+				catch: (e) => {
+					const msg = e instanceof Error ? e.message : String(e);
+					return new Error(`plan_pages: DB persist failed (non-fatal): ${msg}`);
+				},
+			}).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
 
 			return {
 				step: "plan_pages" as const,

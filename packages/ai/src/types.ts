@@ -92,6 +92,12 @@ export interface StoryPlanInput {
   /** Target approximate panels per beat (default 1) */
   panelsPerBeat?: number;
   signal?: AbortSignal;
+  /**
+   * Progress emitter for streaming events to the UI.
+   * If provided, the planner emits structured events for each LLM pass
+   * and streaming chunk, enabling n8n-style live progress display.
+   */
+  emit?: (event: { type: string; label: string; detail?: string; current?: number; total?: number; chunkIndex?: number; elapsed?: number; partial?: unknown }) => void;
 }
 
 export interface PanelHint {

@@ -177,6 +177,15 @@ export const PipelineLive = Pipeline.toLayer(
 					config: step.definition.config,
 					previousResults,
 					rawRivetkitContext,
+					emit: (event) => {
+						// Broadcast progress event to connected clients.
+						// The event includes the stepId so the UI can route it.
+						rawRivetkitContext.broadcast("stepProgress", {
+							stepId: step.definition.id,
+							...event,
+							timestamp: Date.now(),
+						});
+					},
 				};
 
 				// Execute with retry + timeout.
@@ -364,6 +373,13 @@ export const PipelineLive = Pipeline.toLayer(
 						config: step.definition.config,
 						previousResults,
 						rawRivetkitContext,
+						emit: (event) => {
+							rawRivetkitContext.broadcast("stepProgress", {
+								stepId: step.definition.id,
+								...event,
+								timestamp: Date.now(),
+							});
+						},
 					};
 
 					const executor = getStepExecutor(step.definition.type);
