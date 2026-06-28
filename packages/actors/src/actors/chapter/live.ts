@@ -1,6 +1,7 @@
 import { State } from "@rivetkit/effect";
 import { Effect } from "effect";
 import { promises as fs } from "node:fs";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -104,27 +105,43 @@ export const ChapterLive = Chapter.toLayer(
 							e instanceof Error ? e : new Error(String(e)),
 					});
 
-					// 3. Spill to a temp file — the transcription adapter reads
-					//    from a filesystem path, not a buffer.
-					const tmpPath = join(tmpdir(), `chapter-${current.id}-${uuid()}.audio`);
+				// 3. Spill to a temp file, then convert to mp3 with ffmpeg.
+				//    Groq accepts mp3 natively; converting avoids format issues
+				//    with m4b and other audiobook formats.
+				const rawTmpPath = join(tmpdir(), `chapter-${current.id}-${uuid()}.raw`);
+				const mp3Path = join(tmpdir(), `chapter-${current.id}-${uuid()}.mp3`);
+				yield* Effect.tryPromise({
+					try: () => fs.writeFile(rawTmpPath, buffer),
+					catch: (e) =>
+						e instanceof Error ? e : new Error(String(e)),
+				});
+
+				try {
 					yield* Effect.tryPromise({
-						try: () => fs.writeFile(tmpPath, buffer),
+						try: () =>
+							new Promise<void>((resolve, reject) => {
+								execFile(
+									process.env.FFMPEG_PATH ?? "ffmpeg",
+									["-y", "-i", rawTmpPath, "-codec:a", "libmp3lame", "-qscale:a", "2", mp3Path],
+									{ maxBuffer: 10 * 1024 * 1024 },
+									(err) => (err ? reject(err) : resolve()),
+								);
+							}),
 						catch: (e) =>
 							e instanceof Error ? e : new Error(String(e)),
 					});
 
-					try {
-						// 4. Run the transcription adapter.
-						const adapter = bridge.getTranscriptionAdapter();
-						const result: TranscriptResult = yield* Effect.tryPromise({
-							try: () =>
-								adapter.transcribe(tmpPath, {
-									projectId: current.projectId,
-									chapterId: current.id,
-								} as unknown as TranscriptionOptions),
-							catch: (e) =>
-								e instanceof Error ? e : new Error(String(e)),
-						});
+					// 4. Run the transcription adapter on the mp3 file.
+					const adapter = bridge.getTranscriptionAdapter();
+					const result: TranscriptResult = yield* Effect.tryPromise({
+						try: () =>
+							adapter.transcribe(mp3Path, {
+								projectId: current.projectId,
+								chapterId: current.id,
+							} as unknown as TranscriptionOptions),
+						catch: (e) =>
+							e instanceof Error ? e : new Error(String(e)),
+					});
 
 						// 5. Persist each chunk, stamped with this chapter id.
 						yield* Effect.tryPromise({
@@ -151,14 +168,14 @@ export const ChapterLive = Chapter.toLayer(
 							durationSec: result.durationSec ?? s.durationSec,
 						}));
 						rawRivetkitContext.broadcast("chapterTranscribed", done);
-					} finally {
-						// Clean up the temp file regardless of outcome.
-						yield* Effect.tryPromise({
-							try: () => fs.unlink(tmpPath),
-							catch: (e) =>
-								e instanceof Error ? e : new Error(String(e)),
-						}).pipe(Effect.ignore);
-					}
+				} finally {
+					// Clean up both temp files regardless of outcome.
+					yield* Effect.tryPromise({
+						try: () => Promise.all([fs.unlink(rawTmpPath), fs.unlink(mp3Path)]),
+						catch: (e) =>
+							e instanceof Error ? e : new Error(String(e)),
+					}).pipe(Effect.ignore);
+				}
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.gen(function* () {
