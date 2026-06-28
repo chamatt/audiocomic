@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { Project, JobRecord, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle } from '@audiocomic/domain';
-import type { PipelineState } from '@audiocomic/actors';
+import type { Project, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle, JobRecord } from '@audiocomic/domain';
+import type { PipelineState, StepState } from '@audiocomic/actors';
 import { regeneratePanelAction, regeneratePageAction, exportProjectAction } from '@/lib/actions';
 import {
   startPipelineActor,
@@ -13,6 +13,9 @@ import {
   getPipelineStatusActor,
   schedulePipelineActor,
   cancelScheduleActor,
+  addPipelineStepActor,
+  type ActorResult,
+  type AddStepInput,
 } from '@/lib/actor-actions';
 
 export interface ProjectDetailData {
@@ -31,259 +34,248 @@ interface Props {
   initialDetail: ProjectDetailData;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#6b7280',
+  running: '#fbbf24',
+  paused: '#a78bfa',
+  completed: '#4ade80',
+  failed: '#fca5a5',
+  skipped: '#6b7280',
+  idle: '#6b7280',
+  scheduled: '#60a5fa',
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const color = STATUS_COLORS[status] ?? '#6b7280';
+  return (
+    <span className="badge" style={{ background: `${color}22`, color }}>
+      {status}
+    </span>
+  );
+}
+
 export function ProjectDetail({ projectId, initialProject, initialDetail }: Props) {
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
   const [selectedPageIdx, setSelectedPageIdx] = useState(0);
-  const [polling, setPolling] = useState(false);
 
-  const jobRunning = detail.job?.state === 'running' || detail.job?.state === 'pending';
-
-  const refresh = useCallback(async () => {
-    const res = await fetch(`/api/projects/${projectId}/detail`).then((r) => r.json());
-    if (res.detail) setDetail(res.detail as ProjectDetailData);
-  }, [projectId]);
-
-  useEffect(() => {
-    if (!jobRunning) return;
-    setPolling(true);
-    const interval = setInterval(refresh, 3000);
-    return () => {
-      clearInterval(interval);
-      setPolling(false);
-    };
-  }, [jobRunning, refresh]);
-
-  // --- Rivet actor pipeline controls ---------------------------------------
+  // Pipeline actor state
   const [pipelineKey, setPipelineKey] = useState(projectId);
   const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
-  const [pipelineLoading, setPipelineLoading] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
-  const [pipelineAction, setPipelineAction] = useState<string | null>(null);
-  const [scheduleIntervalMs, setScheduleIntervalMs] = useState(60_000);
+  const [pipelineBusy, setPipelineBusy] = useState(false);
+  const [scheduleInterval, setScheduleInterval] = useState(60_000);
 
-  const refreshPipeline = useCallback(async (key: string = pipelineKey) => {
-    if (!key) return;
-    setPipelineLoading(true);
-    setPipelineError(null);
-    const res = await getPipelineStatusActor(key);
+  const project = detail.project;
+  const job = detail.job;
+  const progress = job?.progress ?? 0;
+
+  // --- Data refresh ---------------------------------------------------------
+  const refreshDetail = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/detail`);
+      if (res.ok) {
+        const data = await res.json();
+        setDetail(data.detail);
+      }
+    } catch { /* ignore */ }
+  }, [projectId]);
+
+  const jobRunning = job?.state === 'running' || job?.state === 'pending';
+  useEffect(() => {
+    if (!jobRunning) return;
+    const interval = setInterval(refreshDetail, 3000);
+    return () => clearInterval(interval);
+  }, [jobRunning, refreshDetail]);
+
+  // --- Pipeline actor refresh ----------------------------------------------
+  const refreshPipeline = useCallback(async () => {
+    const res = await getPipelineStatusActor(pipelineKey);
     if (res.ok) {
       setPipelineState(res.data);
+      setPipelineError(null);
     } else {
       setPipelineError(res.error);
-      setPipelineState(null);
     }
-    setPipelineLoading(false);
   }, [pipelineKey]);
 
   useEffect(() => {
     refreshPipeline();
   }, [refreshPipeline]);
 
-  // Poll while the actor pipeline is running so step states stay live.
   const actorRunning = pipelineState?.status === 'running';
   useEffect(() => {
     if (!actorRunning) return;
-    const interval = setInterval(() => refreshPipeline(), 2000);
+    const interval = setInterval(refreshPipeline, 2000);
     return () => clearInterval(interval);
   }, [actorRunning, refreshPipeline]);
 
-  const runPipelineAction = async (
-    label: string,
-    fn: () => Promise<{ ok: true; data: unknown } | { ok: false; error: string }>,
-  ) => {
-    setPipelineAction(label);
+  // --- Pipeline actions -----------------------------------------------------
+  const doAction = async (label: string, fn: () => Promise<ActorResult<unknown>>) => {
+    setPipelineBusy(true);
     setPipelineError(null);
     const res = await fn();
-    if (!res.ok) setPipelineError(res.error);
+    if (!res.ok) setPipelineError(`${label}: ${res.error}`);
     await refreshPipeline();
-    setPipelineAction(null);
+    setPipelineBusy(false);
   };
 
-  const onStart = () => runPipelineAction('start', () => startPipelineActor(pipelineKey));
-  const onPause = () => runPipelineAction('pause', () => pausePipelineActor(pipelineKey));
-  const onResume = () => runPipelineAction('resume', () => resumePipelineActor(pipelineKey));
-  const onRetryStep = (stepId: string) => runPipelineAction(`retry:${stepId}`, () => retryStepActor(pipelineKey, stepId));
-  const onSkipStep = (stepId: string) => runPipelineAction(`skip:${stepId}`, () => skipStepActor(pipelineKey, stepId));
-  const onSchedule = () => runPipelineAction('schedule', () => schedulePipelineActor(pipelineKey, scheduleIntervalMs));
-  const onCancelSchedule = () => runPipelineAction('cancel-schedule', () => cancelScheduleActor(pipelineKey));
+  const onStart = () => doAction('Start', () => startPipelineActor(pipelineKey));
+  const onPause = () => doAction('Pause', () => pausePipelineActor(pipelineKey));
+  const onResume = () => doAction('Resume', () => resumePipelineActor(pipelineKey));
+  const onRetry = (stepId: string) => doAction(`Retry ${stepId}`, () => retryStepActor(pipelineKey, stepId));
+  const onSkip = (stepId: string) => doAction(`Skip ${stepId}`, () => skipStepActor(pipelineKey, stepId));
+  const onSchedule = () => doAction('Schedule', () => schedulePipelineActor(pipelineKey, scheduleInterval));
+  const onCancelSchedule = () => doAction('Cancel schedule', () => cancelScheduleActor(pipelineKey));
 
-  const project = detail.project;
-  const job = detail.job;
-  const progress = job?.progress ?? 0;
-
+  // --- Legacy actions -------------------------------------------------------
   const onRegeneratePanel = async (panelId: string) => {
     await regeneratePanelAction(projectId, panelId);
-    refresh();
+    await refreshDetail();
   };
-
   const onRegeneratePage = async (pageId: string) => {
     await regeneratePageAction(projectId, pageId);
-    refresh();
+    await refreshDetail();
   };
-
   const onExport = async (type: 'pages' | 'mp4') => {
     await exportProjectAction(projectId, type);
-    refresh();
+    await refreshDetail();
   };
 
   const selectedPage = detail.pages[selectedPageIdx];
+  const steps = pipelineState?.steps ?? [];
+  const pipelineStatus = pipelineState?.status ?? 'idle';
 
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700 }}>{project.name}</h1>
-          <p className="text-sm text-dim">{project.description}</p>
-        </div>
-        <span className={`badge badge-${project.status}`}>{project.status}</span>
-      </div>
-
-      {/* Job status */}
-      {job && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold">Pipeline Status</h3>
-            <span className="text-sm text-dim">
-              {job.state} {polling && '• polling...'}
-            </span>
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 700 }}>{project.name}</h1>
+            <p className="text-sm text-dim mt-2">{project.description ?? 'No description'}</p>
           </div>
-          <div className="progress-bar mb-4">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={project.status} />
+            <span className="text-sm text-dim">{project.modality}</span>
+          </div>
+        </div>
+        {progress > 0 && (
+          <div className="progress-bar mt-4">
             <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
           </div>
-          <div className="stage-list">
-            {project.stages.map((s) => (
-              <div key={s.stage} className={`stage-item ${s.state}`}>
-                <span>{s.state === 'completed' ? '✓' : s.state === 'running' ? '⟳' : s.state === 'failed' ? '✗' : '○'}</span>
-                <span>{s.stage.replace(/_/g, ' ')}</span>
-                {s.error && <span className="text-sm" style={{ color: 'var(--danger)' }}>— {s.error}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Rivet actor pipeline controls */}
+      {/* Pipeline Actor Controls */}
       <div className="card">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-bold">Pipeline Controls (Rivet Actor)</h3>
-          <span className="text-sm text-dim">
-            {pipelineLoading ? 'loading…' : (pipelineState?.status ?? 'no status')}
-          </span>
-        </div>
+        <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Pipeline Controls</h2>
 
-        {/* Pipeline key + refresh */}
-        <div className="flex gap-2 mb-3" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="flex items-center gap-2 mb-4">
           <label className="text-sm text-dim">Pipeline key:</label>
           <input
             value={pipelineKey}
             onChange={(e) => setPipelineKey(e.target.value)}
-            style={{ padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4 }}
+            style={{ width: 200 }}
+            placeholder={projectId}
           />
-          <button onClick={() => refreshPipeline()} disabled={pipelineLoading}>Refresh</button>
-        </div>
-
-        {/* Lifecycle controls */}
-        <div className="flex gap-2 mb-3" style={{ flexWrap: 'wrap' }}>
-          <button className="primary" onClick={onStart} disabled={pipelineAction !== null || actorRunning}>Start</button>
-          <button onClick={onPause} disabled={pipelineAction !== null || !actorRunning}>Pause</button>
-          <button onClick={onResume} disabled={pipelineAction !== null || pipelineState?.status !== 'paused'}>Resume</button>
+          <button onClick={refreshPipeline} disabled={pipelineBusy}>Refresh</button>
         </div>
 
         {pipelineError && (
-          <div className="text-sm mb-3" style={{ color: 'var(--danger)' }}>Error: {pipelineError}</div>
-        )}
-
-        {/* Step list with per-step retry/skip */}
-        {pipelineState && pipelineState.steps.length > 0 ? (
-          <div className="stage-list mb-3">
-            {pipelineState.steps.map((step) => {
-              const st = step.status;
-              const icon = st === 'completed' ? '✓' : st === 'running' ? '⟳' : st === 'failed' ? '✗' : st === 'skipped' ? '→' : '○';
-              const canRetry = st === 'failed' || st === 'skipped';
-              const canSkip = st === 'pending' || st === 'failed' || st === 'paused';
-              return (
-                <div key={step.definition.id} className={`stage-item ${st}`}>
-                  <span>{icon}</span>
-                  <span>{step.definition.name}</span>
-                  <span className="text-sm text-dim">· {st} (attempts: {step.attempts})</span>
-                  {step.error && <span className="text-sm" style={{ color: 'var(--danger)' }}>— {step.error}</span>}
-                  <span className="flex gap-2" style={{ marginLeft: 'auto' }}>
-                    <button
-                      className="text-sm"
-                      onClick={() => onRetryStep(step.definition.id)}
-                      disabled={pipelineAction !== null || !canRetry}
-                      title="Retry this step"
-                    >↻ Retry</button>
-                    <button
-                      className="text-sm"
-                      onClick={() => onSkipStep(step.definition.id)}
-                      disabled={pipelineAction !== null || !canSkip}
-                      title="Skip this step"
-                    >⤳ Skip</button>
-                  </span>
-                </div>
-              );
-            })}
+          <div className="card mb-4" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', padding: '8px 12px' }}>
+            {pipelineError}
           </div>
-        ) : (
-          <p className="text-sm text-dim mb-3">No steps defined for this pipeline.</p>
         )}
 
-        {/* Cron schedule */}
-        <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
-          <h4 className="font-bold text-sm">Schedule:</h4>
+        <div className="flex items-center gap-2 mb-4">
+          <StatusBadge status={pipelineStatus} />
+          {pipelineState?.schedule?.enabled && (
+            <span className="text-sm text-dim">
+              cron: every {Math.round(pipelineState.schedule.intervalMs / 1000)}s
+            </span>
+          )}
+        </div>
+
+        {/* Lifecycle buttons */}
+        <div className="flex items-center gap-2 mb-4">
+          <button className="primary" onClick={onStart} disabled={pipelineBusy || pipelineStatus === 'running'}>
+            Start
+          </button>
+          <button onClick={onPause} disabled={pipelineBusy || pipelineStatus !== 'running'}>
+            Pause
+          </button>
+          <button onClick={onResume} disabled={pipelineBusy || pipelineStatus !== 'paused'}>
+            Resume
+          </button>
+        </div>
+
+        {/* Step list */}
+        {steps.length > 0 && (
+          <div className="stage-list">
+            {steps.map((step) => (
+              <div key={step.definition.id} className="stage-item" style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: 6,
+                marginBottom: 4,
+                background: 'var(--bg-card)',
+              }}>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={step.status} />
+                  <span style={{ fontWeight: 500 }}>{step.definition.name}</span>
+                  {step.attempts > 0 && (
+                    <span className="text-sm text-dim">attempts: {step.attempts}</span>
+                  )}
+                  {step.error && (
+                    <span className="text-sm" style={{ color: 'var(--danger)' }}>{step.error}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="text-sm"
+                    onClick={() => onRetry(step.definition.id)}
+                    disabled={pipelineBusy || step.status === 'running' || step.status === 'completed'}
+                  >
+                    Retry
+                  </button>
+                  <button
+                    className="text-sm"
+                    onClick={() => onSkip(step.definition.id)}
+                    disabled={pipelineBusy || step.status === 'completed' || step.status === 'skipped'}
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Cron scheduling */}
+        <div className="flex items-center gap-2 mt-4" style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <label className="text-sm text-dim">Cron interval (ms):</label>
           <input
             type="number"
-            min={1000}
-            step={1000}
-            value={scheduleIntervalMs}
-            onChange={(e) => setScheduleIntervalMs(Number(e.target.value))}
-            style={{ width: 120, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4 }}
+            value={scheduleInterval}
+            onChange={(e) => setScheduleInterval(Number(e.target.value))}
+            style={{ width: 120 }}
           />
-          <span className="text-sm text-dim">ms</span>
-          <button onClick={onSchedule} disabled={pipelineAction !== null}>Schedule</button>
-          <button
-            onClick={onCancelSchedule}
-            disabled={pipelineAction !== null || !pipelineState?.schedule?.enabled}
-          >Cancel Schedule</button>
+          <button onClick={onSchedule} disabled={pipelineBusy}>Schedule</button>
+          <button onClick={onCancelSchedule} disabled={pipelineBusy}>Cancel</button>
         </div>
-        {pipelineState?.schedule?.enabled && (
-          <p className="text-sm text-dim mt-2">
-            Scheduled every {pipelineState.schedule.intervalMs}ms
-            {pipelineState.schedule.nextRunAt ? ` · next ${new Date(pipelineState.schedule.nextRunAt).toLocaleString()}` : ''}
-          </p>
-        )}
       </div>
 
-      {/* World & Character Bible */}
-      {(detail.worldBible || detail.characters.length > 0) && (
-        <div className="grid grid-2">
-          {detail.worldBible && (
-            <div className="card">
-              <h3 className="font-bold mb-2">World Bible</h3>
-              <p className="text-sm text-dim mb-2">{detail.worldBible.setting}</p>
-              <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                {detail.worldBible.genre.map((g) => (
-                  <span key={g} className="badge badge-created">{g}</span>
-                ))}
-              </div>
-              {detail.worldBible.artStyle && (
-                <p className="text-sm mt-2">Art style: {detail.worldBible.artStyle}</p>
-              )}
-            </div>
-          )}
-          <div className="card">
-            <h3 className="font-bold mb-2">Characters ({detail.characters.length})</h3>
-            <div className="flex flex-col gap-2">
-              {detail.characters.map((c) => (
-                <div key={c.id} className="text-sm">
-                  <span className="font-bold">{c.name}</span>
-                  <span className="text-dim"> — {c.role}</span>
-                  {c.locked && <span className="text-accent"> 🔒</span>}
-                </div>
-              ))}
-            </div>
+      {/* Job status (legacy) */}
+      {job && (
+        <div className="card">
+          <h2 className="mb-2 font-bold" style={{ fontSize: 18 }}>Job Status</h2>
+          <div className="flex items-center gap-4">
+            <StatusBadge status={job.state} />
+            <span className="text-sm text-dim">type: {job.type}</span>
+            {job.currentStage && <span className="text-sm text-dim">stage: {job.currentStage}</span>}
+            {job.error && <span className="text-sm" style={{ color: 'var(--danger)' }}>{job.error}</span>}
           </div>
         </div>
       )}
@@ -291,35 +283,56 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
       {/* Story sections */}
       {detail.sections.length > 0 && (
         <div className="card">
-          <h3 className="font-bold mb-2">Story Structure ({detail.sections.length} sections)</h3>
-          <div className="stage-list">
-            {detail.sections.slice(0, 20).map((s) => (
-              <div key={s.id} className="stage-item" style={{ paddingLeft: s.level === 'beat' ? 32 : s.level === 'scene' ? 16 : 0 }}>
-                <span className="text-dim">[{s.level}]</span>
-                <span>{s.title ?? s.summary.slice(0, 60)}</span>
+          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Story Sections ({detail.sections.length})</h2>
+          <div className="grid grid-3">
+            {detail.sections.slice(0, 12).map((s) => (
+              <div key={s.id} className="card" style={{ padding: 12 }}>
+                <h4 className="font-bold text-sm mb-2">{s.title}</h4>
+                <p className="text-sm text-dim">{s.summary?.slice(0, 100) ?? ''}</p>
               </div>
             ))}
-            {detail.sections.length > 20 && (
-              <div className="text-sm text-dim">...and {detail.sections.length - 20} more</div>
-            )}
           </div>
         </div>
       )}
 
-      {/* Pages and panels */}
-      {detail.pages.length > 0 ? (
+      {/* Characters */}
+      {detail.characters.length > 0 && (
         <div className="card">
-          <h3 className="font-bold mb-4">Pages ({detail.pages.length})</h3>
+          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Characters ({detail.characters.length})</h2>
+          <div className="grid grid-3">
+            {detail.characters.map((c) => (
+              <div key={c.id} className="card" style={{ padding: 12 }}>
+                <h4 className="font-bold text-sm mb-2">{c.name}</h4>
+                <p className="text-sm text-dim">{c.description?.slice(0, 100) ?? ''}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* World bible */}
+      {detail.worldBible && (
+        <div className="card">
+          <h2 className="mb-2 font-bold" style={{ fontSize: 18 }}>World Bible</h2>
+          <p className="text-sm text-dim">{detail.worldBible.lore?.slice(0, 300) ?? 'No lore'}</p>
+        </div>
+      )}
+
+      {/* Pages */}
+      {detail.pages.length > 0 && (
+        <div className="card">
+          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Pages ({detail.pages.length})</h2>
 
           {/* Page selector */}
           <div className="flex gap-2 mb-4" style={{ flexWrap: 'wrap' }}>
             {detail.pages.map((p, i) => (
               <button
                 key={p.id}
+                className={i === selectedPageIdx ? 'primary' : ''}
                 onClick={() => setSelectedPageIdx(i)}
-                style={i === selectedPageIdx ? { background: 'var(--accent)', color: '#000' } : {}}
+                style={{ minWidth: 60 }}
               >
-                Page {i + 1}
+                {i + 1}
               </button>
             ))}
           </div>
@@ -328,94 +341,63 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           {selectedPage && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h4 className="font-bold">Page {selectedPageIdx + 1} — {selectedPage.panelCount} panels</h4>
-                <button onClick={() => onRegeneratePage(selectedPage.id)} className="text-sm">
-                  ⟳ Regenerate Page
-                </button>
+                <h3 className="font-bold">Page {selectedPageIdx + 1}</h3>
+                <div className="flex gap-2">
+                  <button className="text-sm" onClick={() => onRegeneratePage(selectedPage.id)}>
+                    Regenerate
+                  </button>
+                </div>
               </div>
 
-              {selectedPage.compositeUrl ? (
+              {selectedPage.compositeUrl && (
                 <div className="page-card mb-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={selectedPage.compositeUrl} alt={`Page ${selectedPageIdx + 1}`} />
+                  <img src={selectedPage.compositeUrl} alt={`Page ${selectedPageIdx + 1}`} style={{ width: '100%' }} />
                 </div>
-              ) : (
-                <div className="card text-dim text-sm mb-4">Page not yet composed</div>
               )}
 
-              {/* Panel details */}
-              <div className="grid grid-2">
+              {/* Panels */}
+              <div className="grid grid-3">
                 {selectedPage.panels.map((panel) => (
-                  <div key={panel.id} className="card">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-bold">Panel {panel.index + 1}</span>
-                      <div className="flex gap-2">
-                        <span className={`badge badge-${panel.qaStatus === 'passed' ? 'completed' : panel.qaStatus === 'failed' ? 'failed' : 'created'}`}>
-                          {panel.qaStatus}
-                        </span>
-                        <button
-                          onClick={() => onRegeneratePanel(panel.id)}
-                          className="text-sm"
-                          title="Regenerate this panel only"
-                        >
-                          ⟳
-                        </button>
-                      </div>
+                  <div key={panel.id} className="page-card">
+                    <div className="page-card-body">
+                      <h4 className="font-bold text-sm mb-2">Panel {panel.index + 1}</h4>
+                      <p className="text-sm text-dim mb-2">{panel.dialogue?.slice(0, 80) ?? ''}</p>
+                      <button className="text-sm" onClick={() => onRegeneratePanel(panel.id)}>
+                        Regenerate
+                      </button>
                     </div>
-                    <p className="text-sm text-dim mb-2">{panel.description}</p>
-                    {panel.renderPrompt && (
-                      <details className="text-sm">
-                        <summary className="text-dim cursor-pointer">Render prompt</summary>
-                        <pre className="mt-2 text-xs text-dim" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          {panel.renderPrompt}
-                        </pre>
-                      </details>
-                    )}
-                    {panel.dialogueLines?.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-sm font-bold mb-2">Dialogue:</p>
-                        {panel.dialogueLines.map((d, i) => (
-                          <div key={i} className="text-sm text-dim">
-                            <span className="font-bold">{d.speaker}:</span> {d.text}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
         </div>
-      ) : (
-        project.status !== 'completed' && (
-          <div className="card text-center text-dim">
-            <p>Pages will appear here once the planning and rendering stages complete.</p>
-          </div>
-        )
       )}
 
       {/* Exports */}
-      <div className="card">
-        <h3 className="font-bold mb-4">Export</h3>
-        <div className="flex gap-4 mb-4">
-          <button className="primary" onClick={() => onExport('pages')} disabled={detail.pages.length === 0}>
-            Export Pages (PNG)
-          </button>
-          <button className="primary" onClick={() => onExport('mp4')} disabled={detail.pages.length === 0}>
-            Export Motion Comic (MP4)
-          </button>
-        </div>
-        {detail.exports.length > 0 && (
-          <div className="flex flex-col gap-2">
+      {detail.exports.length > 0 && (
+        <div className="card">
+          <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Exports</h2>
+          <div className="flex gap-2">
             {detail.exports.map((exp) => (
-              <div key={exp.id} className="flex items-center justify-between text-sm">
-                <span>{exp.type.toUpperCase()} — {new Date(exp.createdAt).toLocaleString()}</span>
-                <a href={`/api/exports/${exp.id}/download`}>Download</a>
-              </div>
+              <a key={exp.id} href={`/api/exports/${exp.id}/download`} className="page-card" style={{ textDecoration: 'none' }}>
+                <div className="page-card-body">
+                  <span className="font-bold text-sm">{exp.type}</span>
+                  <span className="text-sm text-dim ml-2">{Math.round((exp.sizeBytes ?? 0) / 1024)}KB</span>
+                </div>
+              </a>
             ))}
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Export actions */}
+      <div className="card">
+        <h2 className="mb-4 font-bold" style={{ fontSize: 18 }}>Export</h2>
+        <div className="flex gap-2">
+          <button onClick={() => onExport('pages')}>Export Pages (ZIP)</button>
+          <button onClick={() => onExport('mp4')}>Export Motion Comic (MP4)</button>
+        </div>
       </div>
     </div>
   );

@@ -1,11 +1,27 @@
 'use server';
 
-import type { Project, ProjectStatus, ProviderSettings, JobRecord, PageSpec, PanelSpec, StorySection, CharacterProfile, WorldBible, ExportBundle } from '@audiocomic/domain';
+import type {
+  Project,
+  ProviderSettings,
+  JobRecord,
+  PageSpec,
+  PanelSpec,
+  StorySection,
+  CharacterProfile,
+  WorldBible,
+  ExportBundle,
+  SourceAsset,
+  PageComposite,
+  PanelRenderResult,
+  LetteringSpec,
+  NarrationTimeline,
+} from '@audiocomic/domain';
 import { uuid, nowIso, defaultProviderSettings, getEnv } from '@audiocomic/shared';
+import { getRepo, getSql } from '@/lib/db';
 
-// These imports will resolve once the db and workflows packages are merged.
-// The actions layer is the bridge between the web app and the backend packages.
-import { getDb, getRepo } from '@/lib/db';
+// ============================================================================
+// Project list + detail
+// ============================================================================
 
 export interface ProjectListItem {
   id: string;
@@ -17,15 +33,18 @@ export interface ProjectListItem {
 
 export async function listProjects(): Promise<ProjectListItem[]> {
   const repo = await getRepo();
-  const projects = await repo.projects.list();
-  return projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    status: p.status,
-    modality: p.modality,
+  const sql = await getSql();
+  if (!sql) return [];
+  const rows = await sql`SELECT id, name, description, status, modality FROM projects ORDER BY created_at DESC`;
+  return (rows as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    description: (r.description as string) ?? undefined,
+    status: r.status as string,
+    modality: r.modality as string,
   }));
 }
+
 export async function getProjectAction(id: string): Promise<Project | null> {
   const repo = await getRepo();
   return repo.projects.getById(id);
@@ -40,33 +59,39 @@ export interface ProjectDetailData {
   worldBible: WorldBible | null;
   exports: ExportBundle[];
 }
+
 export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
   const repo = await getRepo();
-  const project = await repo.projects.getById(id);
-  if (!project) throw new Error('Project not found');
 
-  const [job, pages, sections, characters, worldBibles, exports] = await Promise.all([
-    repo.jobs.getLatestByProject(id),
-    repo.pages.getByProject(id),
-    repo.sections.getByProject(id),
-    repo.characters.getByProject(id),
-    repo.worldBibles.getByProject(id),
-    repo.exports.getByProject(id),
+  const [project, job, sections, characters, worldBibles, pages, exports] = await Promise.all([
+    repo.projects.getById(id),
+    repo.getLatestJobByProject(id),
+    repo.storySections.getByProjectId(id),
+    repo.characterProfiles.getByProjectId(id),
+    repo.worldBibles.getByProjectId(id),
+    repo.pageSpecs.getByProjectId(id),
+    repo.exportBundles.getByProjectId(id),
   ]);
 
-  const worldBible = worldBibles[0] ?? null;
+  if (!project) throw new Error('Project not found');
 
-  // Fetch panels for each page and composite URL
+  // Load panels + composites for each page
   const pagesWithPanels = await Promise.all(
     pages.map(async (page) => {
-      const panels = await repo.panels.getByPage(page.id);
-      const composite = page.compositeId
-        ? await repo.composites.getById(page.compositeId)
-        : null;
+      const [panels, composites] = await Promise.all([
+        repo.panelSpecs.getByProjectId(id).then((all) =>
+          all.filter((p) => p.pageId === page.id),
+        ),
+        repo.pageComposites.getByProjectId(id).then((all) =>
+          all.find((c) => c.pageId === page.id),
+        ),
+      ]);
       return {
         ...page,
-        panels: panels.sort((a, b) => a.index - b.index),
-        compositeUrl: composite ? `/api/assets/${composite.imageKey}` : undefined,
+        panels,
+        compositeUrl: composites?.storageKey
+          ? `/api/assets/${composites.storageKey}`
+          : undefined,
       };
     }),
   );
@@ -74,65 +99,35 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
   return {
     project,
     job,
-    pages: pagesWithPanels.sort((a, b) => a.index - b.index),
+    pages: pagesWithPanels,
     sections,
     characters,
-    worldBible,
+    worldBible: worldBibles[0] ?? null,
     exports,
   };
 }
 
+// ============================================================================
+// Project creation
+// ============================================================================
+
 export interface CreateProjectInput {
   name: string;
-  description?: string;
+  description: string;
   modality: 'audio' | 'text';
-  file?: File | null;
-  text?: string;
+  fileName?: string;
+  fileData?: Buffer;
+  textContent?: string;
 }
+
 export async function createProjectAction(input: CreateProjectInput): Promise<string> {
   const repo = await getRepo();
-  const projectId = uuid();
-  const now = nowIso();
   const env = getEnv();
+  const id = uuid();
+  const now = nowIso();
 
-  // Store the source asset
-  let storageKey = '';
-  if (input.modality === 'audio' && input.file) {
-    storageKey = `projects/${projectId}/source/${input.file.name}`;
-    await repo.assets.create({
-      id: uuid(),
-      projectId,
-      modality: 'audio',
-      filename: input.file.name,
-      mimeType: input.file.type,
-      sizeBytes: input.file.size,
-      storageKey,
-      uploadedAt: now,
-    });
-    // Write file to storage (local for MVP)
-    const buffer = await input.file.arrayBuffer();
-    const { writeAsset } = await import('@/lib/storage');
-    await writeAsset(storageKey, Buffer.from(buffer));
-  } else if (input.modality === 'text' && input.text) {
-    const filename = 'book.txt';
-    storageKey = `projects/${projectId}/source/${filename}`;
-    await repo.assets.create({
-      id: uuid(),
-      projectId,
-      modality: 'text',
-      filename,
-      mimeType: 'text/plain',
-      sizeBytes: Buffer.byteLength(input.text),
-      storageKey,
-      uploadedAt: now,
-    });
-    const { writeAsset } = await import('@/lib/storage');
-    await writeAsset(storageKey, Buffer.from(input.text));
-  }
-
-  // Create the project
-  const project: Project = {
-    id: projectId,
+  const project = await repo.projects.create({
+    id,
     name: input.name,
     description: input.description,
     status: 'created',
@@ -141,28 +136,49 @@ export async function createProjectAction(input: CreateProjectInput): Promise<st
     updatedAt: now,
     providerSettings: defaultProviderSettings(env),
     stages: [],
-  };
-  await repo.projects.create(project);
-
-  // Enqueue the pipeline job
-  const { enqueueJob } = await import('@/lib/jobs');
-  await enqueueJob({
-    id: uuid(),
-    projectId,
-    type: 'full_pipeline',
-    state: 'pending',
-    progress: 0,
-    payload: { modality: input.modality, storageKey },
-    createdAt: now,
-    attempts: 0,
   });
 
-  return projectId;
+  // Register source asset
+  if (input.modality === 'audio' && input.fileName && input.fileData) {
+    const storageKey = `projects/${id}/source/${input.fileName}`;
+    const { writeAsset } = await import('@/lib/storage');
+    await writeAsset(storageKey, input.fileData);
+    await repo.sourceAssets.create({
+      id: uuid(),
+      projectId: id,
+      modality: 'audio',
+      filename: input.fileName,
+      mimeType: 'audio/mpeg',
+      sizeBytes: input.fileData.length,
+      storageKey,
+      uploadedAt: now,
+    });
+  } else if (input.modality === 'text' && input.textContent) {
+    const storageKey = `projects/${id}/source/text.txt`;
+    const { writeAsset } = await import('@/lib/storage');
+    await writeAsset(storageKey, Buffer.from(input.textContent, 'utf-8'));
+    await repo.sourceAssets.create({
+      id: uuid(),
+      projectId: id,
+      modality: 'text',
+      filename: 'text.txt',
+      mimeType: 'text/plain',
+      sizeBytes: input.textContent.length,
+      storageKey,
+      uploadedAt: now,
+    });
+  }
+
+  return id;
 }
 
+// ============================================================================
+// Panel/page regeneration (delegates to job queue)
+// ============================================================================
+
 export async function regeneratePanelAction(projectId: string, panelId: string): Promise<void> {
-  const { enqueueJob } = await import('@/lib/jobs');
-  await enqueueJob({
+  const repo = await getRepo();
+  await repo.jobs.create({
     id: uuid(),
     projectId,
     type: 'regenerate_panel',
@@ -175,8 +191,8 @@ export async function regeneratePanelAction(projectId: string, panelId: string):
 }
 
 export async function regeneratePageAction(projectId: string, pageId: string): Promise<void> {
-  const { enqueueJob } = await import('@/lib/jobs');
-  await enqueueJob({
+  const repo = await getRepo();
+  await repo.jobs.create({
     id: uuid(),
     projectId,
     type: 'regenerate_page',
@@ -189,8 +205,8 @@ export async function regeneratePageAction(projectId: string, pageId: string): P
 }
 
 export async function exportProjectAction(projectId: string, type: 'pages' | 'mp4'): Promise<void> {
-  const { enqueueJob } = await import('@/lib/jobs');
-  await enqueueJob({
+  const repo = await getRepo();
+  await repo.jobs.create({
     id: uuid(),
     projectId,
     type: 'export',
@@ -202,12 +218,17 @@ export async function exportProjectAction(projectId: string, type: 'pages' | 'mp
   });
 }
 
+// ============================================================================
+// Settings
+// ============================================================================
+
 export async function getSettingsAction(): Promise<ProviderSettings> {
-  // For MVP, settings are stored in a single-row table or env defaults
-  const env = getEnv();
-  return defaultProviderSettings(env);
+  const repo = await getRepo();
+  const settings = await repo.getSettings();
+  return (settings as ProviderSettings) ?? defaultProviderSettings(getEnv());
 }
+
 export async function saveSettingsAction(settings: ProviderSettings): Promise<void> {
   const repo = await getRepo();
-  await repo.settings.save(settings);
+  await repo.saveSettings(settings);
 }

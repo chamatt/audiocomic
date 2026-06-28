@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Nav } from '@/components/Nav';
 import { listProjects } from '@/lib/actions';
 export const dynamic = 'force-dynamic';
 
@@ -7,11 +8,7 @@ export default async function ProjectsPage() {
 
   return (
     <div>
-      <nav className="nav">
-        <Link href="/" className="nav-brand">AudioComic</Link>
-        <Link href="/projects" className="nav-link">Projects</Link>
-        <Link href="/settings" className="nav-link">Settings</Link>
-      </nav>
+      <Nav />
       <div className="container">
         <div className="flex items-center justify-between mb-4">
           <h1 style={{ fontSize: 24, fontWeight: 700 }}>Projects</h1>

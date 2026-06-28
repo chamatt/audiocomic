@@ -1,13 +1,10 @@
 import Link from 'next/link';
+import { Nav } from '@/components/Nav';
 
 export default function HomePage() {
   return (
     <div>
-      <nav className="nav">
-        <Link href="/" className="nav-brand">AudioComic</Link>
-        <Link href="/projects" className="nav-link">Projects</Link>
-        <Link href="/settings" className="nav-link">Settings</Link>
-      </nav>
+      <Nav />
       <div className="container">
         <div className="card mb-4">
           <h1 className="mb-2" style={{ fontSize: 32, fontWeight: 800 }}>

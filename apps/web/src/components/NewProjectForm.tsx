@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProjectAction } from '@/lib/actions';
+import { createProjectActor, createBibleActor, linkBibleActor } from '@/lib/actor-actions';
 
 export function NewProjectForm() {
   const router = useRouter();
@@ -17,28 +18,32 @@ export function NewProjectForm() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!name.trim()) {
-      setError('Project name is required');
-      return;
-    }
-    if (modality === 'audio' && !file) {
-      setError('Audio file is required');
-      return;
-    }
-    if (modality === 'text' && !text.trim()) {
-      setError('Book text is required');
-      return;
-    }
+    if (!name.trim()) { setError('Name is required'); return; }
+    if (modality === 'audio' && !file) { setError('Audio file is required'); return; }
+    if (modality === 'text' && !text.trim()) { setError('Text content is required'); return; }
 
     setLoading(true);
     try {
+      // 1. Create project in DB
+      const fileData = file ? Buffer.from(await file.arrayBuffer()) : undefined;
       const projectId = await createProjectAction({
         name,
         description,
         modality,
-        file,
-        text,
+        fileName: file?.name,
+        fileData,
+        textContent: text,
       });
+
+      // 2. Create project actor + bible actor
+      const projectRes = await createProjectActor(name, description);
+      if (projectRes.ok) {
+        const bibleRes = await createBibleActor(name, `Story bible for ${name}`);
+        if (bibleRes.ok) {
+          await linkBibleActor(projectRes.data.key, bibleRes.data.content.id);
+        }
+      }
+
       router.push(`/projects/${projectId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
@@ -50,90 +55,65 @@ export function NewProjectForm() {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div>
-        <label className="text-sm font-bold mb-2 block">Project Name</label>
+        <label className="text-sm text-dim mb-2 block">Project name</label>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="My Audiobook Comic"
-          required
+          placeholder="My Comic Project"
+          style={{ width: '100%' }}
         />
       </div>
 
       <div>
-        <label className="text-sm font-bold mb-2 block">Description (optional)</label>
+        <label className="text-sm text-dim mb-2 block">Description</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="A brief description of this project"
+          placeholder="Optional description"
           rows={2}
+          style={{ width: '100%' }}
         />
       </div>
 
       <div>
-        <label className="text-sm font-bold mb-2 block">Input Type</label>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              checked={modality === 'audio'}
-              onChange={() => setModality('audio')}
-              style={{ width: 'auto' }}
-            />
-            Audio file (MP3, WAV, M4A)
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              checked={modality === 'text'}
-              onChange={() => setModality('text')}
-              style={{ width: 'auto' }}
-            />
-            Book text (TXT, MD)
-          </label>
-        </div>
+        <label className="text-sm text-dim mb-2 block">Source type</label>
+        <select value={modality} onChange={(e) => setModality(e.target.value as 'audio' | 'text')}>
+          <option value="audio">Audio file (MP3, M4B, WAV)</option>
+          <option value="text">Text (paste book content)</option>
+        </select>
       </div>
 
       {modality === 'audio' ? (
         <div>
-          <label className="text-sm font-bold mb-2 block">Audio File</label>
+          <label className="text-sm text-dim mb-2 block">Audio file</label>
           <input
             type="file"
-            accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac"
+            accept="audio/*,.m4b,.mp3,.wav,.flac,.ogg"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
+          {file && <p className="text-sm text-dim mt-2">{file.name} ({Math.round(file.size / 1024)}KB)</p>}
         </div>
       ) : (
         <div>
-          <label className="text-sm font-bold mb-2 block">Book Text</label>
+          <label className="text-sm text-dim mb-2 block">Book text</label>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Paste the book text here, or upload a text file..."
+            placeholder="Paste the full text of the book here..."
             rows={10}
-          />
-          <input
-            type="file"
-            accept=".txt,.md,text/*"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (f) {
-                const content = await f.text();
-                setText(content);
-              }
-            }}
-            className="mt-2"
+            style={{ width: '100%', fontFamily: 'monospace', fontSize: 13 }}
           />
         </div>
       )}
 
       {error && (
-        <div className="card" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}>
+        <div className="card" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', padding: '8px 12px' }}>
           {error}
         </div>
       )}
 
       <button type="submit" className="primary" disabled={loading}>
-        {loading ? 'Creating...' : 'Create & Start Pipeline'}
+        {loading ? 'Creating...' : 'Create Project'}
       </button>
     </form>
   );
