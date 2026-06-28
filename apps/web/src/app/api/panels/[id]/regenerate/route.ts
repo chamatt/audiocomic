@@ -50,10 +50,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const existingResults = await repo.panelRenderResults.getByProjectId(panel.projectId);
     const version = existingResults.filter((r) => r.panelId === panelId).length;
 
-    // Compute render dimensions from the panel's bbox aspect ratio.
-    // bbox is normalized (0-1) relative to the page; we derive pixel
-    // dimensions that match the panel's shape, capped at a base budget.
-    const aspect = panel.bbox.w / panel.bbox.h;
+    // Compute render dimensions from the panel's display aspect ratio.
+    // bbox is normalized (0-1) relative to the page, but the page isn't
+    // square (800×1131), so we must account for page dimensions.
+    const PAGE_WIDTH = 800;
+    const PAGE_HEIGHT = 1131;
+    const aspect = (panel.bbox.w * PAGE_WIDTH) / (panel.bbox.h * PAGE_HEIGHT);
     const BASE = 1024;
     let width: number;
     let height: number;
