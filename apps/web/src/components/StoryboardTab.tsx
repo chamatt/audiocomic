@@ -186,44 +186,147 @@ const QA_VARIANT: Record<PanelSpec["qaStatus"], string> = {
   failed: "bg-red-500/10 text-red-400 border-red-500/20",
   regenerate: "bg-orange-500/10 text-orange-400 border-orange-500/20",
 };
+interface RenderVersion {
+  id: string;
+  imageUrl: string;
+  seed: number | null;
+  modelUsed: string | null;
+  createdAt: string;
+}
+
 function PanelRow({ panel, imageUrl }: { panel: PanelSpec; imageUrl?: string }): JSX.Element {
   const hasRender = Boolean(panel.renderResultId);
+  const [rendering, setRendering] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
+  const [versions, setVersions] = useState<RenderVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
   const description =
     panel.description.length > 120
       ? `${panel.description.slice(0, 120)}…`
       : panel.description;
+
+  const handleRender = useCallback(async () => {
+    setRendering(true);
+    try {
+      await fetch(`/api/panels/${panel.id}/regenerate`, { method: "POST" });
+      // Reload the page to pick up the new image
+      window.location.reload();
+    } catch {
+      /* non-fatal */
+    } finally {
+      setRendering(false);
+    }
+  }, [panel.id]);
+
+  const handleShowVersions = useCallback(async () => {
+    if (showVersions) {
+      setShowVersions(false);
+      return;
+    }
+    setShowVersions(true);
+    if (versions.length === 0) {
+      setLoadingVersions(true);
+      try {
+        const res = await fetch(`/api/panels/${panel.id}/renders`);
+        if (res.ok) {
+          const data = (await res.json()) as { renders: RenderVersion[] };
+          setVersions(data.renders ?? []);
+        }
+      } catch {
+        /* non-fatal */
+      } finally {
+        setLoadingVersions(false);
+      }
+    }
+  }, [panel.id, showVersions, versions.length]);
+
   return (
-    <div className="flex items-start gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-      {imageUrl && (
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded border border-border/60">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageUrl} alt={panel.description} className="h-full w-full object-cover" />
-        </div>
-      )}
-      <div className="flex flex-1 flex-col gap-1">
-        <Badge variant="outline" className="w-fit tabular-nums">
-          #{panel.index}
-        </Badge>
-        <p className="flex-1 text-xs text-muted-foreground leading-relaxed">
-          {description}
-        </p>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {hasRender ? (
-            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-              Rendered
+    <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+      <div className="flex items-start gap-3">
+        {imageUrl && (
+          <div className="h-16 w-16 shrink-0 overflow-hidden rounded border border-border/60">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt={panel.description} className="h-full w-full object-cover" />
+          </div>
+        )}
+        <div className="flex flex-1 flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="tabular-nums">
+              #{panel.index}
             </Badge>
-          ) : (
-            <Badge variant="outline" className="text-muted-foreground">
-              No render
-            </Badge>
-          )}
-          {panel.qaStatus && panel.qaStatus !== "pending" && (
-            <Badge className={cn("capitalize", QA_VARIANT[panel.qaStatus])}>
-              QA: {panel.qaStatus}
-            </Badge>
-          )}
+            {hasRender ? (
+              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                Rendered
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-muted-foreground">
+                No render
+              </Badge>
+            )}
+            {panel.qaStatus && panel.qaStatus !== "pending" && (
+              <Badge className={cn("capitalize", QA_VARIANT[panel.qaStatus])}>
+                QA: {panel.qaStatus}
+              </Badge>
+            )}
+          </div>
+          <p className="flex-1 text-xs text-muted-foreground leading-relaxed">
+            {description}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="default"
+              disabled={rendering}
+              onClick={handleRender}
+              className="h-6 px-2 text-xs"
+            >
+              {rendering ? "Rendering…" : hasRender ? "Regenerate" : "Render"}
+            </Button>
+            {hasRender && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleShowVersions}
+                className="h-6 px-2 text-xs"
+              >
+                {showVersions ? "Hide" : "History"}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Version history — previous render thumbnails */}
+      {showVersions && (
+        <div className="flex flex-wrap gap-2 border-t border-border/40 pt-2">
+          {loadingVersions && (
+            <span className="text-xs text-muted-foreground">Loading…</span>
+          )}
+          {!loadingVersions && versions.length === 0 && (
+            <span className="text-xs text-muted-foreground">No previous renders.</span>
+          )}
+          {versions.map((v, i) => (
+            <div key={v.id} className="group relative">
+              <div className="h-20 w-20 overflow-hidden rounded border border-border/60">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={v.imageUrl}
+ alt={`Version ${versions.length - i}`}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <span className="absolute bottom-0 left-0 rounded bg-black/70 px-1 text-[9px] text-white">
+                v{versions.length - i - 1}
+              </span>
+              {v.modelUsed && (
+                <span className="absolute right-0 top-0 rounded bg-black/70 px-1 text-[8px] text-white">
+                  {v.modelUsed}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
