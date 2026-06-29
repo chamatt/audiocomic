@@ -1,16 +1,26 @@
 // Shared helpers for step executors — safe extraction of previous step results.
 
+import { Effect } from "effect";
+
 /** Type guard: does an unknown value have a string field? */
 export function hasStringField<T extends string>(v: unknown, field: T): v is Record<T, string> {
 	return typeof v === "object" && v !== null && field in v && typeof (v as Record<string, unknown>)[field] === "string";
 }
 
-/** Safely extract a previous step's result, narrowing with a guard. */
-export function getPrevResult<T>(ctx: { previousResults: Map<string, unknown> }, stepId: string, guard: (v: unknown) => v is T): T {
+/**
+ * Safely extract a previous step's result, narrowing with a guard.
+ * Returns an Effect that fails with a descriptive error if the result
+ * is missing or has an unexpected shape — no raw throws.
+ */
+export function getPrevResult<T>(
+	ctx: { previousResults: Map<string, unknown> },
+	stepId: string,
+	guard: (v: unknown) => v is T,
+): Effect.Effect<T, Error> {
 	const raw = ctx.previousResults.get(stepId);
-	if (raw === undefined) throw new Error(`Missing previous step result: ${stepId}`);
-	if (!guard(raw)) throw new Error(`Previous step result ${stepId} has unexpected shape`);
-	return raw;
+	if (raw === undefined) return Effect.fail(new Error(`Missing previous step result: ${stepId}`));
+	if (!guard(raw)) return Effect.fail(new Error(`Previous step result ${stepId} has unexpected shape`));
+	return Effect.succeed(raw);
 }
 
 

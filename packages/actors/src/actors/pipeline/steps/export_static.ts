@@ -26,7 +26,7 @@ export const ExportStaticStep: StepExecutor = {
 			const bridge = yield* PipelineBridge;
 
 			// Read compose_pages result for the pageImageKeys map.
-			const composePages = getPrevResult(ctx, "compose_pages", isComposePagesResult);
+			const composePages = yield* getPrevResult(ctx, "compose_pages", isComposePagesResult);
 			const pageImageKeys = composePages.pageImageKeys;
 
 			// Collect all page image keys as an array.

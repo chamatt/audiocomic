@@ -35,7 +35,7 @@ export const ComposePagesStep: StepExecutor = {
 			});
 
 			// Read render_panels result for the panelImageKeys map.
-			const renderPanels = getPrevResult(ctx, "render_panels", isRenderPanelsResult);
+			const renderPanels = yield* getPrevResult(ctx, "render_panels", isRenderPanelsResult);
 			const panelImageKeys = renderPanels.panelImageKeys;
 
 			const pageImageKeys = new Map<string, string>();

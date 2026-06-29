@@ -385,7 +385,7 @@ Plus `ARCHITECTURE_PLAN.md` (target architecture), `PLAN.md` (MangaFlow gaps), `
 15. **Implement Issue entity** — if the chapter → issue hierarchy is still desired. Otherwise, remove it from ARCHITECTURE_PLAN.md.
 16. **Add per-panel regeneration action** to PipelineActor — currently must re-run entire `render_panels` step.
 17. **Fix `Effect.orDie` overuse** — use `Effect.catchAll` or `Effect.catchCause` for state reads/writes to handle schema migration gracefully.
-18. **Fix `getPrevResult` raw throws** — wrap in `Effect.fail` instead of raw `throw new Error()`.
+18. ✅ **Fix `getPrevResult` raw throws** (COMPLETED 2026-06-29) — Converted `getPrevResult` from a sync function that `throw new Error()` to an `Effect.Effect<T, Error>` that uses `Effect.fail()`. All 5 call sites updated to use `yield*`. Raw throws inside `Effect.gen` are uncaught defects; `Effect.fail` properly propagates through the error channel.
 19. **Add React Error Boundaries** — at minimum at the page level.
 20. **Add server state library** (SWR or React Query) — replace ad-hoc `useEffect` + `fetch` patterns.
 

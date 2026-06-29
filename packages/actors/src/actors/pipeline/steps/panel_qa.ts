@@ -112,7 +112,7 @@ export const PanelQaStep: StepExecutor = {
       const bridge = yield* PipelineBridge;
 
       // Read render_panels result for the panelImageKeys map (rendered panels).
-      const renderPanels = getPrevResult(ctx, "render_panels", isRenderPanelsResult);
+      const renderPanels = yield* getPrevResult(ctx, "render_panels", isRenderPanelsResult);
       const panelImageKeys = renderPanels.panelImageKeys;
 
       // Read panel specs from the DB.

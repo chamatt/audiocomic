@@ -57,11 +57,7 @@ export const ExportMotionStep: StepExecutor = {
 			const bridge = yield* PipelineBridge;
 
 			// Read previous step results.
-			const composePages = yield* Effect.tryPromise({
-				try: async () =>
-					getPrevResult(ctx, "compose_pages", isComposePagesResult),
-				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
-			});
+			const composePages = yield* getPrevResult(ctx, "compose_pages", isComposePagesResult);
 
 			// Read pages and panels from the DB (plan_chapters persists them).
 			const rawPages = yield* Effect.tryPromise({
