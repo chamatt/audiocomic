@@ -136,7 +136,7 @@ export const PlanChaptersStep: StepExecutor = {
         }
 
         // --- 2. Plan story: call the Mastra agent ---
-        const agent = bridge.getStoryPlannerAgent(ctx.projectId);
+        const agent = yield* Effect.promise(() => bridge.getStoryPlannerAgent(ctx.projectId));
         const storyResult = yield* Effect.tryPromise({
           try: () =>
             agent.planStory({

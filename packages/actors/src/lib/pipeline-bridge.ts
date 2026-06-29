@@ -9,6 +9,7 @@ import { join, dirname } from "node:path";
 import { createMediaManagerFromEnv, type MediaManager } from "@audiocomic/storage";
 import {
   createAgentHandles,
+  buildModelConfig,
   type StoryPlannerAgentHandle,
   type BibleBuilderAgentHandle,
 } from "../agents/index.ts";
@@ -64,9 +65,9 @@ export interface PipelineBridgeShape {
   getTranscriptionAdapter(): TranscriptionAdapter;
   getStoryPlanner(): StoryPlannerAdapter;
   /** Get or create a Mastra story planner agent bound to a project's knowledge base. */
-  getStoryPlannerAgent(projectId: string): import("../agents/index.ts").StoryPlannerAgentHandle;
+  getStoryPlannerAgent(projectId: string): Promise<import("../agents/index.ts").StoryPlannerAgentHandle>;
   /** Get or create a Mastra bible builder agent bound to a project's knowledge base. */
-  getBibleBuilderAgent(projectId: string): import("../agents/index.ts").BibleBuilderAgentHandle;
+  getBibleBuilderAgent(projectId: string): Promise<import("../agents/index.ts").BibleBuilderAgentHandle>;
   getTTSAdapter(): TTSAdapter | null;
   getRenderer(): RendererAdapter;
   probeAudio(path: string): Promise<{ durationSec: number }>;
@@ -180,15 +181,18 @@ export function makePipelineBridgeLayer(
       if (!storyPlanner) storyPlanner = createStoryPlanner(llmProvider, env.DEFAULT_LLM_MODEL, env);
       return storyPlanner;
     },
-    getStoryPlannerAgent(projectId: string) {
+    async getStoryPlannerAgent(projectId: string) {
       let agent = storyPlannerAgents.get(projectId);
       if (!agent) {
         const embedder = createEmbeddingProvider(env);
+        const project = await repo.projects.getById(projectId);
+        const modelConfig = buildModelConfig(project?.llmProvider, project?.llmModel);
         const handles = createAgentHandles({
           repo,
           embedder,
           db: dbResult.db,
           projectId,
+          modelConfig,
         });
         agent = handles.storyPlanner;
         storyPlannerAgents.set(projectId, agent);
@@ -196,15 +200,18 @@ export function makePipelineBridgeLayer(
       }
       return agent;
     },
-    getBibleBuilderAgent(projectId: string) {
+    async getBibleBuilderAgent(projectId: string) {
       let agent = bibleBuilderAgents.get(projectId);
       if (!agent) {
         const embedder = createEmbeddingProvider(env);
+        const project = await repo.projects.getById(projectId);
+        const modelConfig = buildModelConfig(project?.llmProvider, project?.llmModel);
         const handles = createAgentHandles({
           repo,
           embedder,
           db: dbResult.db,
           projectId,
+          modelConfig,
         });
         agent = handles.bibleBuilder;
         bibleBuilderAgents.set(projectId, agent);

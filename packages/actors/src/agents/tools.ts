@@ -8,12 +8,14 @@ import type { Repository } from '@audiocomic/db';
 import type { EmbeddingProvider } from '@audiocomic/knowledge';
 import { searchKnowledgeBase } from '@audiocomic/knowledge';
 import type { Db } from '@audiocomic/db';
+import type { MastraModelConfig } from '@mastra/core/llm';
 
 export interface ToolContext {
   repo: Repository;
   embedder: EmbeddingProvider;
   db: Db;
   projectId: string;
+  modelConfig?: MastraModelConfig;
 }
 
 /**

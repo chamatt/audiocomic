@@ -33,6 +33,30 @@ const POLLINATIONS_PROVIDERS = [
   { value: "pollinations-paid", label: "Pollinations Paid" },
   { value: "pollinations-free", label: "Pollinations Free" },
 ] as const;
+
+const LLM_PROVIDERS = [
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "pollinations", label: "Pollinations" },
+  { value: "openai", label: "OpenAI" },
+] as const;
+
+const LLM_MODELS: Record<string, { value: string; label: string }[]> = {
+  openrouter: [
+    { value: "mistralai/mistral-nemo", label: "Mistral Nemo" },
+    { value: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+    { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
+  ],
+  pollinations: [
+    { value: "openai", label: "GPT-5.4 Nano" },
+    { value: "openai-fast", label: "GPT-5 Nano" },
+    { value: "deepseek", label: "DeepSeek V4 Flash" },
+  ],
+  openai: [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+  ],
+};
 interface CanvasTabProps {
   projectId: string;
 }
@@ -192,6 +216,56 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       cancelled = true;
     };
   }, [projectId]);
+  // LLM provider + model selection (persisted to project in DB, used for story planning)
+  const [selectedLlmProvider, setSelectedLlmProvider] = useState<string>("openrouter");
+  const [selectedLlmModel, setSelectedLlmModel] = useState<string>("mistralai/mistral-nemo");
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLlmConfig = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/detail`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          const llmProvider = data.detail?.project?.llmProvider;
+          const llmModel = data.detail?.project?.llmModel;
+          if (llmProvider) setSelectedLlmProvider(llmProvider);
+          if (llmModel) setSelectedLlmModel(llmModel);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void fetchLlmConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  const handleLlmProviderChange = useCallback(
+    (provider: string) => {
+      setSelectedLlmProvider(provider);
+      const models = LLM_MODELS[provider];
+      if (models && models.length > 0) {
+        setSelectedLlmModel(models[0].value);
+      }
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ llmProvider: provider, llmModel: models?.[0]?.value ?? "" }),
+      });
+    },
+    [projectId],
+  );
+  const handleLlmModelChange = useCallback(
+    (model: string) => {
+      setSelectedLlmModel(model);
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ llmModel: model }),
+      });
+    },
+    [projectId],
+  );
   const handleModelChange = useCallback(
     (model: string) => {
       setSelectedModel(model);
@@ -533,6 +607,36 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
             title="Image generation model"
           >
             {POLLINATIONS_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+
+          <div className="h-5 w-px bg-border" />
+
+          {/* LLM provider selector (for story planning) */}
+          <select
+            value={selectedLlmProvider}
+            onChange={(e) => handleLlmProviderChange(e.target.value)}
+            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+            title="LLM provider for story planning"
+          >
+            {LLM_PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+
+          {/* LLM model selector */}
+          <select
+            value={selectedLlmModel}
+            onChange={(e) => handleLlmModelChange(e.target.value)}
+            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+            title="LLM model for story planning"
+          >
+            {(LLM_MODELS[selectedLlmProvider] ?? []).map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>

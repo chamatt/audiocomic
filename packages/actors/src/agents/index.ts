@@ -12,25 +12,33 @@ import { uuid, nowIso, logger } from "@audiocomic/shared";
 import type { Repository } from "@audiocomic/db";
 
 /**
- * Resolve the LLM model from env. Supports two providers:
- *   - openrouter (default): model string like "openrouter/deepseek/deepseek-v4-flash"
+ * Resolve the LLM model config from provider + model strings.
+ * Supports:
+ *   - openrouter (default): model string like "mistralai/mistral-nemo"
  *   - pollinations: OpenAI-compatible config pointing at gen.pollinations.ai/v1
+ *   - openai: OpenAI direct
  *
- * Set LLM_PROVIDER=pollinations to use Pollinations' gen.pollinations.ai endpoint
- * (bills to POLLINATIONS_API_KEY balance). Set DEFAULT_LLM_MODEL to the model name
- * (e.g. "openai" for gpt-5.4-nano, "deepseek" for deepseek-v4-flash, "openai-fast" for gpt-5-nano).
+ * Falls back to env vars LLM_PROVIDER / DEFAULT_LLM_MODEL when params are absent.
  */
-const LLM_PROVIDER = process.env.LLM_PROVIDER ?? "openrouter";
-const LLM_MODEL = process.env.DEFAULT_LLM_MODEL ?? "mistralai/mistral-nemo";
-
-const modelConfig: MastraModelConfig =
-  LLM_PROVIDER === "pollinations"
-    ? {
-        id: `pollinations/${LLM_MODEL}`,
-        url: "https://gen.pollinations.ai/v1",
-        apiKey: process.env.POLLINATIONS_API_KEY ?? "",
-      }
-    : `openrouter/${LLM_MODEL}`;
+export function buildModelConfig(
+  provider?: string,
+  model?: string,
+): MastraModelConfig {
+  const p = provider ?? process.env.LLM_PROVIDER ?? "openrouter";
+  const m = model ?? process.env.DEFAULT_LLM_MODEL ?? "mistralai/mistral-nemo";
+  if (p === "pollinations") {
+    return {
+      id: `pollinations/${m}`,
+      url: "https://gen.pollinations.ai/v1",
+      apiKey: process.env.POLLINATIONS_API_KEY ?? "",
+    };
+  }
+  if (p === "openai") {
+    return `openai/${m}`;
+  }
+  // openrouter and any unknown provider default to openrouter
+  return `openrouter/${m}`;
+}
 
 // ============================================================================
 // Structured output schemas — 3-pass decomposition
@@ -257,7 +265,7 @@ STEP 4: Define the world setting and art style.
 - tone: The emotional register of the chapter
 
 Output: structured JSON with world setting, characters (with descriptions and roles), chapters (each containing scenes with summaries and text excerpts), and character states.`,
-    model: modelConfig,
+    model: ctx.modelConfig ?? buildModelConfig(),
     tools,
   });
 }
@@ -266,7 +274,7 @@ Output: structured JSON with world setting, characters (with descriptions and ro
  * Create a beat decomposer agent for pass 2. No tools needed — just
  * breaks a scene into visual beats. Uses the same model for consistency.
  */
-function makeBeatDecomposerAgent(projectId: string): Agent {
+function makeBeatDecomposerAgent(projectId: string, modelConfig: MastraModelConfig): Agent {
   return new Agent({
     id: `beat-decomposer-${projectId}`,
     name: "Beat Decomposer",
@@ -290,7 +298,7 @@ Output: structured JSON with a beats array.`,
  * Create a panel layout agent for pass 3. No tools needed — just
  * generates panel descriptions and dialogue per beat.
  */
-function makePanelLayoutAgent(projectId: string): Agent {
+function makePanelLayoutAgent(projectId: string, modelConfig: MastraModelConfig): Agent {
   return new Agent({
     id: `panel-layout-${projectId}`,
     name: "Panel Layout",
@@ -341,7 +349,7 @@ When processing a new chapter:
 6. Flag contradictions with previous chapters
 
 Output: structured JSON with knowledge updates.`,
-    model: modelConfig,
+    model: ctx.modelConfig ?? buildModelConfig(),
     tools,
   });
 }
@@ -796,9 +804,10 @@ export function createAgentHandles(ctx: ToolContext): {
   storyPlanner: StoryPlannerAgentHandle;
   bibleBuilder: BibleBuilderAgentHandle;
 } {
+  const mc = ctx.modelConfig ?? buildModelConfig();
   const storyAgent = makeStoryPlannerAgent(ctx);
-  const beatAgent = makeBeatDecomposerAgent(ctx.projectId);
-  const panelAgent = makePanelLayoutAgent(ctx.projectId);
+  const beatAgent = makeBeatDecomposerAgent(ctx.projectId, mc);
+  const panelAgent = makePanelLayoutAgent(ctx.projectId, mc);
   const bibleAgent = makeBibleBuilderAgent(ctx);
 
   return {

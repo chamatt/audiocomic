@@ -17,6 +17,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
   Pause,
@@ -75,6 +82,30 @@ function StatusBadge({ status }: { status: string }) {
     </Badge>
   );
 }
+
+const LLM_PROVIDERS = [
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "pollinations", label: "Pollinations" },
+  { value: "openai", label: "OpenAI" },
+] as const;
+
+const LLM_MODELS: Record<string, { value: string; label: string }[]> = {
+  openrouter: [
+    { value: "mistralai/mistral-nemo", label: "Mistral Nemo" },
+    { value: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+    { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
+  ],
+  pollinations: [
+    { value: "openai", label: "GPT-5.4 Nano" },
+    { value: "openai-fast", label: "GPT-5 Nano" },
+    { value: "deepseek", label: "DeepSeek V4 Flash" },
+  ],
+  openai: [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+  ],
+};
 
 interface WikiPageEntry {
   id: string;
@@ -271,6 +302,33 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
   const [activeTab, setActiveTab] = useState<string>("canvas");
   const project = detail.project;
+  const [llmProvider, setLlmProvider] = useState<string>(project.llmProvider ?? "openrouter");
+  const [llmModel, setLlmModel] = useState<string>(project.llmModel ?? "mistralai/mistral-nemo");
+  const handleLlmProviderChange = useCallback(
+    (provider: string) => {
+      setLlmProvider(provider);
+      const models = LLM_MODELS[provider];
+      const defaultModel = models?.[0]?.value ?? "";
+      if (defaultModel) setLlmModel(defaultModel);
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ llmProvider: provider, llmModel: defaultModel }),
+      });
+    },
+    [projectId],
+  );
+  const handleLlmModelChange = useCallback(
+    (model: string) => {
+      setLlmModel(model);
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ llmModel: model }),
+      });
+    },
+    [projectId],
+  );
   const { selectChapter } = useCanvasStore();
 
   // --- Data refresh ---
@@ -417,8 +475,26 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
               <CardContent className="flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
+                    <Label>LLM Provider</Label>
+                    <Select value={llmProvider} onValueChange={handleLlmProviderChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {LLM_PROVIDERS.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-2">
                     <Label>LLM Model</Label>
-                    <Input value={project.providerSettings?.llmModel ?? "default"} readOnly />
+                    <Select value={llmModel} onValueChange={handleLlmModelChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(LLM_MODELS[llmProvider] ?? []).map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label>Image Model</Label>

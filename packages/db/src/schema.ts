@@ -56,6 +56,8 @@ export const projects = pgTable(
     stages: jsonb("stages").notNull().default([]),
     renderModel: varchar("render_model", { length: 64 }),
     renderProvider: varchar("render_provider", { length: 64 }),
+    llmProvider: varchar("llm_provider", { length: 64 }),
+    llmModel: varchar("llm_model", { length: 128 }),
   },
   (t) => [index("projects_status_idx").on(t.status)],
 );

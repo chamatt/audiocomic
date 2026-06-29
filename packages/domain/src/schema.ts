@@ -87,6 +87,8 @@ export const Project = z.object({
     .default([]),
   renderModel: z.string().optional(), // e.g. "flux", "gptimage", "turbo"
   renderProvider: z.string().optional(), // e.g. "pollinations-free", "pollinations-paid"
+  llmProvider: z.string().optional(), // "openrouter" | "pollinations" | "openai" | etc.
+  llmModel: z.string().optional(), // model name, e.g. "mistralai/mistral-nemo" or "openai"
 });
 export type Project = z.infer<typeof Project>;
 

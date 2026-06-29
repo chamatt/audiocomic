@@ -212,7 +212,7 @@ export const ChapterLive = Chapter.toLayer(
 
           // 4. Bible builder agent (per-chapter).
           try {
-            const bibleAgent = bridge.getBibleBuilderAgent(current.projectId);
+            const bibleAgent = yield* Effect.promise(() => bridge.getBibleBuilderAgent(current.projectId));
             yield* Effect.tryPromise({
               try: () =>
                 bibleAgent.buildBible({
@@ -300,7 +300,7 @@ export const ChapterLive = Chapter.toLayer(
           //    Pass 1: uses KB tools (vector-query, character-lookup, world-lookup) for cross-chapter context
           //    Pass 2: decomposes each scene into beats
           //    Pass 3: generates panel hints per beat
-          const agent = bridge.getStoryPlannerAgent(current.projectId);
+          const agent = yield* Effect.promise(() => bridge.getStoryPlannerAgent(current.projectId));
           const storyResult = yield* Effect.tryPromise({
             try: () => agent.planStory({ projectId: current.projectId, text: chapterText }),
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),

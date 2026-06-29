@@ -77,7 +77,7 @@ export const BuildBiblesStep: StepExecutor = {
 					detail: `Building bible for chapter ${chapter.index + 1}: ${chapter.title}`,
 				});
 
-				const agent = bridge.getBibleBuilderAgent(ctx.projectId);
+				const agent = yield* Effect.promise(() => bridge.getBibleBuilderAgent(ctx.projectId));
 				const result = yield* Effect.tryPromise({
 					try: () =>
 						agent.buildBible({
