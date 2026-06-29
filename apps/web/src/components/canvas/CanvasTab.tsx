@@ -201,7 +201,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   );
 
   // Image model + provider selection (persisted to project in DB)
-  const [selectedModel, setSelectedModel] = useState<string>("gptimage");
+  const [selectedModel, setSelectedModel] = useState<string>("z-image-turbo");
   const [selectedProvider, setSelectedProvider] = useState<string>("pollinations-paid");
   useEffect(() => {
     let cancelled = false;
