@@ -6,6 +6,7 @@
       "name": "audiocomic",
       "dependencies": {
         "pg": "^8.22.0",
+        "sharp": "^0.35.2",
       },
       "devDependencies": {
         "@effect/platform-node": "4.0.0-beta.66",

@@ -1,5 +1,6 @@
+import sharp from "sharp";
 import { getRepo } from "@/lib/db";
-import { writeAsset } from "@/lib/storage";
+import { writeAsset, readAsset } from "@/lib/storage";
 import { logger } from "@audiocomic/shared";
 import { getEnv, uuid, nowIso } from "@audiocomic/shared";
 import { createRenderer } from "@audiocomic/renderers";
@@ -50,25 +51,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const existingResults = await repo.panelRenderResults.getByProjectId(panel.projectId);
     const version = existingResults.filter((r) => r.panelId === panelId).length;
 
-    // Compute render dimensions from the panel's display aspect ratio.
+    // Always generate at 1024×1024 (native model resolution) and crop to
+    // the panel's aspect ratio afterwards. This avoids stretching because
+    // models generate at their native 1:1 aspect ratio — requesting
+    // non-square dimensions causes the backend to resize (stretch) the
+    // output. Cropping preserves proportions and just trims edges.
+    // See: https://promptingpixels.com/tutorial/width-height
+    const GEN_SIZE = 1024;
+    const width = GEN_SIZE;
+    const height = GEN_SIZE;
+
+    // Compute the crop aspect ratio from the panel's display dimensions.
     // bbox is normalized (0-1) relative to the page, but the page isn't
     // square (800×1131), so we must account for page dimensions.
     const PAGE_WIDTH = 800;
     const PAGE_HEIGHT = 1131;
-    const aspect = (panel.bbox.w * PAGE_WIDTH) / (panel.bbox.h * PAGE_HEIGHT);
-    const BASE = 1024;
-    let width: number;
-    let height: number;
-    if (aspect >= 1) {
-      width = BASE;
-      height = Math.round(BASE / aspect);
-    } else {
-      height = BASE;
-      width = Math.round(BASE * aspect);
-    }
-    // Round to nearest 64 (most image models prefer multiples of 64).
-    width = Math.max(64, Math.round(width / 64) * 64);
-    height = Math.max(64, Math.round(height / 64) * 64);
+    const panelAspect = (panel.bbox.w * PAGE_WIDTH) / (panel.bbox.h * PAGE_HEIGHT);
 
     const renderReq: PanelRenderRequest = {
       id: uuid(),
@@ -129,18 +127,48 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       });
     }
 
-    // The renderer's writeLocalImage already uploaded to object storage via
-    // MediaManager, but if the renderer returned inline imageData, write it
-    // to the web app's storage as well (covers placeholder renderer which
-    // uses a different MediaManager instance).
-    if ("imageData" in result && result.imageData) {
-      try {
-        await writeAsset(result.imageKey, Buffer.from(result.imageData as Uint8Array));
-      } catch (e) {
-        log.warn("failed to write image to web storage", {
-          error: e instanceof Error ? e.message : String(e),
-        });
+    // Crop the square 1024×1024 image to the panel's aspect ratio.
+    // This avoids the stretching that occurs when models generate at
+    // non-native aspect ratios — we generate at native 1:1 and crop.
+    // The renderer already wrote the square image to storage, so we
+    // read it back, crop, and overwrite.
+    try {
+      const squareBuffer = await readAsset(result.imageKey);
+      const meta = await sharp(squareBuffer).metadata();
+      const sw = meta.width ?? GEN_SIZE;
+      const sh = meta.height ?? GEN_SIZE;
+
+      // Compute crop dimensions preserving the panel's aspect ratio.
+      let cropW: number;
+      let cropH: number;
+      if (panelAspect >= 1) {
+        // Wide: full width, reduce height
+        cropW = sw;
+        cropH = Math.round(sw / panelAspect);
+      } else {
+        // Tall: full height, reduce width
+        cropH = sh;
+        cropW = Math.round(sh * panelAspect);
       }
+      // Center crop
+      const left = Math.round((sw - cropW) / 2);
+      const top = Math.round((sh - cropH) / 2);
+
+      const croppedBuffer = await sharp(squareBuffer)
+        .extract({ left, top, width: cropW, height: cropH })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+
+      // Overwrite the square image in storage with the cropped version.
+      await writeAsset(result.imageKey, croppedBuffer);
+
+      log.info(`cropped ${sw}×${sh} → ${cropW}×${cropH} (aspect ${panelAspect.toFixed(2)})`, {
+        panelId,
+      });
+    } catch (e) {
+      log.warn("failed to crop image, using square original", {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
 
     const imageUrl = `/api/assets/${result.imageKey}`;
