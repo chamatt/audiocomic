@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { PanelSpec, CameraFraming } from "@audiocomic/domain";
 
 const CAMERA_FRAMINGS: CameraFraming[] = [
@@ -33,13 +48,14 @@ const QA_STATUSES = ["pending", "passed", "failed", "regenerate"] as const;
 interface PanelEditorProps {
   panel: PanelSpec | null;
   panelImageUrl?: string;
+  projectId: string;
   onPatch: (panelId: string, patch: Partial<PanelSpec>) => Promise<void>;
   onRegenerate: (panelId: string) => Promise<void>;
 }
-
 export function PanelEditor({
   panel,
   panelImageUrl,
+  projectId,
   onPatch,
   onRegenerate,
 }: PanelEditorProps): JSX.Element | null {
@@ -172,7 +188,7 @@ export function PanelEditor({
           <Separator />
 
           {/* Characters */}
-          <CharacterEditor panel={panel} onPatch={onPatch} />
+          <CharacterEditor panel={panel} projectId={projectId} onPatch={onPatch} />
 
           <Separator />
 
@@ -280,14 +296,48 @@ function DebouncedInput({
 
 // --- Character Editor ---
 
+interface ProjectCharacter {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  aliases: string[];
+}
+
 function CharacterEditor({
   panel,
+  projectId,
   onPatch,
 }: {
   panel: PanelSpec;
+  projectId: string;
   onPatch: (panelId: string, patch: Partial<PanelSpec>) => Promise<void>;
 }): JSX.Element {
   const characters = panel.characters;
+  const [projectChars, setProjectChars] = useState<ProjectCharacter[]>([]);
+  const [openCombos, setOpenCombos] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchChars = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/knowledge/characters`);
+        if (res.ok && !cancelled) {
+          const data = (await res.json()) as { characters: ProjectCharacter[] };
+          setProjectChars(data.characters ?? []);
+        }
+      } catch {
+        /* non-fatal */
+      }
+    };
+    void fetchChars();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  const charById = useMemo(
+    () => new Map(projectChars.map((c) => [c.id, c])),
+    [projectChars],
+  );
 
   const updateChar = (index: number, patch: Partial<PanelSpec["characters"][number]>) => {
     const newChars = characters.map((c, i) => (i === index ? { ...c, ...patch } : c));
@@ -300,59 +350,110 @@ function CharacterEditor({
   };
 
   const addChar = () => {
+    const firstId = projectChars[0]?.id ?? crypto.randomUUID();
     void onPatch(panel.id, {
-      characters: [...characters, { characterId: crypto.randomUUID(), position: "center" }],
+      characters: [...characters, { characterId: firstId, position: "center" }],
     });
   };
 
   return (
     <FieldSection title="Characters">
       <div className="space-y-3">
-        {characters.map((char, i) => (
-          <div key={i} className="space-y-2 rounded-md border p-2">
-            <div className="flex items-center justify-between">
-              <Input
-                value={char.characterId}
-                onChange={(e) => updateChar(i, { characterId: e.target.value })}
-                placeholder="Character ID"
-                className="h-7 text-xs"
-              />
-              <Button size="sm" variant="ghost" onClick={() => removeChar(i)} className="h-7 px-2">
-                ×
-              </Button>
+        {characters.map((char, i) => {
+          const selected = charById.get(char.characterId);
+
+          return (
+            <div key={i} className="space-y-2 rounded-md border p-2">
+              <div className="flex items-center justify-between">
+                <Popover
+                  open={openCombos[i] ?? false}
+                  onOpenChange={(open) => setOpenCombos((s) => ({ ...s, [i]: open }))}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="h-7 text-xs flex-1 mr-1 justify-between font-normal"
+                    >
+                      {selected ? (
+                        <span className="truncate">
+                          {selected.name}
+                          <span className="text-muted-foreground ml-1">({selected.role})</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Select character…</span>
+                      )}
+                      <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search characters…" className="h-8" />
+                      <CommandList>
+                        <CommandEmpty>No character found.</CommandEmpty>
+                        <CommandGroup>
+                          {projectChars.map((c) => (
+                            <CommandItem
+                              key={c.id}
+                              value={`${c.name} ${c.aliases.join(" ")} ${c.role}`}
+                              onSelect={() => {
+                                updateChar(i, { characterId: c.id });
+                                setOpenCombos((s) => ({ ...s, [i]: false }));
+                              }}
+                              className="text-xs"
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-3 w-3",
+                                  char.characterId === c.id ? "opacity-100" : "opacity-0",
+                                )}
+                              />
+                              <span className="font-medium">{c.name}</span>
+                              <span className="text-muted-foreground ml-1">({c.role})</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <Button size="sm" variant="ghost" onClick={() => removeChar(i)} className="h-7 px-2">
+                  ×
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={char.pose ?? ""}
+                  onChange={(e) => updateChar(i, { pose: e.target.value })}
+                  placeholder="Pose"
+                  className="h-7 text-xs"
+                />
+                <Input
+                  value={char.expression ?? ""}
+                  onChange={(e) => updateChar(i, { expression: e.target.value })}
+                  placeholder="Expression"
+                  className="h-7 text-xs"
+                />
+              </div>
+              <Select
+                value={char.position ?? "center"}
+                onValueChange={(v) =>
+                  updateChar(i, { position: v as "left" | "center" | "right" | "background" })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="left">Left</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="right">Right</SelectItem>
+                  <SelectItem value="background">Background</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                value={char.pose ?? ""}
-                onChange={(e) => updateChar(i, { pose: e.target.value })}
-                placeholder="Pose"
-                className="h-7 text-xs"
-              />
-              <Input
-                value={char.expression ?? ""}
-                onChange={(e) => updateChar(i, { expression: e.target.value })}
-                placeholder="Expression"
-                className="h-7 text-xs"
-              />
-            </div>
-            <Select
-              value={char.position ?? "center"}
-              onValueChange={(v) =>
-                updateChar(i, { position: v as "left" | "center" | "right" | "background" })
-              }
-            >
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="left">Left</SelectItem>
-                <SelectItem value="center">Center</SelectItem>
-                <SelectItem value="right">Right</SelectItem>
-                <SelectItem value="background">Background</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        ))}
+          );
+        })}
         <Button size="sm" variant="outline" onClick={addChar} className="w-full">
           + Add Character
         </Button>

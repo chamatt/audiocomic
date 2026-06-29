@@ -867,6 +867,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         <PanelEditor
           panel={selectedPanel}
           panelImageUrl={selectedPanelImageUrl}
+          projectId={projectId}
           onPatch={handlePanelPatch}
           onRegenerate={handleRegenerate}
         />
