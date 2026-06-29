@@ -6,6 +6,7 @@ import { getStepExecutor, type StepContext, type StepOutput } from "./steps/type
 import "./steps/index.ts";
 import type { RetryPolicy, StepState } from "../../lib/schemas.ts";
 import { createDefaultSteps } from "./default-steps.ts";
+import { logAndDie } from "../../lib/services.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -263,7 +264,7 @@ export const PipelineLive = Pipeline.toLayer(
 							}
 							: st,
 					),
-				})).pipe(Effect.orDie);
+			})).pipe(logAndDie("pipeline.markRunning"));
 				const found = findStep(updated.steps, stepId);
 				return found?.step ?? updated.steps[0]!;
 			});
@@ -286,7 +287,7 @@ export const PipelineLive = Pipeline.toLayer(
 							}
 							: st,
 					),
-				})).pipe(Effect.orDie);
+			})).pipe(logAndDie("pipeline.markCompleted"));
 				const found = findStep(completed.steps, stepId);
 				rawRivetkitContext.broadcast("stepCompleted", found?.step);
 				return found?.step ?? completed.steps[0]!;
@@ -308,7 +309,7 @@ export const PipelineLive = Pipeline.toLayer(
 							}
 							: st,
 					),
-				})).pipe(Effect.orDie);
+			})).pipe(logAndDie("pipeline.markFailed"));
 				const found = findStep(failed.steps, stepId);
 				rawRivetkitContext.broadcast("stepFailed", found?.step);
 				return found?.step ?? failed.steps[0]!;
@@ -328,7 +329,7 @@ export const PipelineLive = Pipeline.toLayer(
 								: st,
 						),
 					};
-				}).pipe(Effect.orDie);
+			}).pipe(logAndDie("pipeline.invalidateDownstream"));
 				return updated.steps;
 			});
 		}
@@ -337,9 +338,8 @@ export const PipelineLive = Pipeline.toLayer(
 		// Step execution loop — forked into the actor scope by Start/Resume.
 		// Uses topological sort based on executor inputs declarations.
 		// -------------------------------------------------------------------
-
 		const runLoop: Effect.Effect<string, never, unknown> = Effect.gen(function* () {
-			const initial = yield* State.get(state).pipe(Effect.orDie);
+			const initial = yield* logAndDie("pipeline.runLoop.init")(State.get(state));
 			rawRivetkitContext.broadcast("pipelineStarted", initial);
 
 			// Topologically sort steps by their executor inputs.
@@ -348,7 +348,7 @@ export const PipelineLive = Pipeline.toLayer(
 
 			for (const stepId of stepIds) {
 				// Check for pause between steps.
-				const current = yield* State.get(state).pipe(Effect.orDie);
+				const current = yield* logAndDie("pipeline.runLoop.pauseCheck")(State.get(state));
 				if (current.status !== "running") {
 					return current.status;
 				}
@@ -394,7 +394,7 @@ export const PipelineLive = Pipeline.toLayer(
 									}
 									: st,
 							),
-						})).pipe(Effect.orDie);
+					})).pipe(logAndDie("pipeline.runLoop.depBlocked"));
 						rawRivetkitContext.broadcast("stepFailed", blocked.steps[idx]);
 						continue;
 					}
@@ -405,7 +405,7 @@ export const PipelineLive = Pipeline.toLayer(
 				rawRivetkitContext.broadcast("stepStarted", runningState);
 
 				// Execute with retry + timeout.
-				const freshState = yield* State.get(state).pipe(Effect.orDie);
+				const freshState = yield* logAndDie("pipeline.runLoop.preExec")(State.get(state));
 				const execEffect = withRetryAndTimeout(
 					executeStep(stepId, freshState.steps),
 					step.definition.retryPolicy,
@@ -420,7 +420,7 @@ export const PipelineLive = Pipeline.toLayer(
 						const pausedState = yield* State.updateAndGet(state, (s) => ({
 							...s,
 							status: "paused" as const,
-						})).pipe(Effect.orDie);
+					})).pipe(logAndDie("pipeline.runLoop.autoPause"));
 						rawRivetkitContext.broadcast("pipelinePaused", pausedState);
 						yield* Effect.logInfo(
 							`Pipeline auto-paused after step: ${stepId} — review output then click Resume`,
@@ -439,14 +439,14 @@ export const PipelineLive = Pipeline.toLayer(
 					const halted = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "failed" as const,
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.runLoop.halted"));
 					rawRivetkitContext.broadcast("pipelineCompleted", halted);
 					return halted.status;
 				}
 			}
 
 			// All steps processed — determine final status.
-			const finalState = yield* State.get(state).pipe(Effect.orDie);
+			const finalState = yield* logAndDie("pipeline.runLoop.final")(State.get(state));
 			const allDone = finalState.steps.every(
 				(s) => s.status === "completed" || s.status === "skipped",
 			);
@@ -454,7 +454,7 @@ export const PipelineLive = Pipeline.toLayer(
 			const done = yield* State.updateAndGet(state, (s) => ({
 				...s,
 				status: finalStatus as "completed" | "failed",
-			})).pipe(Effect.orDie);
+			})).pipe(logAndDie("pipeline.runLoop.done"));
 			rawRivetkitContext.broadcast("pipelineCompleted", done);
 			return done.status;
 		});
@@ -476,7 +476,7 @@ export const PipelineLive = Pipeline.toLayer(
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						steps: [...s.steps, newStep],
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.AddStep"));
 					return updated.steps;
 				}),
 
@@ -487,13 +487,13 @@ export const PipelineLive = Pipeline.toLayer(
 						steps: s.steps.filter(
 							(st) => st.definition.id !== payload.stepId,
 						),
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.RemoveStep"));
 					return updated.steps;
 				}),
 
 			GetStatus: () =>
 				Effect.gen(function* () {
-					return yield* State.get(state).pipe(Effect.orDie);
+				return yield* logAndDie("pipeline.GetStatus")(State.get(state));
 				}),
 
 			// -- Lifecycle -------------------------------------------------------
@@ -504,7 +504,7 @@ export const PipelineLive = Pipeline.toLayer(
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "running" as const,
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.Start"));
 					// Fork the execution loop as a daemon so actions stay responsive.
 					yield* runLoop.pipe(Effect.forkDetach);
 					return updated.status;
@@ -516,7 +516,7 @@ export const PipelineLive = Pipeline.toLayer(
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "paused" as const,
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.Pause"));
 					rawRivetkitContext.broadcast("pipelinePaused", updated);
 					return updated.status;
 				}),
@@ -527,7 +527,7 @@ export const PipelineLive = Pipeline.toLayer(
 					const updated = yield* State.updateAndGet(state, (s) => ({
 						...s,
 						status: "running" as const,
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.Resume"));
 					rawRivetkitContext.broadcast("pipelineResumed", updated);
 					yield* runLoop.pipe(Effect.forkDetach);
 					return updated.status;
@@ -537,7 +537,7 @@ export const PipelineLive = Pipeline.toLayer(
 
 			RetryStep: ({ payload }) =>
 				Effect.gen(function* () {
-					const current = yield* State.get(state).pipe(Effect.orDie);
+				const current = yield* logAndDie("pipeline.RetryStep.getState")(State.get(state));
 					const found = findStep(current.steps, payload.stepId);
 					if (found === undefined) {
 						return yield* Effect.die(
@@ -551,7 +551,7 @@ export const PipelineLive = Pipeline.toLayer(
 					rawRivetkitContext.broadcast("stepStarted", runningState);
 
 					// Execute the single step.
-					const freshState = yield* State.get(state).pipe(Effect.orDie);
+				const freshState = yield* logAndDie("pipeline.RetryStep.preExec")(State.get(state));
 					const execEffect = withRetryAndTimeout(
 						executeStep(payload.stepId, freshState.steps),
 						step.definition.retryPolicy,
@@ -589,7 +589,7 @@ export const PipelineLive = Pipeline.toLayer(
 							completedAt: Date.now(),
 						};
 						return { ...s, steps };
-					}).pipe(Effect.orDie);
+				}).pipe(logAndDie("pipeline.SkipStep"));
 					const found = findStep(updated.steps, payload.stepId);
 					if (found === undefined) {
 						return yield* Effect.die(
@@ -601,7 +601,7 @@ export const PipelineLive = Pipeline.toLayer(
 
 			RunStep: ({ payload }) =>
 				Effect.gen(function* () {
-					const current = yield* State.get(state).pipe(Effect.orDie);
+				const current = yield* logAndDie("pipeline.RunStep.getState")(State.get(state));
 					const found = findStep(current.steps, payload.stepId);
 					if (found === undefined) {
 						return yield* Effect.die(
@@ -615,7 +615,7 @@ export const PipelineLive = Pipeline.toLayer(
 					rawRivetkitContext.broadcast("stepStarted", runningState);
 
 					// Execute the single step using cached upstream outputs.
-					const freshState = yield* State.get(state).pipe(Effect.orDie);
+				const freshState = yield* logAndDie("pipeline.RunStep.preExec")(State.get(state));
 					const execEffect = withRetryAndTimeout(
 						executeStep(payload.stepId, freshState.steps),
 						step.definition.retryPolicy,
@@ -639,7 +639,7 @@ export const PipelineLive = Pipeline.toLayer(
 
 			GetStepResult: ({ payload }) =>
 				Effect.gen(function* () {
-					const current = yield* State.get(state).pipe(Effect.orDie);
+				const current = yield* logAndDie("pipeline.GetStepResult")(State.get(state));
 					const found = findStep(current.steps, payload.stepId);
 					if (found === undefined) {
 						return yield* Effect.die(
@@ -651,7 +651,7 @@ export const PipelineLive = Pipeline.toLayer(
 
 			GetStepLogs: ({ payload }) =>
 				Effect.gen(function* () {
-					const current = yield* State.get(state).pipe(Effect.orDie);
+				const current = yield* logAndDie("pipeline.GetStepLogs")(State.get(state));
 					const found = findStep(current.steps, payload.stepId);
 					if (found === undefined) {
 						return yield* Effect.die(
@@ -675,7 +675,7 @@ export const PipelineLive = Pipeline.toLayer(
 									: st,
 							),
 						};
-					}).pipe(Effect.orDie);
+				}).pipe(logAndDie("pipeline.InvalidateStep"));
 					return updated.steps;
 				}),
 
@@ -693,7 +693,7 @@ export const PipelineLive = Pipeline.toLayer(
 						...s,
 						status: "scheduled" as const,
 						schedule,
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.Schedule"));
 					// Schedule the first cron tick.
 					yield* Effect.promise(() =>
 						rawRivetkitContext.schedule.after(
@@ -711,13 +711,13 @@ export const PipelineLive = Pipeline.toLayer(
 						...s,
 						schedule: undefined,
 						...(s.status === "scheduled" ? { status: "idle" as const } : {}),
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline.CancelSchedule"));
 					return true;
 				}),
 
 			_cronTick: () =>
 				Effect.gen(function* () {
-					const current = yield* State.get(state).pipe(Effect.orDie);
+				const current = yield* logAndDie("pipeline._cronTick.getState")(State.get(state));
 					const sched = current.schedule;
 					if (sched === undefined || !sched.enabled) {
 						return current.status;
@@ -741,7 +741,7 @@ export const PipelineLive = Pipeline.toLayer(
 							...sched,
 							nextRunAt: Date.now() + sched.intervalMs,
 						},
-					})).pipe(Effect.orDie);
+				})).pipe(logAndDie("pipeline._cronTick.startRun"));
 					yield* runLoop.pipe(Effect.forkDetach);
 					yield* Effect.promise(() =>
 						rawRivetkitContext.schedule.after(

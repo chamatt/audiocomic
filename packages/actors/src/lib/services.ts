@@ -7,6 +7,29 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 // ============================================================================
+// Effect combinators
+// ============================================================================
+
+/**
+ * Like `Effect.orDie` but logs the cause with an optional label before
+ * dying. Use for state reads/writes inside RivetKit actor handlers where
+ * the `E = never` contract requires collapsing the error channel — the
+ * log ensures schema-mismatch defects are visible in structured logs
+ * instead of vanishing into an unannotated DieException.
+ */
+export function logAndDie(label?: string) {
+	return <A, E>(self: Effect.Effect<A, E>): Effect.Effect<A, never> =>
+		self.pipe(
+			Effect.catchCause((cause) =>
+				Effect.logError(
+					label ? `State operation failed: ${label}` : "State operation failed",
+					{ cause },
+				).pipe(Effect.andThen(Effect.die(cause))),
+			),
+		);
+}
+
+// ============================================================================
 // Storage service — centralized file storage shared across projects
 // ============================================================================
 
