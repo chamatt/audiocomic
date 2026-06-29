@@ -21,12 +21,19 @@ const MODES = [
 
 const POLLINATIONS_MODELS = [
   { value: "flux", label: "Flux" },
-  { value: "turbo", label: "Turbo" },
   { value: "gptimage", label: "GPT Image" },
-  { value: "sana", label: "Sana" },
+  { value: "gptimage-large", label: "GPT Image Large" },
+  { value: "gpt-image-2", label: "GPT Image 2" },
   { value: "nanobanana-pro", label: "NanoBanana Pro" },
+  { value: "nanobanana2", label: "NanoBanana 2" },
   { value: "seedream5", label: "Seedream 5" },
+  { value: "seedream-pro", label: "Seedream Pro" },
   { value: "kontext", label: "Kontext" },
+  { value: "zimage", label: "Z Image" },
+  { value: "klein", label: "Klein" },
+  { value: "nova-canvas", label: "Nova Canvas" },
+  { value: "qwen-image", label: "Qwen Image" },
+  { value: "grok-imagine", label: "Grok Imagine" },
 ] as const;
 
 const POLLINATIONS_PROVIDERS = [
