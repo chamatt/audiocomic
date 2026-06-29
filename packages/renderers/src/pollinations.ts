@@ -73,7 +73,12 @@ export class PollinationsRenderer implements RendererAdapter {
       params.set("private", "true");
     }
     // Let the model enhance the prompt for better results
-    params.set("enhance", "true");
+    // Only enhance short prompts — long prompts cause FLUX upstream failures
+    // ("negative dimension" tensor error) when the enhanced version exceeds
+    // the model's token limit.
+    if (fullPrompt.length < 1500) {
+      params.set("enhance", "true");
+    }
 
     const base = usePaid ? POLLINATIONS_PAID_BASE : POLLINATIONS_FREE_BASE;
     const url = `${base}/${encodedPrompt}?${params.toString()}`;
@@ -86,13 +91,26 @@ export class PollinationsRenderer implements RendererAdapter {
 
     const MAX_RETRIES = 3;
     let response: Response | null = null;
+    let currentUrl = url;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      response = await fetch(url, { headers });
+      response = await fetch(currentUrl, { headers });
       if (response.ok) break;
       if (response.status === 429 && attempt < MAX_RETRIES) {
         const delayMs = 5000 * (attempt + 1); // 5s, 10s, 15s
         await new Promise((r) => setTimeout(r, delayMs));
         continue;
+      }
+      // On 400 from FLUX (negative dimension / tensor error), retry with
+      // z-image-turbo which handles long prompts better.
+      if (response.status === 400 && attempt === 0) {
+        const body = await response.text().catch(() => "");
+        if (body.includes("negative dimension") || body.includes("FLUX")) {
+          const fallbackParams = new URLSearchParams(params);
+          fallbackParams.set("model", "z-image-turbo");
+          fallbackParams.delete("enhance");
+          currentUrl = `${base}/${encodedPrompt}?${fallbackParams.toString()}`;
+          continue;
+        }
       }
       const body = await response.text().catch(() => "unknown");
       throw new Error(`Pollinations render failed (${response.status}): ${body}`);
