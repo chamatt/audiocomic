@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { uuid } from "@audiocomic/shared";
+import { buildSectionMemory } from "@audiocomic/ai";
+import { createEmbeddingProvider } from "@audiocomic/knowledge";
 import type {
   StorySection,
   PageSpec,
@@ -159,6 +161,34 @@ export const PlanChaptersStep: StepExecutor = {
               Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
             ]),
           catch: (e) => new Error(`plan_chapters: DB persist failed (non-fatal): ${e}`),
+        }).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
+
+        // --- 2b. Embed section memory for retrieval (MangaFlow M_k) ---
+        // buildSectionMemory walks beat → scene → chapter parent chain to
+        // produce a compact context string. We embed it and store in
+        // story_sections.embedding so the section-query tool can retrieve
+        // relevant sections from previous chapters during planning.
+        yield* Effect.tryPromise({
+          try: async () => {
+            const embedder = createEmbeddingProvider(bridge.env);
+            const beatSections = sections.filter((s) => s.level === "beat");
+            if (beatSections.length === 0) return;
+
+            // Build section memory strings for all beats, batch-embed them.
+            const memoryStrings = beatSections.map((beat) =>
+              buildSectionMemory(beat, sections, characters, worldBible),
+            );
+            const embeddings = await embedder.embedMany(memoryStrings);
+
+            // Persist embeddings to DB (non-fatal per section).
+            await Promise.all(
+              beatSections.map((beat, i) =>
+                bridge.repo.setEmbedding("storySections", beat.id, embeddings[i]!),
+              ),
+            );
+          },
+          catch: (e) =>
+            new Error(`plan_chapters: section embedding failed (non-fatal): ${e}`),
         }).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
 
         // --- 3. Plan pages: divide beats into pages/panels ---

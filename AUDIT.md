@@ -369,8 +369,8 @@ Plus `ARCHITECTURE_PLAN.md` (target architecture), `PLAN.md` (MangaFlow gaps), `
 
 6. **Wire reference conditioning** — populate `referenceImageKeys` from `CharacterProfile.canonicalFaceRef`/`outfitRefs` in `render_panels.ts`. Add IP-Adapter nodes to ComfyUI `buildWorkflow()`. This is the paper's C3 challenge.
 7. **Implement panel QA** — replace the placeholder with real checks: prompt adherence (VLM judge), image quality (blurry detection), composition scoring. The paper uses human annotation + LLM readability score.
-8. **Implement section memory for retrieval** — the `section_memory` step should generate embeddings for sections and store them in pgvector. The `buildSectionMemory` function should be used for prompt enrichment (even if not in the image prompt, for the planner's context).
-9. **Add word-level timestamps** — OpenAI Whisper supports `timestamp_granularities=["word"]` with `verbose_json`. This enables precise panel-to-audio sync for motion comic export.
+8. ✅ **Implement section memory for retrieval** (COMPLETED 2026-06-29) — `plan_chapters` now embeds each beat section's `buildSectionMemory()` output into `story_sections.embedding` (pgvector HNSW). A new `section-query` Mastra tool retrieves structured sections from previously planned chapters by embedding similarity, giving the planner cross-chapter continuity from the structured plan — not just raw transcript text. Section memory is intentionally NOT injected into image prompts (causes multi-panel generation); it enriches the planner's context.
+9. ❌ **Add word-level timestamps** — DISMISSED by user: chunk-level timestamps are sufficient for the current panel-to-audio sync, and panels are not generated one-per-chunk.
 
 ### P2 — Product Completeness
 

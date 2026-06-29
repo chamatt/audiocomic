@@ -24,8 +24,23 @@ export function buildModelConfig(
   provider?: string,
   model?: string,
 ): MastraModelConfig {
-  const p = provider ?? process.env.LLM_PROVIDER ?? "openrouter";
-  const m = model ?? process.env.DEFAULT_LLM_MODEL ?? "mistralai/mistral-nemo";
+  const envProvider = process.env.LLM_PROVIDER ?? "openrouter";
+  const envModel = process.env.DEFAULT_LLM_MODEL ?? "mistralai/mistral-nemo";
+  let m = model ?? envModel;
+  // If no explicit provider, infer from model name:
+  // - "org/model" paths → openrouter
+  // - bare names (openai, deepseek) → pollinations (if env says so) or openrouter
+  let p = provider ?? envProvider;
+  if (!provider && model) {
+    p = model.includes("/") ? "openrouter" : envProvider;
+  }
+  // Guard against mismatched model/provider combos
+  if (p === "pollinations" && m.includes("/")) {
+    m = envModel.includes("/") ? "openai" : envModel;
+  }
+  if (p === "openrouter" && !m.includes("/")) {
+    m = envModel.includes("/") ? envModel : "mistralai/mistral-nemo";
+  }
   if (p === "pollinations") {
     return {
       id: `pollinations/${m}`,
@@ -245,6 +260,7 @@ function makeStoryPlannerAgent(ctx: ToolContext): Agent {
 
 STEP 1: Use the available tools to gather cross-chapter context:
 - Use vector-query to find relevant events and mentions from other chapters
+- Use section-query to find structured story sections from previously planned chapters — this gives you chapter/scene/beat summaries, emotional tones, and character presence without re-reading raw transcripts
 - Use character-lookup to get each character's current state and appearance
 - Use character-timeline to check for outfit/state changes across chapters
 - Use world-lookup to get the world setting, rules, and art style
@@ -346,7 +362,8 @@ When processing a new chapter:
 3. Use character-timeline to track state changes (outfit, location, mood)
 4. Use world-lookup to check existing world information
 5. Use vector-query to find related context from other chapters
-6. Flag contradictions with previous chapters
+6. Use section-query to find structured story sections from previously planned chapters for continuity context
+7. Flag contradictions with previous chapters
 
 Output: structured JSON with knowledge updates.`,
     model: ctx.modelConfig ?? buildModelConfig(),
