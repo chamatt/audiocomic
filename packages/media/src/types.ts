@@ -18,6 +18,15 @@ export interface AudioProbe {
   codec: string;
 }
 
+/** A chapter embedded in an audio file (e.g. m4b audiobook chapters). */
+export interface EmbeddedChapter {
+  id: number;
+  start: number;
+  end: number;
+  duration: number;
+  title: string;
+}
+
 /** Result of an export operation. */
 export interface ExportResult {
   /** Absolute path to the produced artifact. */

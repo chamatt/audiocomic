@@ -1,4 +1,4 @@
-import type { AudioProbe } from './types';
+import type { AudioProbe, EmbeddedChapter } from './types';
 
 // ============================================================================
 // ffprobe JSON helpers
@@ -101,4 +101,91 @@ export async function extractAudioDuration(
 ): Promise<number> {
   const probe = await probeAudio(path, ffprobeBin);
   return probe.duration;
+}
+
+// ============================================================================
+// Embedded chapter detection and splitting (m4b audiobooks)
+// ============================================================================
+
+
+interface FfprobeChapter {
+  start: number;
+  end: number;
+  tags?: { title?: string };
+}
+
+/**
+ * Probe an audio file for embedded chapter markers (e.g. m4b audiobooks).
+ * Returns an empty array if the file has no chapters.
+ */
+export async function probeChapters(
+  path: string,
+  ffprobeBin: string = process.env.FFPROBE_BIN ?? 'ffprobe',
+): Promise<EmbeddedChapter[]> {
+  const raw = await runCapture(ffprobeBin, [
+    '-v', 'quiet',
+    '-print_format', 'json',
+    '-show_chapters',
+    path,
+  ]);
+
+  let parsed: { chapters?: FfprobeChapter[] };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+
+  const chapters = parsed.chapters ?? [];
+  return chapters.map((ch, i): EmbeddedChapter => {
+    const start = ch.start / 1_000_000;
+    const end = ch.end / 1_000_000;
+    return {
+      id: i + 1,
+      start,
+      end,
+      duration: end - start,
+      title: ch.tags?.title ?? `Chapter ${i + 1}`,
+    };
+  });
+}
+
+/**
+ * Split an audio file at a time range using ffmpeg stream copy (no re-encode).
+ * Writes to outputPath as mp4.
+ */
+export async function splitAudioChapter(
+  inputPath: string,
+  outputPath: string,
+  start: number,
+  duration: number,
+  ffmpegBin: string = process.env.FFMPEG_BIN ?? 'ffmpeg',
+): Promise<void> {
+  const proc = Bun.spawn([
+    ffmpegBin,
+    '-ss', start.toFixed(3),
+    '-i', inputPath,
+    '-t', duration.toFixed(3),
+    '-c', 'copy',
+    '-f', 'mp4',
+    '-y',
+    outputPath,
+  ], { stdout: 'ignore', stderr: 'pipe' });
+
+  // Drain stderr to prevent the pipe buffer from filling and blocking.
+  const stderrReader = proc.stderr.getReader();
+  const drainStderr = (async () => {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done } = await stderrReader.read();
+      if (done) break;
+    }
+  })();
+
+  const exitCode = await proc.exited;
+  await drainStderr.catch(() => {});
+
+  if (exitCode !== 0) {
+    throw new Error(`ffmpeg split failed (exit ${exitCode})`);
+  }
 }
