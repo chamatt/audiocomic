@@ -372,19 +372,13 @@ export const ChapterLive = Chapter.toLayer(
             const pageId = uuid();
             const panelIds: string[] = [];
 
-            // Square panels in pixel space (page is 800×1131).
-            // w * PAGE_W = h * PAGE_H → w = h * (PAGE_H / PAGE_W)
-            const PAGE_W = 800, PAGE_H = 1131;
+            // Panels fill the full page width with even vertical spacing.
+            // The canvas uses object-cover so square images crop to fit.
             const margin = 0.05, gap = 0.02;
+            const panelW = 1 - 2 * margin;
             const availH = 1 - 2 * margin - (pageBeats.length - 1) * gap;
-            let panelH = availH / pageBeats.length;
-            let panelW = panelH * (PAGE_H / PAGE_W);
-            const maxW = 1 - 2 * margin;
-            if (panelW > maxW) {
-              panelW = maxW;
-              panelH = panelW * (PAGE_W / PAGE_H);
-            }
-            const xCenter = (1 - panelW) / 2;
+            const panelH = availH / pageBeats.length;
+            const xCenter = margin;
             const totalH = pageBeats.length * panelH + (pageBeats.length - 1) * gap;
             const yStart = (1 - totalH) / 2;
 
