@@ -225,8 +225,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     };
   }, [projectId]);
   // LLM provider + model selection (persisted to project in DB, used for story planning)
-  const [selectedLlmProvider, setSelectedLlmProvider] = useState<string>("openrouter");
-  const [selectedLlmModel, setSelectedLlmModel] = useState<string>("mistralai/mistral-nemo");
+  const [selectedLlmProvider, setSelectedLlmProvider] = useState<string>("");
+  const [selectedLlmModel, setSelectedLlmModel] = useState<string>("");
   useEffect(() => {
     let cancelled = false;
     const fetchLlmConfig = async () => {
@@ -253,7 +253,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       setSelectedLlmProvider(provider);
       const models = LLM_MODELS[provider];
       if (models && models.length > 0) {
-        setSelectedLlmModel(models[0].value);
+        setSelectedLlmModel(models[0]?.value ?? "");
       }
       void fetch(`/api/projects/${projectId}`, {
         method: "PATCH",

@@ -13,35 +13,6 @@ export function getPrevResult<T>(ctx: { previousResults: Map<string, unknown> },
 	return raw;
 }
 
-/** Guard for normalize result. */
-export function isNormalizeResult(v: unknown): v is { step: string; status: string; audioPath?: string; textContent?: string; durationSec?: number } {
-	return typeof v === "object" && v !== null && "step" in v && "status" in v;
-}
-
-/** Guard for transcribe result. */
-export function isTranscribeResult(v: unknown): v is { step: string; status: string; chunks: unknown[]; durationSec: number } {
-	return typeof v === "object" && v !== null && "step" in v && "chunks" in v && Array.isArray((v as Record<string, unknown>).chunks);
-}
-
-/** Guard for segment result. */
-export function isSegmentResult(v: unknown): v is { step: string; status: string; fullText: string; chunkCount: number } {
-	return typeof v === "object" && v !== null && "step" in v && "fullText" in v && typeof (v as Record<string, unknown>).fullText === "string";
-}
-
-/** Guard for plan_story result. */
-export function isPlanStoryResult(v: unknown): v is { step: string; status: string; sections: unknown[]; characters: unknown[]; worldBible: unknown } {
-	return typeof v === "object" && v !== null && "step" in v && "sections" in v && Array.isArray((v as Record<string, unknown>).sections);
-}
-
-/** Guard for plan_pages result. */
-export function isPlanPagesResult(v: unknown): v is { step: string; status: string; pages: unknown[]; panels: unknown[] } {
-	return typeof v === "object" && v !== null && "step" in v && "pages" in v && Array.isArray((v as Record<string, unknown>).pages);
-}
-
-/** Guard for compose_prompts result. */
-export function isComposePromptsResult(v: unknown): v is { step: string; status: string; panelPrompts: Map<string, string> } {
-	return typeof v === "object" && v !== null && "step" in v && "panelPrompts" in v;
-}
 
 /** Guard for render_panels result. */
 export function isRenderPanelsResult(v: unknown): v is { step: string; status: string; renderedCount: number; panelImageKeys: Map<string, string> } {
