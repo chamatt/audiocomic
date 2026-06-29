@@ -444,6 +444,7 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
         {/* Storyboard tab */}
         <TabsContent value="storyboard">
           <StoryboardTab
+            projectId={projectId}
             sections={detail.sections}
             panels={detail.pages.flatMap((p) => p.panels)}
           />

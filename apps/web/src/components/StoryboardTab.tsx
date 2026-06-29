@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, type JSX } from "react";
+import { useState, useCallback, useRef, useEffect, type JSX } from "react";
 import {
   Card,
   CardHeader,
@@ -20,6 +20,7 @@ import type { StorySection, PanelSpec, StoryLevel } from "@audiocomic/domain";
 // ---------------------------------------------------------------------------
 
 interface StoryboardTabProps {
+  projectId: string;
   sections: StorySection[];
   panels: PanelSpec[];
 }
@@ -185,8 +186,7 @@ const QA_VARIANT: Record<PanelSpec["qaStatus"], string> = {
   failed: "bg-red-500/10 text-red-400 border-red-500/20",
   regenerate: "bg-orange-500/10 text-orange-400 border-orange-500/20",
 };
-
-function PanelRow({ panel }: { panel: PanelSpec }): JSX.Element {
+function PanelRow({ panel, imageUrl }: { panel: PanelSpec; imageUrl?: string }): JSX.Element {
   const hasRender = Boolean(panel.renderResultId);
   const description =
     panel.description.length > 120
@@ -194,27 +194,35 @@ function PanelRow({ panel }: { panel: PanelSpec }): JSX.Element {
       : panel.description;
   return (
     <div className="flex items-start gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-      <Badge variant="outline" className="shrink-0 tabular-nums">
-        #{panel.index}
-      </Badge>
-      <p className="flex-1 text-xs text-muted-foreground leading-relaxed">
-        {description}
-      </p>
-      <div className="flex shrink-0 items-center gap-1.5">
-        {hasRender ? (
-          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-            Rendered
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="text-muted-foreground">
-            No render
-          </Badge>
-        )}
-        {panel.qaStatus && panel.qaStatus !== "pending" && (
-          <Badge className={cn("capitalize", QA_VARIANT[panel.qaStatus])}>
-            QA: {panel.qaStatus}
-          </Badge>
-        )}
+      {imageUrl && (
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded border border-border/60">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imageUrl} alt={panel.description} className="h-full w-full object-cover" />
+        </div>
+      )}
+      <div className="flex flex-1 flex-col gap-1">
+        <Badge variant="outline" className="w-fit tabular-nums">
+          #{panel.index}
+        </Badge>
+        <p className="flex-1 text-xs text-muted-foreground leading-relaxed">
+          {description}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {hasRender ? (
+            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+              Rendered
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">
+              No render
+            </Badge>
+          )}
+          {panel.qaStatus && panel.qaStatus !== "pending" && (
+            <Badge className={cn("capitalize", QA_VARIANT[panel.qaStatus])}>
+              QA: {panel.qaStatus}
+            </Badge>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -224,7 +232,7 @@ function PanelRow({ panel }: { panel: PanelSpec }): JSX.Element {
 // Section card (recursive)
 // ---------------------------------------------------------------------------
 
-function SectionCard({ node, panels }: { node: SectionNode; panels: PanelSpec[] }): JSX.Element {
+function SectionCard({ node, panels, panelImages }: { node: SectionNode; panels: PanelSpec[]; panelImages: Record<string, string> }): JSX.Element {
   const { section, children } = node;
   const level = section.level;
   const [expanded, setExpanded] = useState(true);
@@ -325,7 +333,7 @@ function SectionCard({ node, panels }: { node: SectionNode; panels: PanelSpec[] 
                   Panels ({beatPanels.length})
                 </span>
                 {beatPanels.map((p) => (
-                  <PanelRow key={p.id} panel={p} />
+                  <PanelRow key={p.id} panel={p} imageUrl={panelImages[p.id]} />
                 ))}
               </div>
             </>
@@ -337,7 +345,7 @@ function SectionCard({ node, panels }: { node: SectionNode; panels: PanelSpec[] 
       {hasChildren && expanded && (
         <div className="ml-4 flex flex-col gap-2 border-l border-border/40 pl-3">
           {children.map((child) => (
-            <SectionCard key={child.section.id} node={child} panels={panels} />
+            <SectionCard key={child.section.id} node={child} panels={panels} panelImages={panelImages} />
           ))}
         </div>
       )}
@@ -349,7 +357,31 @@ function SectionCard({ node, panels }: { node: SectionNode; panels: PanelSpec[] 
 // Main tab
 // ---------------------------------------------------------------------------
 
-export function StoryboardTab({ sections, panels }: StoryboardTabProps): JSX.Element {
+export function StoryboardTab({ projectId, sections, panels }: StoryboardTabProps): JSX.Element {
+  const [panelImages, setPanelImages] = useState<Record<string, string>>({});
+
+  // Fetch panel image URLs from the pages API (same source as the canvas).
+  useEffect(() => {
+    if (sections.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/pages`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { pages: { panelImages: Record<string, string> }[] };
+        if (cancelled) return;
+        const merged: Record<string, string> = {};
+        for (const page of data.pages ?? []) {
+          Object.assign(merged, page.panelImages);
+        }
+        setPanelImages(merged);
+      } catch {
+        /* non-fatal — images just won't show */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, sections.length]);
+
   if (sections.length === 0) {
     return (
       <Card>
@@ -387,7 +419,7 @@ export function StoryboardTab({ sections, panels }: StoryboardTabProps): JSX.Ele
 
       <div className="flex flex-col gap-3">
         {tree.map((node) => (
-          <SectionCard key={node.section.id} node={node} panels={panels} />
+          <SectionCard key={node.section.id} node={node} panels={panels} panelImages={panelImages} />
         ))}
       </div>
     </div>
