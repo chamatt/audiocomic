@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@audiocomic/actors": "workspace:*",
+    "@audiocomic/ai": "workspace:*",
     "@audiocomic/db": "workspace:*",
     "@audiocomic/domain": "workspace:*",
     "@audiocomic/renderers": "workspace:*",

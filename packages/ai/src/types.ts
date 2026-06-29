@@ -10,6 +10,10 @@ import type {
   EmotionalTone,
 } from '@audiocomic/domain';
 import type { Env } from '@audiocomic/shared';
+import type { LanguageModelV1 } from 'ai';
+
+/** Re-export the AI SDK's language model type so downstream packages don't need `ai` as a direct dep. */
+export type LanguageModel = LanguageModelV1;
 
 // ============================================================================
 // Provider identifiers

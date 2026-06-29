@@ -222,6 +222,60 @@ function CharacterMergeButton({
   );
 }
 
+function CharacterCleanupButton({
+  characterId,
+  projectId,
+  onCleaned,
+}: {
+  characterId: string;
+  projectId: string;
+  onCleaned: () => void;
+}) {
+  const [cleaning, setCleaning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCleanup = async () => {
+    setCleaning(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/knowledge/characters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cleanup", characterId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Cleanup failed");
+      }
+      const result = await res.json();
+      if (result.cleaned) {
+        onCleaned();
+      } else {
+        setCleaning(false);
+        setError("No duplicates found");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCleaning(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1 ml-auto">
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-5 text-xs px-2 text-muted-foreground"
+        disabled={cleaning}
+        onClick={handleCleanup}
+      >
+        {cleaning ? "Cleaning…" : "Clean up"}
+      </Button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </div>
+  );
+}
+
 function KnowledgeTab({
   projectId,
   characters,
@@ -295,6 +349,11 @@ function KnowledgeTab({
                         onMerged={() => window.location.reload()}
                       />
                     )}
+                    <CharacterCleanupButton
+                      characterId={c.id}
+                      projectId={projectId}
+                      onCleaned={() => window.location.reload()}
+                    />
                   </div>
                   {c.aliases.length > 0 && (
                     <p className="text-xs text-muted-foreground">Aliases: {c.aliases.join(", ")}</p>

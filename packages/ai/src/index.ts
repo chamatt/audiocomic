@@ -15,3 +15,7 @@ export { AISDKImageAdapter, createImageAdapter } from "./image";
 
 // Prompt composer + section memory builder (pure functions)
 export { composePanelPrompt, composeNegativePrompt, buildSectionMemory } from "./prompt";
+
+// Description cleanup (LLM-powered)
+export { cleanupDescription, mergeDescriptions } from "./cleanup";
+export { resolveLanguageModel } from "./planner";

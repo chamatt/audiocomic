@@ -31,7 +31,7 @@ import type {
 // Language model resolution
 // ============================================================================
 
-function resolveLanguageModel(
+export function resolveLanguageModel(
   provider: LLMProvider,
   model: string,
   env: Env,

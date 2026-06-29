@@ -14,6 +14,7 @@
 import type { CharacterProfile, StorySection } from "@audiocomic/domain";
 import type { Repository } from "@audiocomic/db";
 import { logger } from "@audiocomic/shared";
+import { mergeDescriptions, cleanupDescription, type LanguageModel } from "@audiocomic/ai";
 
 const log = logger.scoped("merge:characters");
 
@@ -220,6 +221,8 @@ export async function mergeCharacters(
  * The `source` character is merged into the `target` character:
  * - Target keeps its ID
  * - Aliases, description, role, visual anchors are merged
+ * - If a language model is provided, descriptions are consolidated via LLM
+ *   to remove duplicate info; otherwise the longer description wins
  * - All StorySection.charactersPresent references to source are remapped to target
  * - All PanelSpec.characters[].characterId references to source are remapped to target
  * - All CharacterState references to source are remapped to target
@@ -232,11 +235,13 @@ export async function mergeTwoCharacters(
   projectId: string,
   sourceId: string,
   targetId: string,
+  model?: LanguageModel,
 ): Promise<{
   sectionsUpdated: number;
   panelsUpdated: number;
   statesUpdated: number;
   aliasesMerged: number;
+  descriptionCleaned: boolean;
 }> {
   const [source, target] = await Promise.all([
     repo.characterProfiles.getById(sourceId),
@@ -255,6 +260,22 @@ export async function mergeTwoCharacters(
   const aliasSet = new Set((patch.aliases ?? target.aliases).map(normaliseName));
   if (!aliasSet.has(normaliseName(source.name))) {
     patch.aliases = [...(patch.aliases ?? target.aliases), source.name];
+  }
+
+  // If LLM available, merge descriptions intelligently; otherwise keep longer
+  let descriptionCleaned = false;
+  if (model && source.description && target.description && source.description !== target.description) {
+    try {
+      const merged = await mergeDescriptions(target.description, source.description, model);
+      if (merged !== target.description) {
+        patch.description = merged;
+        descriptionCleaned = true;
+      }
+    } catch (e) {
+      log.warn("LLM description merge failed, keeping longer description", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   if (Object.keys(patch).length > 0) {
@@ -315,7 +336,30 @@ export async function mergeTwoCharacters(
     sectionsUpdated,
     panelsUpdated,
     statesUpdated,
+    descriptionCleaned,
   });
 
-  return { sectionsUpdated, panelsUpdated, statesUpdated, aliasesMerged };
+  return { sectionsUpdated, panelsUpdated, statesUpdated, aliasesMerged, descriptionCleaned };
+}
+
+/**
+ * Clean up a single character's description using the LLM.
+ * Removes duplicate/redundant info accumulated from multiple chapters.
+ */
+export async function cleanupCharacterDescription(
+  repo: Repository,
+  characterId: string,
+  model: LanguageModel,
+): Promise<{ cleaned: boolean; oldLength: number; newLength: number }> {
+  const char = await repo.characterProfiles.getById(characterId);
+  if (!char) throw new Error(`Character ${characterId} not found`);
+
+  const cleaned = await cleanupDescription(char.description, model);
+  if (cleaned === char.description) {
+    return { cleaned: false, oldLength: char.description.length, newLength: char.description.length };
+  }
+
+  await repo.characterProfiles.patch(characterId, { description: cleaned });
+  log.info("Description cleaned", { characterId, name: char.name });
+  return { cleaned: true, oldLength: char.description.length, newLength: cleaned.length };
 }
