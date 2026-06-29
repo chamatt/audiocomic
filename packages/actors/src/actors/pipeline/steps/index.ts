@@ -5,6 +5,7 @@
 import "./ingest_knowledge.ts";
 import "./build_bibles.ts";
 import "./generate_refs.ts";
+import "./layout_panels.ts";
 import "./plan_chapters.ts";
 import "./render_panels.ts";
 import "./panel_qa.ts";
