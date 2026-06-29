@@ -6,7 +6,7 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import type { Repository } from '@audiocomic/db';
 import type { EmbeddingProvider } from '@audiocomic/knowledge';
-import { searchKnowledgeBase } from '@audiocomic/knowledge';
+import { searchKnowledgeBase, searchStorySections } from '@audiocomic/knowledge';
 import type { Db } from '@audiocomic/db';
 import type { MastraModelConfig } from '@mastra/core/llm';
 
@@ -227,5 +227,37 @@ export function createProjectTools(ctx: ToolContext) {
     },
   });
 
-  return { vectorQueryTool, characterLookupTool, worldLookupTool, timelineTool };
+  // 5. Section query — retrieves structured story sections from previously
+  //    planned chapters via embedding similarity. Gives the planner
+  //    cross-chapter continuity from the structured plan, not just raw
+  //    transcript text.
+  const sectionQueryTool = createTool({
+    id: 'section-query',
+    description:
+      'Search previously planned story sections (chapters, scenes, beats) by semantic similarity. Use this to find what happened in earlier chapters — events, character interactions, emotional beats — without re-reading raw transcripts. Returns structured section data with level (chapter/scene/beat), summary, emotional tone, and characters present.',
+    inputSchema: z.object({
+      query: z.string().describe('What to look for — e.g. "character meets ally", "betrayal scene", "arrival at castle"'),
+      topK: z.number().optional().default(5).describe('Number of results to return'),
+    }),
+    outputSchema: z.object({
+      results: z.array(
+        z.object({
+          id: z.string(),
+          level: z.string(),
+          title: z.string().nullable(),
+          summary: z.string(),
+          emotionalTone: z.string().nullable(),
+          charactersPresent: z.array(z.string()),
+          objects: z.array(z.string()),
+          score: z.number(),
+        }),
+      ),
+    }),
+    execute: async ({ query, topK }) => {
+      const results = await searchStorySections(ctx.db, ctx.embedder, ctx.projectId, query, topK ?? 5);
+      return { results };
+    },
+  });
+
+  return { vectorQueryTool, characterLookupTool, worldLookupTool, timelineTool, sectionQueryTool };
 }

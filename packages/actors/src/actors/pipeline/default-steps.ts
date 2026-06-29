@@ -1,11 +1,12 @@
 import type { StepDefinition, StepState } from "../../lib/schemas.ts";
 
 /**
- * The 9 default pipeline steps with their DAG dependencies.
+ * The 10 default pipeline steps with their DAG dependencies.
  *
  * Flow:
  *   ingest_knowledge (project-level: embeddings + wiki + character states)
  *   → build_bibles (project-level: enrich KB with bible builder agent)
+ *   → generate_refs (project-level: face reference images for each character)
  *   → plan_chapters (per-chapter: segment → plan_story → plan_pages → compose_prompts)
  *   → 🟡 AUTO-PAUSE (review on canvas, render individual panels or all)
  *   → render_panels (reads from DB, skips already-rendered panels)
@@ -17,7 +18,8 @@ import type { StepDefinition, StepState } from "../../lib/schemas.ts";
 export const DEFAULT_STEP_DEFINITIONS: StepDefinition[] = [
 	{ id: "ingest_knowledge", name: "Ingest Knowledge", type: "ingest_knowledge", config: {}, dependsOn: [] },
 	{ id: "build_bibles", name: "Build Bibles", type: "build_bibles", config: {}, dependsOn: ["ingest_knowledge"] },
-	{ id: "plan_chapters", name: "Plan Chapters", type: "plan_chapters", config: {}, dependsOn: ["build_bibles"], pauseAfter: true },
+	{ id: "generate_refs", name: "Generate Refs", type: "generate_refs", config: {}, dependsOn: ["build_bibles"] },
+	{ id: "plan_chapters", name: "Plan Chapters", type: "plan_chapters", config: {}, dependsOn: ["generate_refs"], pauseAfter: true },
 	{ id: "render_panels", name: "Render Panels", type: "render_panels", config: {}, dependsOn: ["plan_chapters"] },
 	{ id: "panel_qa", name: "Panel QA", type: "panel_qa", config: {}, dependsOn: ["render_panels"] },
 	{ id: "compose_pages", name: "Compose Pages", type: "compose_pages", config: {}, dependsOn: ["render_panels"] },

@@ -223,26 +223,14 @@ export function getFeatureFlags(env: Env = getEnv()): FeatureFlags {
 
 export function defaultProviderSettings(env: Env = getEnv()): ProviderSettings {
   return {
-    llm: {
-      provider: 'openrouter',
-      model: env.DEFAULT_LLM_MODEL,
-      apiKey: env.OPENROUTER_API_KEY ?? '',
-    },
-    transcription: {
-      provider: 'groq',
-      model: 'whisper-large-v3-turbo',
-      apiKey: env.GROQ_API_KEY ?? '',
-    },
-    image: {
-      provider: env.DEFAULT_RENDERER,
-      model: env.DEFAULT_IMAGE_MODEL,
-      apiKey: env.POLLINATIONS_API_KEY ?? env.COMFYUI_API_KEY ?? '',
-    },
-    tts: {
-      provider: 'elevenlabs',
-      model: 'eleven_multilingual_v2',
-      apiKey: env.ELEVENLABS_API_KEY ?? '',
-    },
+    llmProvider: 'openai',
+    llmModel: env.DEFAULT_LLM_MODEL,
+    transcriptionProvider: 'groq',
+    imageProvider: env.DEFAULT_RENDERER === 'aisdk' ? 'openai' : env.DEFAULT_RENDERER === 'placeholder' ? 'pollinations' : env.DEFAULT_RENDERER,
+    imageModel: env.DEFAULT_IMAGE_MODEL,
+    ttsProvider: 'openai',
+    ttsVoice: env.DEFAULT_TTS_VOICE,
+    rendererBackend: env.DEFAULT_RENDERER,
   };
 }
 

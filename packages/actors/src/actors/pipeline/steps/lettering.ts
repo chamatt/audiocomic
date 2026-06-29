@@ -24,7 +24,7 @@ export const LetteringStep: StepExecutor = {
 			// compose_pages is a dependency because lettering overlays must be
 			// produced after the page images exist; we read its result to access
 			// the pageImageKeys map.
-			getPrevResult(ctx, "compose_pages", isComposePagesResult);
+			yield* getPrevResult(ctx, "compose_pages", isComposePagesResult);
 
 			// Read pages and panels from the DB rather than in-memory step
 			// results, so lettering reflects whatever plan_chapters persisted.

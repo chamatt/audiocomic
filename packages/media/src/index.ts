@@ -3,7 +3,7 @@
 // lettering overlay, and page composition.
 // ============================================================================
 
-export { probeAudio, extractAudioDuration } from './audio';
+export { probeAudio, extractAudioDuration, probeChapters, splitAudioChapter } from './audio';
 export { parseTextBook, splitIntoChunks } from './text';
 export {
   exportMotionComic,
@@ -16,6 +16,7 @@ export { composePage, type OutputSize, type ComposeOptions } from './composite';
 
 export type {
   AudioProbe,
+  EmbeddedChapter,
   ExportResult,
   ParsedBook,
   ParsedChapter,

@@ -30,4 +30,5 @@ export { chunkTranscription } from './chunking';
 export { ingestChapterTranscription } from './ingest';
 export type { IngestResult } from './ingest';
 
-export { searchKnowledgeBase } from './rag';
+export { searchKnowledgeBase, searchStorySections } from './rag';
+export type { StorySectionSearchResult } from './rag';

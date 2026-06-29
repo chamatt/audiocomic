@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "types": ["node", "bun"],
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
     "strict": true,
@@ -24,8 +25,9 @@
       "@audiocomic/renderers": ["./packages/renderers/src/index.ts"],
       "@audiocomic/media": ["./packages/media/src/index.ts"],
       "@audiocomic/workflows": ["./packages/workflows/src/index.ts"],
-      "@audiocomic/evals": ["./packages/evals/src/index.ts"],
-      "@audiocomic/knowledge": ["./packages/knowledge/src/index.ts"]
+      "@audiocomic/knowledge": ["./packages/knowledge/src/index.ts"],
+      "@audiocomic/actors": ["./packages/actors/src/index.ts"],
+      "@audiocomic/storage": ["./packages/storage/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", ".next", "repos", "scripts"]

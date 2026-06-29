@@ -52,23 +52,12 @@ function freshState(): ChapterState {
 
 // --- Plan helpers (from plan_chapters step) ---
 
-const DEFAULT_MAX_PAGES = 4;
 const DEFAULT_BEATS_PER_PAGE = 3;
 
 function isBeatSection(v: unknown): v is StorySection {
   if (typeof v !== "object" || v === null) return false;
   const r = v as Record<string, unknown>;
   return r.level === "beat" && typeof r.summary === "string" && Array.isArray(r.charactersPresent);
-}
-
-function sampleEvenly<T>(items: T[], max: number): T[] {
-  if (items.length <= max) return items;
-  const out: T[] = [];
-  const step = items.length / max;
-  for (let i = 0; i < max; i++) {
-    out.push(items[Math.floor(i * step)]!);
-  }
-  return out;
 }
 
 function hasImageData(v: PanelRenderResult): v is PanelRenderResult & { imageData: Buffer } {
@@ -321,6 +310,28 @@ export const ChapterLive = Chapter.toLayer(
             catch: (e) => new Error(`plan: DB persist failed (non-fatal): ${e}`),
           }).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
 
+          // ── Assign timestamps to beat sections via embedding search ──
+          // Embed each beat's text and search knowledge_embeddings (which have
+          // startSec/endSec in metadata from the ingest process) to find the
+          // closest matching transcript segment and its time range.
+          const embedder = createEmbeddingProvider(bridge.env);
+          const { searchKnowledgeBase } = yield* Effect.promise(() => import("@audiocomic/knowledge"));
+          for (const section of sections) {
+            if (section.level !== "beat") continue;
+            if (section.startSec != null) continue;
+            const queryText = section.text ?? section.summary;
+            if (!queryText) continue;
+            const results = yield* Effect.tryPromise({
+              try: () => searchKnowledgeBase(bridge.db, embedder, current.projectId, queryText, 1),
+              catch: () => new Error("embedding search failed"),
+            }).pipe(Effect.catch(() => Effect.succeed([] as { text: string; score: number; metadata: Record<string, unknown> }[])));
+            if (results.length > 0) {
+              const meta = results[0]!.metadata;
+              if (meta.startSec != null) section.startSec = meta.startSec as number;
+              if (meta.endSec != null) section.endSec = meta.endSec as number;
+            }
+          }
+
           yield* setStage("planning", { current: 2, total: 4, detail: "Planning pages" });
 
           // 3. Plan pages: divide beats into pages/panels.
@@ -344,13 +355,14 @@ export const ChapterLive = Chapter.toLayer(
             return;
           }
 
-          const maxBeats = DEFAULT_MAX_PAGES * DEFAULT_BEATS_PER_PAGE;
-          const selected = sampleEvenly(effectiveBeats, maxBeats);
+          // Use ALL beats — every beat gets its own panel.
+          const selected = effectiveBeats;
+          const pageCount = Math.ceil(selected.length / DEFAULT_BEATS_PER_PAGE);
 
           const pages: PageSpec[] = [];
           const panels: PanelSpec[] = [];
 
-          for (let pageIdx = 0; pageIdx < DEFAULT_MAX_PAGES; pageIdx++) {
+          for (let pageIdx = 0; pageIdx < pageCount; pageIdx++) {
             const pageBeats = selected.slice(
               pageIdx * DEFAULT_BEATS_PER_PAGE,
               (pageIdx + 1) * DEFAULT_BEATS_PER_PAGE,
@@ -358,8 +370,23 @@ export const ChapterLive = Chapter.toLayer(
             if (pageBeats.length === 0) break;
 
             const pageId = uuid();
-            const panelHeight = 1 / pageBeats.length;
             const panelIds: string[] = [];
+
+            // Square panels in pixel space (page is 800×1131).
+            // w * PAGE_W = h * PAGE_H → w = h * (PAGE_H / PAGE_W)
+            const PAGE_W = 800, PAGE_H = 1131;
+            const margin = 0.05, gap = 0.02;
+            const availH = 1 - 2 * margin - (pageBeats.length - 1) * gap;
+            let panelH = availH / pageBeats.length;
+            let panelW = panelH * (PAGE_H / PAGE_W);
+            const maxW = 1 - 2 * margin;
+            if (panelW > maxW) {
+              panelW = maxW;
+              panelH = panelW * (PAGE_W / PAGE_H);
+            }
+            const xCenter = (1 - panelW) / 2;
+            const totalH = pageBeats.length * panelH + (pageBeats.length - 1) * gap;
+            const yStart = (1 - totalH) / 2;
 
             for (let panelIdx = 0; panelIdx < pageBeats.length; panelIdx++) {
               const beat = pageBeats[panelIdx]!;
@@ -373,7 +400,12 @@ export const ChapterLive = Chapter.toLayer(
                 chapterId: current.id,
                 index: panelIdx,
                 storySectionId: beat.id,
-                bbox: { x: 0.05, y: 0.05 + panelIdx * panelHeight, w: 0.9, h: panelHeight * 0.95 },
+                bbox: {
+                  x: xCenter,
+                  y: yStart + panelIdx * (panelH + gap),
+                  w: panelW,
+                  h: panelH,
+                },
                 zIndex: panelIdx,
                 description: beat.summary,
                 characters: beat.charactersPresent.map((charId) => ({ characterId: charId })),
@@ -506,6 +538,12 @@ export const ChapterLive = Chapter.toLayer(
             alreadyRendered: chapterPanels.length - panelsToRender.length,
           });
 
+          const allCharacters = yield* Effect.tryPromise({
+            try: () => bridge.repo.characterProfiles.getByProjectId(current.projectId),
+            catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+          });
+          const charById = new Map(allCharacters.map((c) => [c.id, c]));
+
           for (let i = 0; i < panelsToRender.length; i++) {
             const panel = panelsToRender[i]!;
             const prompt = panel.renderPrompt!;
@@ -526,8 +564,15 @@ export const ChapterLive = Chapter.toLayer(
               width: 768,
               height: 1024,
               version: 0,
+              referenceImageKeys: panel.characters
+                .map((slot) => charById.get(slot.characterId))
+                .filter((c): c is NonNullable<typeof c> => c !== undefined)
+                .flatMap((c) =>
+                  [c.canonicalFaceRef, c.canonicalBodyRef].filter(
+                    (k): k is string => typeof k === "string",
+                  ),
+                ),
               createdAt: nowIso(),
-              referenceImageKeys: [],
             };
 
             const result = yield* Effect.tryPromise({

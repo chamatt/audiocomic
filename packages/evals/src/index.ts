@@ -195,3 +195,7 @@ export function evaluateConsistency(
   };
 }
 
+
+// Image-level QA — re-exported from image-qa.ts
+export { evaluateImageQuality } from './image-qa';
+export type { ImageQAMetrics } from './image-qa';

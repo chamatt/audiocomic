@@ -61,6 +61,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const height = GEN_SIZE;
 
     const project = await repo.projects.getById(panel.projectId);
+
+    // Fetch character profiles to populate referenceImageKeys for
+    // image-to-image conditioning.
+    const characters = await repo.characterProfiles.getByProjectId(panel.projectId);
+    const charById = new Map(characters.map((c) => [c.id, c]));
+
     const renderReq: PanelRenderRequest = {
       id: uuid(),
       panelId,
@@ -78,7 +84,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       height,
       version,
       createdAt: nowIso(),
-      referenceImageKeys: [],
+      referenceImageKeys: panel.characters
+        .map((slot) => charById.get(slot.characterId))
+        .filter((c): c is NonNullable<typeof c> => c !== undefined)
+        .flatMap((c) =>
+          [c.canonicalFaceRef, c.canonicalBodyRef].filter(
+            (k): k is string => typeof k === "string",
+          ),
+        ),
     };
     log.info(`rendering panel ${panelId}`, {
       backend: getRenderer().backend,

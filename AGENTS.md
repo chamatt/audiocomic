@@ -42,6 +42,8 @@ Each of the 15 pipeline stages (normalize → transcribe → ... → export_moti
 
 - Use `bun` as the package manager
 - `bun run typecheck` to check types across the monorepo
-- `bun run dev` to start the web app
-- `bun run worker` to start the legacy polling worker
-- Actor server: `cd packages/actors && npx tsx src/server/main.ts` (requires `RIVET_RUN_ENGINE=1`)
+- **Always restart services with `./dev.sh`** — do NOT manually `pkill` + `npx tsx`. The actor server requires `RIVET_RUN_ENGINE=1` and `STORAGE_USE_LOCAL=` env vars that `dev.sh` sets. The worker (`packages/workflows/src/worker.ts`) must also be running for per-panel regeneration jobs.
+- `./dev.sh` — kills all servers and restarts fresh (Docker, Postgres, MinIO, actor server, web app, worker)
+- `./dev.sh --stop` — kill all servers (no restart)
+- Logs: `/tmp/audiocomic-actor.log`, `/tmp/audiocomic-web.log`, `/tmp/audiocomic-worker.log`
+- Endpoints: web `http://localhost:3000`, actor API `http://localhost:6420`, MinIO console `http://localhost:9001`

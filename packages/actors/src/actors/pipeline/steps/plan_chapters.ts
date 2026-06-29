@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { uuid } from "@audiocomic/shared";
+import { buildSectionMemory } from "@audiocomic/ai";
+import { createEmbeddingProvider } from "@audiocomic/knowledge";
 import type {
   StorySection,
   PageSpec,
@@ -40,7 +42,6 @@ export interface PlanChaptersResult {
 
 // --- Helpers (adapted from the old plan_pages + compose_prompts steps) ---
 
-const DEFAULT_MAX_PAGES = 4;
 const DEFAULT_BEATS_PER_PAGE = 3;
 
 function isBeatSection(v: unknown): v is StorySection {
@@ -54,15 +55,6 @@ function isBeatSection(v: unknown): v is StorySection {
   );
 }
 
-function sampleEvenly<T>(items: T[], max: number): T[] {
-  if (items.length <= max) return items;
-  const out: T[] = [];
-  const step = items.length / max;
-  for (let i = 0; i < max; i++) {
-    out.push(items[Math.floor(i * step)]!);
-  }
-  return out;
-}
 
 export const PlanChaptersStep: StepExecutor = {
   type: "plan_chapters",
@@ -161,6 +153,34 @@ export const PlanChaptersStep: StepExecutor = {
           catch: (e) => new Error(`plan_chapters: DB persist failed (non-fatal): ${e}`),
         }).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
 
+        // --- 2b. Embed section memory for retrieval (MangaFlow M_k) ---
+        // buildSectionMemory walks beat → scene → chapter parent chain to
+        // produce a compact context string. We embed it and store in
+        // story_sections.embedding so the section-query tool can retrieve
+        // relevant sections from previous chapters during planning.
+        yield* Effect.tryPromise({
+          try: async () => {
+            const embedder = createEmbeddingProvider(bridge.env);
+            const beatSections = sections.filter((s) => s.level === "beat");
+            if (beatSections.length === 0) return;
+
+            // Build section memory strings for all beats, batch-embed them.
+            const memoryStrings = beatSections.map((beat) =>
+              buildSectionMemory(beat, sections, characters, worldBible),
+            );
+            const embeddings = await embedder.embedMany(memoryStrings);
+
+            // Persist embeddings to DB (non-fatal per section).
+            await Promise.all(
+              beatSections.map((beat, i) =>
+                bridge.repo.setEmbedding("storySections", beat.id, embeddings[i]!),
+              ),
+            );
+          },
+          catch: (e) =>
+            new Error(`plan_chapters: section embedding failed (non-fatal): ${e}`),
+        }).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));
+
         // --- 3. Plan pages: divide beats into pages/panels ---
         const beats = sections.filter(isBeatSection);
         if (beats.length === 0) {
@@ -170,13 +190,14 @@ export const PlanChaptersStep: StepExecutor = {
           continue;
         }
 
-        const maxBeats = DEFAULT_MAX_PAGES * DEFAULT_BEATS_PER_PAGE;
-        const selected = sampleEvenly(beats, maxBeats);
+        // Use ALL beats — every beat gets its own panel.
+        const selected = beats;
+        const pageCount = Math.ceil(selected.length / DEFAULT_BEATS_PER_PAGE);
 
         const pages: PageSpec[] = [];
         const panels: PanelSpec[] = [];
 
-        for (let pageIdx = 0; pageIdx < DEFAULT_MAX_PAGES; pageIdx++) {
+        for (let pageIdx = 0; pageIdx < pageCount; pageIdx++) {
           const pageBeats = selected.slice(
             pageIdx * DEFAULT_BEATS_PER_PAGE,
             (pageIdx + 1) * DEFAULT_BEATS_PER_PAGE,
