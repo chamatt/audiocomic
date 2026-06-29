@@ -153,7 +153,7 @@ const bibleBuildSchema = z.object({
       name: z.string(),
       description: z.string(),
       role: z.string(),
-      isNew: z.boolean(),
+      isNew: z.boolean().default(false).describe("true if this character appears for the first time in this chapter"),
     }),
   ),
   characterStates: z.array(
@@ -241,9 +241,20 @@ STEP 1: Use the available tools to gather cross-chapter context:
 - Use character-timeline to check for outfit/state changes across chapters
 - Use world-lookup to get the world setting, rules, and art style
 
-STEP 2: Break the text into chapters and scenes. Each scene is a distinct narrative moment with its own location, time, and emotional tone. Include a short verbatim textExcerpt from the source for each scene so later passes can extract beats.
+STEP 2: Break the text into scenes. Each scene is a distinct narrative moment with its own location, time, and emotional tone. Include a verbatim textExcerpt (200-500 chars) from the source for each scene so later passes can extract beats and dialogue.
 
-STEP 3: Identify all characters, their physical appearance, and role. Characters should look and act the same as in previous chapters unless there's a narrative reason for change.
+STEP 3: Identify all characters. For each character, provide:
+- name: The character's name (use the most common name/alias)
+- description: Physical appearance — be SPECIFIC and VISUAL. Include species, body type, clothing, colors, distinctive features. Example: "Tall incubus with dusky gray skin, short devil horns, long gray/black ponytail, barbed tail, black bat wings. Wears a tuxedo with wing-slit back." NOT "Incubus NPC."
+- role: protagonist, antagonist, supporting, minor, or narrator
+- isNew: true if this character appears for the first time in this chapter, false if they appeared in previous chapters
+
+IMPORTANT: Do NOT duplicate characters. Each unique character should appear exactly once. If a character appears in multiple scenes, list them once with their most complete description.
+
+STEP 4: Define the world setting and art style.
+- setting: Describe the physical environment of this chapter
+- artStyle: Be SPECIFIC about visual direction. Example: "Bold character silhouettes, cinematic wide establishing shots, comedic reaction panels with exaggerated expressions." NOT "comic art."
+- tone: The emotional register of the chapter
 
 Output: structured JSON with world setting, characters (with descriptions and roles), chapters (each containing scenes with summaries and text excerpts), and character states.`,
     model: modelConfig,
@@ -259,7 +270,18 @@ function makeBeatDecomposerAgent(projectId: string): Agent {
   return new Agent({
     id: `beat-decomposer-${projectId}`,
     name: "Beat Decomposer",
-    instructions: `You are a comic beat breakdown assistant. Split the given scene into a sequence of narrative beats. Each beat is ONE visual moment that will become one or more comic panels. Aim for 3-8 beats per scene. Preserve the scene's emotional tone unless a beat clearly shifts it. Include a camera hint for each beat.`,
+    instructions: `You are a comic beat breakdown assistant. Split the given scene into a sequence of narrative beats. Each beat is ONE visual moment that will become one or more comic panels.
+
+Rules:
+- Aim for 3-8 beats per scene. Fewer for slow scenes, more for action scenes.
+- Each beat must have a CONCRETE visual summary — what the reader would SEE. Example: "Donut looks up at the starry ceiling, eyes wide" NOT "Donut reacts to the ceiling."
+- Include the beat's text — a verbatim excerpt from the source that contains any dialogue or narration for this beat.
+- Preserve the scene's emotional tone unless a beat clearly shifts it.
+- Include a camera hint for each beat: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov, or establishing.
+- List characters present in each beat by name.
+- List any notable objects that appear (weapons, items, UI elements).
+
+Output: structured JSON with a beats array.`,
     model: modelConfig,
   });
 }
@@ -274,13 +296,22 @@ function makePanelLayoutAgent(projectId: string): Agent {
     name: "Panel Layout",
     instructions: `You are a comic layout planner. For each beat, propose exactly 1 panel that visualizes THAT beat.
 
-CRITICAL: The panel description must describe the same event as the beat summary. Do not invent a different scene. If the beat says "Donut looks up at a starry ceiling", the panel description must show Donut looking up at a starry ceiling — not a character sitting at a bar.
+CRITICAL RULES:
+1. The panel description must describe the SAME event as the beat summary. Do not invent a different scene.
+2. The description must be CONCRETE and VISUAL — describe what the reader SEES, not abstract narration.
+   GOOD: "Carl stands in the golden hallway, looking up at the starry ceiling. His rock bounces off the ceiling, revealing it's an illusion. Donut sits on his shoulder, eyes wide."
+   BAD: "A clear visual beat: the narrator frames Mordecai as non-combat, emphasizing NPC status."
+3. Include SETTING details: location, lighting, atmosphere, time of day.
+4. Include CHARACTER details: pose, expression, clothing, position in frame (left/center/right/background).
+5. Extract DIALOGUE from the beat text — if a character speaks in the source text, include it as a dialogue line with the correct speaker.
+6. Choose camera framing: wide (establishing shot), medium (conversation), close-up (emotion), extreme-close-up (detail), overhead, low-angle, pov, or establishing.
+7. Match the beat's emotional tone in the visual composition.
 
 For each beat:
-1. Read the beat summary carefully — this is what happens in the story
+1. Read the beat summary AND the beat text carefully
 2. Write a visual description of THAT exact moment — what the reader sees
 3. Specify which characters appear and their pose/expression
-4. Add dialogue/narration lines if present in the beat
+4. Add dialogue/narration lines if present in the beat text
 5. Choose camera framing that fits the action
 
 beatIndex must match the supplied beat list order (0-based).`,
@@ -575,7 +606,8 @@ function makeStoryPlannerHandle(
                   (b.cameraHint ? ` [camera: ${b.cameraHint}]` : "") +
                   (b.charactersPresent?.length
                     ? ` (characters: ${(b.charactersPresent ?? []).join(", ")})`
-                    : ""),
+                    : "") +
+                  (b.text ? `\n  Source text: "${b.text}"` : ""),
               )
               .join("\n"),
             { maxSteps: 3, structuredOutput: { schema: pass3Schema } },
