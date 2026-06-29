@@ -131,6 +131,97 @@ const WIKI_TYPE_LABELS: Record<string, string> = {
 
 const WIKI_TYPE_ORDER = ["character", "location", "object", "concept", "event", "timeline"];
 
+function CharacterMergeButton({
+  source,
+  targets,
+  projectId,
+  onMerged,
+}: {
+  source: CharacterProfile;
+  targets: CharacterProfile[];
+  projectId: string;
+  onMerged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [targetId, setTargetId] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleMerge = async () => {
+    if (!targetId) return;
+    setMerging(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/knowledge/characters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId: source.id, targetId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Merge failed");
+      }
+      onMerged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setMerging(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-5 text-xs px-2 text-muted-foreground"
+        onClick={() => setOpen(true)}
+      >
+        Merge…
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 ml-auto">
+      <Select value={targetId} onValueChange={setTargetId}>
+        <SelectTrigger className="h-6 text-xs w-40">
+          <SelectValue placeholder="Merge into…" />
+        </SelectTrigger>
+        <SelectContent>
+          {targets.map((t) => (
+            <SelectItem key={t.id} value={t.id} className="text-xs">
+              {t.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant="destructive"
+        className="h-6 text-xs px-2"
+        disabled={!targetId || merging}
+        onClick={handleMerge}
+      >
+        {merging ? "…" : "Confirm"}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 text-xs px-2"
+        disabled={merging}
+        onClick={() => {
+          setOpen(false);
+          setTargetId("");
+          setError(null);
+        }}
+      >
+        Cancel
+      </Button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </div>
+  );
+}
+
 function KnowledgeTab({
   projectId,
   characters,
@@ -180,26 +271,38 @@ function KnowledgeTab({
           <CardTitle className="text-base">Characters</CardTitle>
           <CardDescription>
             {characters.length} character{characters.length === 1 ? "" : "s"} in the bible
+            {characters.length > 1 && " — merge duplicates to fix consistency"}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {characters.length === 0 ? (
             <p className="text-sm text-muted-foreground">No characters defined yet.</p>
           ) : (
-            characters.map((c) => (
-              <div key={c.id} className="flex flex-col gap-1 pb-3 border-b last:border-0 last:pb-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{c.name}</span>
-                  <Badge variant="outline" className="capitalize text-xs">
-                    {c.role}
-                  </Badge>
+            characters.map((c) => {
+              const others = characters.filter((o) => o.id !== c.id);
+              return (
+                <div key={c.id} className="flex flex-col gap-1 pb-3 border-b last:border-0 last:pb-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{c.name}</span>
+                    <Badge variant="outline" className="capitalize text-xs">
+                      {c.role}
+                    </Badge>
+                    {others.length > 0 && (
+                      <CharacterMergeButton
+                        source={c}
+                        targets={others}
+                        projectId={projectId}
+                        onMerged={() => window.location.reload()}
+                      />
+                    )}
+                  </div>
+                  {c.aliases.length > 0 && (
+                    <p className="text-xs text-muted-foreground">Aliases: {c.aliases.join(", ")}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground">{c.description}</p>
                 </div>
-                {c.aliases.length > 0 && (
-                  <p className="text-xs text-muted-foreground">Aliases: {c.aliases.join(", ")}</p>
-                )}
-                <p className="text-sm text-muted-foreground">{c.description}</p>
-              </div>
-            ))
+              );
+            })
           )}
         </CardContent>
       </Card>

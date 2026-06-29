@@ -259,6 +259,8 @@ function makeStoryPlannerAgent(ctx: ToolContext): Agent {
     instructions: `You are a comic story planner. Decompose an audiobook chapter into a structured plan for adaptation into a narrated comic.
 
 STEP 1: Use the available tools to gather cross-chapter context:
+- ALWAYS call list-characters FIRST to get the full existing character roster. Reuse existing character names exactly — do NOT create duplicate characters with different names for the same person.
+- If a character name is slightly different from an existing one (alias, nickname, partial name), call match-character with the name and description to find the best existing match. Reuse that character instead of creating a new one.
 - Use vector-query to find relevant events and mentions from other chapters
 - Use section-query to find structured story sections from previously planned chapters — this gives you chapter/scene/beat summaries, emotional tones, and character presence without re-reading raw transcripts
 - Use character-lookup to get each character's current state and appearance
@@ -268,12 +270,12 @@ STEP 1: Use the available tools to gather cross-chapter context:
 STEP 2: Break the text into scenes. Each scene is a distinct narrative moment with its own location, time, and emotional tone. Include a verbatim textExcerpt (200-500 chars) from the source for each scene so later passes can extract beats and dialogue.
 
 STEP 3: Identify all characters. For each character, provide:
-- name: The character's name (use the most common name/alias)
+- name: The character's name — MUST match an existing character name from list-characters if one exists. Only create new characters for people who genuinely appear for the first time.
 - description: Physical appearance — be SPECIFIC and VISUAL. Include species, body type, clothing, colors, distinctive features. Example: "Tall incubus with dusky gray skin, short devil horns, long gray/black ponytail, barbed tail, black bat wings. Wears a tuxedo with wing-slit back." NOT "Incubus NPC."
 - role: protagonist, antagonist, supporting, minor, or narrator
-- isNew: true if this character appears for the first time in this chapter, false if they appeared in previous chapters
+- isNew: true if this character appears for the first time in this chapter, false if they appeared in previous chapters (check list-characters output)
 
-IMPORTANT: Do NOT duplicate characters. Each unique character should appear exactly once. If a character appears in multiple scenes, list them once with their most complete description.
+CRITICAL: Do NOT duplicate characters. Before creating a new character, check the list-characters output. If a character with the same name or alias already exists, reuse that exact name and set isNew=false. Duplicates break cross-chapter consistency.
 
 STEP 4: Define the world setting and art style.
 - setting: Describe the physical environment of this chapter

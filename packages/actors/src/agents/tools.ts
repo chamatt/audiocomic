@@ -10,6 +10,20 @@ import { searchKnowledgeBase, searchStorySections } from '@audiocomic/knowledge'
 import type { Db } from '@audiocomic/db';
 import type { MastraModelConfig } from '@mastra/core/llm';
 
+/** Cosine similarity between two equal-length vectors. */
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
 export interface ToolContext {
   repo: Repository;
   embedder: EmbeddingProvider;
@@ -259,5 +273,158 @@ export function createProjectTools(ctx: ToolContext) {
     },
   });
 
-  return { vectorQueryTool, characterLookupTool, worldLookupTool, timelineTool, sectionQueryTool };
+  // 6. List all characters — gives the planner the full roster so it can
+  //    reuse existing character names instead of creating duplicates.
+  const listCharactersTool = createTool({
+    id: 'list-characters',
+    description:
+      'List ALL existing characters in the project roster. ALWAYS call this first before generating characters, so you can reuse existing names and avoid duplicates. Returns name, role, aliases, and description for each character.',
+    inputSchema: z.object({}),
+    outputSchema: z.object({
+      characters: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          role: z.string(),
+          aliases: z.array(z.string()),
+          description: z.string(),
+        }),
+      ),
+    }),
+    execute: async () => {
+      const characters = await ctx.repo.characterProfiles.getByProjectId(ctx.projectId);
+      return {
+        characters: characters.map((c) => ({
+          id: c.id,
+          name: c.name,
+          role: c.role,
+          aliases: c.aliases,
+          description: c.description,
+        })),
+      };
+    },
+  });
+
+  // 7. Match character — fuzzy match by name + embedding similarity.
+  //    Handles cases like "Carl" vs "Carl the Dungeon Crawler" vs "C. Carlson"
+  //    where exact name matching fails. Embeds the query description and
+  //    compares against existing character descriptions via cosine similarity.
+  const matchCharacterTool = createTool({
+    id: 'match-character',
+    description:
+      'Find the best existing character match for a name + description. Use this when you are unsure if a character already exists — e.g. the name is slightly different or is an alias. Returns the closest match above a similarity threshold, or no match.',
+    inputSchema: z.object({
+      name: z.string().describe('The character name to match'),
+      description: z.string().optional().describe('Physical description of the character — improves matching accuracy'),
+    }),
+    outputSchema: z.object({
+      matched: z.boolean(),
+      character: z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          role: z.string(),
+          aliases: z.array(z.string()),
+          description: z.string(),
+          similarity: z.number(),
+        })
+        .nullable(),
+    }),
+    execute: async ({ name, description }) => {
+      const characters = await ctx.repo.characterProfiles.getByProjectId(ctx.projectId);
+      if (characters.length === 0) return { matched: false, character: null };
+
+      // Layer 1: exact name/alias match (case-insensitive)
+      const target = name.toLowerCase().trim();
+      const exact = characters.find(
+        (c) =>
+          c.name.toLowerCase().trim() === target ||
+          c.aliases.some((a) => a.toLowerCase().trim() === target),
+      );
+      if (exact) {
+        return {
+          matched: true,
+          character: {
+            id: exact.id,
+            name: exact.name,
+            role: exact.role,
+            aliases: exact.aliases,
+            description: exact.description,
+            similarity: 1.0,
+          },
+        };
+      }
+
+      // Layer 2: embedding similarity on descriptions
+      const queryText = `${name}. ${description ?? ''}`.trim();
+      let queryVec: number[];
+      try {
+        queryVec = await ctx.embedder.embed(queryText);
+      } catch {
+        // Embedding failed — fall back to substring matching
+        const substring = characters.find(
+          (c) =>
+            c.name.toLowerCase().includes(target) ||
+            target.includes(c.name.toLowerCase()) ||
+            c.aliases.some((a) => {
+              const na = a.toLowerCase().trim();
+              return na.includes(target) || target.includes(na);
+            }),
+        );
+        if (substring) {
+          return {
+            matched: true,
+            character: {
+              id: substring.id,
+              name: substring.name,
+              role: substring.role,
+              aliases: substring.aliases,
+              description: substring.description,
+              similarity: 0.7,
+            },
+          };
+        }
+        return { matched: false, character: null };
+      }
+
+      // Embed all existing character descriptions and compute cosine similarity
+      const charTexts = characters.map((c) => `${c.name}. ${c.description}`);
+      let charVecs: number[][];
+      try {
+        charVecs = await ctx.embedder.embedMany(charTexts);
+      } catch {
+        return { matched: false, character: null };
+      }
+
+      let bestIdx = -1;
+      let bestSim = -1;
+      for (let i = 0; i < charVecs.length; i++) {
+        const sim = cosineSimilarity(queryVec, charVecs[i]!);
+        if (sim > bestSim) {
+          bestSim = sim;
+          bestIdx = i;
+        }
+      }
+
+      // Threshold: 0.82 means strong semantic similarity
+      if (bestIdx >= 0 && bestSim >= 0.82) {
+        const c = characters[bestIdx]!;
+        return {
+          matched: true,
+          character: {
+            id: c.id,
+            name: c.name,
+            role: c.role,
+            aliases: c.aliases,
+            description: c.description,
+            similarity: bestSim,
+          },
+        };
+      }
+
+      return { matched: false, character: null };
+    },
+  });
+
+  return { vectorQueryTool, characterLookupTool, worldLookupTool, timelineTool, sectionQueryTool, listCharactersTool, matchCharacterTool };
 }

@@ -4,6 +4,7 @@ import { registerStep, type StepExecutor, type StepContext, type StepOutput } fr
 import { uuid } from "@audiocomic/shared";
 import { buildSectionMemory } from "@audiocomic/ai";
 import { createEmbeddingProvider } from "@audiocomic/knowledge";
+import { mergeCharacters } from "../../../agents/merge.ts";
 import type {
   StorySection,
   PageSpec,
@@ -139,16 +140,37 @@ export const PlanChaptersStep: StepExecutor = {
           catch: (e) => (e instanceof Error ? e : new Error(String(e))),
         });
 
-        const sections: StorySection[] = storyResult.sections;
-        const characters: CharacterProfile[] = storyResult.characters;
+        let sections: StorySection[] = storyResult.sections;
+        let characters: CharacterProfile[] = storyResult.characters;
         const worldBible: WorldBible = storyResult.worldBible;
 
+        // Deduplicate characters against existing project roster.
+        const mergeResult = yield* Effect.tryPromise({
+          try: () => mergeCharacters(characters, sections, bridge.repo, ctx.projectId),
+          catch: (e) => new Error(`plan_chapters: character merge failed (non-fatal): ${e}`),
+        }).pipe(
+          Effect.catch((e: Error) => {
+            Effect.logInfo(e.message);
+            return Effect.succeed(null);
+          }),
+        );
+        if (mergeResult) {
+          sections = mergeResult.sections;
+          characters = mergeResult.characters;
+        }
+
         // Persist story data (non-fatal).
+        // Matched characters already exist (patched by mergeCharacters);
+        // create() on them throws duplicate-key, which we swallow.
         yield* Effect.tryPromise({
           try: () =>
             Promise.all([
               Promise.all(sections.map((s) => bridge.repo.storySections.create(s))),
-              Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
+              Promise.all(
+                characters.map((c) =>
+                  bridge.repo.characterProfiles.create(c).catch(() => c),
+                ),
+              ),
             ]),
           catch: (e) => new Error(`plan_chapters: DB persist failed (non-fatal): ${e}`),
         }).pipe(Effect.catch((e: Error) => Effect.logInfo(e.message)));

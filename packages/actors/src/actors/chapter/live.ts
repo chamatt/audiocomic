@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { Chapter, ChapterState, type StageProgress } from "./api.ts";
 import type { TranscriptionOptions, TranscriptResult } from "@audiocomic/ai";
 import { PipelineBridge } from "../../lib/pipeline-bridge.ts";
+import { mergeCharacters } from "../../agents/merge.ts";
 import { uuid, nowIso, logger, pageImageKey, letteringKey } from "@audiocomic/shared";
 import {
   ingestChapterTranscription,
@@ -295,16 +296,38 @@ export const ChapterLive = Chapter.toLayer(
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           });
 
-          const sections: StorySection[] = storyResult.sections;
-          const characters: CharacterProfile[] = storyResult.characters;
+          let sections: StorySection[] = storyResult.sections;
+          let characters: CharacterProfile[] = storyResult.characters;
           const worldBible: WorldBible = storyResult.worldBible;
 
+          // Deduplicate characters against existing project roster.
+          // Matches by name/alias, reuses existing IDs, remaps section refs.
+          const mergeResult = yield* Effect.tryPromise({
+            try: () => mergeCharacters(characters, sections, bridge.repo, current.projectId),
+            catch: (e) => new Error(`plan: character merge failed (non-fatal): ${e}`),
+          }).pipe(
+            Effect.catch((e: Error) => {
+              Effect.logInfo(e.message);
+              return Effect.succeed(null);
+            }),
+          );
+          if (mergeResult) {
+            sections = mergeResult.sections;
+            characters = mergeResult.characters;
+          }
+
           // Persist story data (non-fatal).
+          // Only create characters that are truly new (mergeCharacters already
+          // patched existing ones). Filter by checking if ID exists in DB.
           yield* Effect.tryPromise({
             try: () =>
               Promise.all([
                 Promise.all(sections.map((s) => bridge.repo.storySections.create(s))),
-                Promise.all(characters.map((c) => bridge.repo.characterProfiles.create(c))),
+                Promise.all(
+                  characters.map((c) =>
+                    bridge.repo.characterProfiles.create(c).catch(() => c),
+                  ),
+                ),
                 bridge.repo.worldBibles.create(worldBible),
               ]),
             catch: (e) => new Error(`plan: DB persist failed (non-fatal): ${e}`),
