@@ -9,7 +9,7 @@ const log = logger.scoped("api:project-patch");
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const body = (await request.json()) as Partial<Pick<Project, "renderModel">>;
+    const body = (await request.json()) as Partial<Pick<Project, "renderModel" | "renderProvider">>;
     const repo = await getRepo();
     const updated = await repo.projects.patch(id, body);
     if (!updated) {

@@ -27,7 +27,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id: panelId } = await params;
   try {
     // Optional model override from request body.
-    let body: { model?: string } = {};
+    let body: { model?: string; provider?: string } = {};
     try {
       body = await request.json();
     } catch {
@@ -68,13 +68,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const PAGE_HEIGHT = 1131;
     const panelAspect = (panel.bbox.w * PAGE_WIDTH) / (panel.bbox.h * PAGE_HEIGHT);
 
+    const project = await repo.projects.getById(panel.projectId);
     const renderReq: PanelRenderRequest = {
       id: uuid(),
       panelId,
       projectId: panel.projectId,
       prompt: panel.renderPrompt,
       negativePrompt: panel.renderNegativePrompt,
-      model: body.model ?? (await repo.projects.getById(panel.projectId))?.renderModel,
+      model: body.model ?? project?.renderModel,
+      provider: body.provider ?? project?.renderProvider,
       // When a model is explicitly passed, use a random seed to bypass
       // Pollinations' prompt+seed cache (which ignores the model param).
       seed: body.model
@@ -90,6 +92,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       backend: getRenderer().backend,
       version,
       model: renderReq.model,
+      provider: renderReq.provider,
       seed: renderReq.seed,
     });
 

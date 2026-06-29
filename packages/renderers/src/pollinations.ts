@@ -4,28 +4,38 @@ import type { PanelRenderRequest, PanelRenderResult } from "@audiocomic/domain";
 import type { RendererAdapter } from "./types";
 import { panelRenderKey, promptHash, writeLocalImage } from "./util";
 
-const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
+// Legacy free endpoint (no auth, rate-limited, 768×768 output)
+const POLLINATIONS_FREE_BASE = "https://image.pollinations.ai/prompt";
+// New authenticated endpoint (bills to account balance, 1024×1024 output)
+const POLLINATIONS_PAID_BASE = "https://gen.pollinations.ai/image";
 
 /**
  * Pollinations image renderer adapter.
  *
- * Uses the simple GET-based Pollinations image API:
- *   GET https://image.pollinations.ai/prompt/{prompt}?width=&height=&seed=&model=
+ * Two endpoints:
+ *   - Paid:   https://gen.pollinations.ai/image/{prompt}  (requires API key, bills balance)
+ *   - Free:   https://image.pollinations.ai/prompt/{prompt} (no auth, rate-limited, for tests)
  *
- * The API returns image bytes directly (image/jpeg). No POST or complex auth
- * needed — the API key is passed as a query parameter for authenticated
- * requests (higher rate limits, nologo access).
+ * When POLLINATIONS_API_KEY is set, uses the paid endpoint which bills to the
+ * account balance and has higher rate limits. When no key is set, falls back
+ * to the free legacy endpoint (anonymous tier, ~1 req/15s).
+ *
+ * Both return image bytes directly (image/jpeg).
  */
 export class PollinationsRenderer implements RendererAdapter {
   readonly backend = "pollinations" as const;
   private readonly env: Env;
   private readonly apiKey: string | undefined;
   private readonly model: string;
+  /** When true, uses gen.pollinations.ai (paid, bills balance). When false, uses image.pollinations.ai (free, rate-limited). */
+  private readonly usePaidApi: boolean;
 
   constructor(env: Env = getEnv()) {
     this.env = env;
     this.apiKey = env.POLLINATIONS_API_KEY;
     this.model = env.DEFAULT_IMAGE_MODEL || "flux";
+    // Use paid API when key is present, unless explicitly forced to free mode
+    this.usePaidApi = Boolean(this.apiKey) && env.POLLINATIONS_USE_FREE !== "true";
   }
 
   async isAvailable(): Promise<boolean> {
@@ -36,6 +46,15 @@ export class PollinationsRenderer implements RendererAdapter {
 
   async render(req: PanelRenderRequest): Promise<PanelRenderResult> {
     const start = Date.now();
+
+    // Per-request provider override: "pollinations-free" forces the legacy
+    // free endpoint even when an API key is configured; "pollinations-paid"
+    // forces the authenticated endpoint. Falls back to the constructor
+    // default (usePaidApi) when not specified.
+    const usePaid =
+      req.provider === "pollinations-paid" ? true :
+      req.provider === "pollinations-free" ? false :
+      this.usePaidApi;
 
     // Build the prompt — Pollinations is a simple GET API with no separate
     // negative prompt param, so we append negative constraints inline.
@@ -48,15 +67,16 @@ export class PollinationsRenderer implements RendererAdapter {
     params.set("height", String(req.height));
     params.set("model", req.model ?? this.model);
     if (req.seed !== undefined) params.set("seed", String(req.seed));
-    // Remove watermark when authenticated
-    if (this.apiKey) {
+    // nologo/private only supported on the paid API
+    if (usePaid) {
       params.set("nologo", "true");
       params.set("private", "true");
     }
     // Let the model enhance the prompt for better results
     params.set("enhance", "true");
 
-    const url = `${POLLINATIONS_BASE}/${encodedPrompt}?${params.toString()}`;
+    const base = usePaid ? POLLINATIONS_PAID_BASE : POLLINATIONS_FREE_BASE;
+    const url = `${base}/${encodedPrompt}?${params.toString()}`;
     // Fetch the image — Pollinations returns binary image data directly.
     // Retry on 429 (rate limit) with exponential backoff.
     const headers: Record<string, string> = {};
@@ -81,6 +101,7 @@ export class PollinationsRenderer implements RendererAdapter {
       throw new Error("Pollinations render failed: exhausted retries");
     }
 
+    console.log(`[pollinations] ${usePaid ? "paid" : "free"} endpoint, model=${req.model ?? this.model}, ${req.width}×${req.height}, seed=${req.seed ?? "random"}`);
     const imageBuffer = new Uint8Array(await response.arrayBuffer());
 
     // Determine extension from content-type

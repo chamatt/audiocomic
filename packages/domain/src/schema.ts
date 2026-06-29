@@ -86,6 +86,7 @@ export const Project = z.object({
     )
     .default([]),
   renderModel: z.string().optional(), // e.g. "flux", "gptimage", "turbo"
+  renderProvider: z.string().optional(), // e.g. "pollinations-free", "pollinations-paid"
 });
 export type Project = z.infer<typeof Project>;
 
@@ -408,6 +409,7 @@ export const PanelRenderRequest = z.object({
   prompt: z.string(),
   negativePrompt: z.string().optional(),
   model: z.string().optional(), // override the renderer's default model
+  provider: z.string().optional(), // override the renderer's provider/endpoint (e.g. "pollinations-free" | "pollinations-paid")
   presetId: z.string().uuid().optional(),
   preset: RenderPreset.optional(),
   // reference images (character packs, scene refs)

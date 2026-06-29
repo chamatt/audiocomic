@@ -55,6 +55,7 @@ export const projects = pgTable(
     providerSettings: jsonb("provider_settings").notNull().default({}),
     stages: jsonb("stages").notNull().default([]),
     renderModel: varchar("render_model", { length: 64 }),
+    renderProvider: varchar("render_provider", { length: 64 }),
   },
   (t) => [index("projects_status_idx").on(t.status)],
 );

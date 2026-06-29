@@ -29,6 +29,10 @@ const POLLINATIONS_MODELS = [
   { value: "kontext", label: "Kontext" },
 ] as const;
 
+const POLLINATIONS_PROVIDERS = [
+  { value: "pollinations-paid", label: "Pollinations Paid" },
+  { value: "pollinations-free", label: "Pollinations Free" },
+] as const;
 interface CanvasTabProps {
   projectId: string;
 }
@@ -164,8 +168,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [updatePanel],
   );
 
-  // Image model selection (persisted to project in DB)
+  // Image model + provider selection (persisted to project in DB)
   const [selectedModel, setSelectedModel] = useState<string>("gptimage");
+  const [selectedProvider, setSelectedProvider] = useState<string>("pollinations-paid");
   useEffect(() => {
     let cancelled = false;
     const fetchModel = async () => {
@@ -174,7 +179,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         if (res.ok && !cancelled) {
           const data = await res.json();
           const model = data.detail?.project?.renderModel;
+          const provider = data.detail?.project?.renderProvider;
           if (model) setSelectedModel(model);
+          if (provider) setSelectedProvider(provider);
         }
       } catch {
         /* ignore */
@@ -196,6 +203,17 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     },
     [projectId],
   );
+  const handleProviderChange = useCallback(
+    (provider: string) => {
+      setSelectedProvider(provider);
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ renderProvider: provider }),
+      });
+    },
+    [projectId],
+  );
   // Per-panel rendering state (shared by handleRegenerate and handlePanelRender)
   const [renderingPanelIds, setRenderingPanelIds] = useState<Set<string>>(new Set());
 
@@ -207,7 +225,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         const res = await fetch(`/api/panels/${panelId}/regenerate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: selectedModel }),
+          body: JSON.stringify({ model: selectedModel, provider: selectedProvider }),
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -225,7 +243,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
       }
     },
-    [selectedModel, updatePanelImage],
+    [selectedModel, selectedProvider, updatePanelImage],
   );
 
   // Throttled API save for bubble position (fires at most once per 150ms during drag)
@@ -353,7 +371,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         const res = await fetch(`/api/panels/${panelId}/regenerate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: selectedModel }),
+          body: JSON.stringify({ model: selectedModel, provider: selectedProvider }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -375,7 +393,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
       }
     },
-    [selectedModel, updatePanelImage],
+    [selectedModel, selectedProvider, updatePanelImage],
   );
 
   // The selected chapter's stage (for render button visibility)
@@ -492,6 +510,20 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           </button>
 
           <div className="h-5 w-px bg-border" />
+
+          {/* Provider selector (paid = bills balance, free = rate-limited) */}
+          <select
+            value={selectedProvider}
+            onChange={(e) => handleProviderChange(e.target.value)}
+            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+            title="Image generation provider / endpoint"
+          >
+            {POLLINATIONS_PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
 
           {/* Model selector */}
           <select

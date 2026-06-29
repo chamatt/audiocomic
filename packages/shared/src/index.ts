@@ -146,6 +146,8 @@ export const EnvSchema = z.object({
 
   // Pollinations (open-source image generation)
   POLLINATIONS_API_KEY: z.string().optional(),
+  // Force free tier (image.pollinations.ai) even when API key is set, for tests
+  POLLINATIONS_USE_FREE: z.string().optional(),
 
   // ElevenLabs
   ELEVENLABS_API_KEY: z.string().optional(),
