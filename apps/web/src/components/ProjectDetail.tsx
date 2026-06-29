@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { CanvasTab } from "@/components/canvas/CanvasTab";
 import { ChapterBoard } from "@/components/ChapterBoard";
+import { StoryboardTab } from "@/components/StoryboardTab";
 import { useCanvasStore } from "@/stores/canvas-store";
 
 export interface ProjectDetailData {
@@ -302,8 +303,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const [detail, setDetail] = useState<ProjectDetailData>(initialDetail);
   const [activeTab, setActiveTab] = useState<string>("canvas");
   const project = detail.project;
-  const [llmProvider, setLlmProvider] = useState<string>(project.llmProvider ?? "openrouter");
-  const [llmModel, setLlmModel] = useState<string>(project.llmModel ?? "mistralai/mistral-nemo");
+  const [llmProvider, setLlmProvider] = useState<string>(project.llmProvider ?? "");
+  const [llmModel, setLlmModel] = useState<string>(project.llmModel ?? "");
   const handleLlmProviderChange = useCallback(
     (provider: string) => {
       setLlmProvider(provider);
@@ -383,6 +384,12 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           </button>
           <button
             className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            onClick={() => setActiveTab("storyboard")}
+          >
+            Storyboard
+          </button>
+          <button
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
             onClick={() => setActiveTab("knowledge")}
           >
             Knowledge
@@ -426,11 +433,20 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           <TabsTrigger value="chapters">Chapters</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="storyboard">Storyboard</TabsTrigger>
         </TabsList>
 
         {/* Chapters tab */}
         <TabsContent value="chapters">
           <ChapterBoard projectId={projectId} onReview={handleChapterReview} />
+        </TabsContent>
+
+        {/* Storyboard tab */}
+        <TabsContent value="storyboard">
+          <StoryboardTab
+            sections={detail.sections}
+            panels={detail.pages.flatMap((p) => p.panels)}
+          />
         </TabsContent>
 
         {/* Knowledge tab */}
