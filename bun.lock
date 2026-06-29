@@ -76,6 +76,7 @@
         "@audiocomic/ai": "workspace:*",
         "@audiocomic/db": "workspace:*",
         "@audiocomic/domain": "workspace:*",
+        "@audiocomic/evals": "workspace:*",
         "@audiocomic/knowledge": "workspace:*",
         "@audiocomic/media": "workspace:*",
         "@audiocomic/renderers": "workspace:*",

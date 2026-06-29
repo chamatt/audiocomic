@@ -7,7 +7,7 @@
     "dev": "next dev --port ${WEB_PORT:-3000}",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "lint": "next lint"
   },
   "dependencies": {

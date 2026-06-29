@@ -4,13 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/server/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@audiocomic/ai": "workspace:*",
     "@audiocomic/db": "workspace:*",
     "@audiocomic/knowledge": "workspace:*",
     "@audiocomic/domain": "workspace:*",
+    "@audiocomic/evals": "workspace:*",
     "@audiocomic/media": "workspace:*",
     "@audiocomic/renderers": "workspace:*",
     "@audiocomic/shared": "workspace:*",

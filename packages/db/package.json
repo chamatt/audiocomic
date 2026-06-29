@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
     "push": "drizzle-kit push"

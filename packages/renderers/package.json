@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai": "1.3.24",

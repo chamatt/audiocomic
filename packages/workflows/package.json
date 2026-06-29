@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "worker": "tsx src/worker.ts",
     "cli": "tsx src/cli.ts",
     "actor-server": "tsx src/actor-server.ts"
