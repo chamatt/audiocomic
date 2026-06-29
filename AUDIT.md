@@ -157,9 +157,9 @@ These were absorbed into `plan_chapters` and ChapterActor fibers but never delet
 | KB tools | ❌ No | ✅ vector-query, character-lookup, world-lookup, timeline |
 | Structured output | Zod via `streamObject` | Zod via `tryGenerateWithJsonFallback` |
 | Providers | 5 (openai, anthropic, google, groq, pollinations) | 3 (openrouter, pollinations, openai) |
-| Used in production | ❌ No | ✅ Yes (ChapterActor + plan_chapters) |
+| Used in production | ✅ Yes (wiki ingestor) | ✅ Yes (ChapterActor + plan_chapters) |
 
-**Risk:** The AI SDK planner is dead code. Two implementations of the same algorithm with no test parity is a maintenance hazard.
+**Clarification:** The AI SDK planner is NOT dead code — it's the LLM backend for `makeWikiIngestor` (called from `chapter/live.ts`, `knowledge-base/live.ts`, `ingest_knowledge.ts`). The Mastra agent is used for story planning. They serve different purposes. The risk is having two planner implementations with no test parity, not dead code.
 
 ### 3.2 Prompt Engineering — Good but Disconnected
 
@@ -302,17 +302,16 @@ FFmpeg zoompan with 6 motion types (static, zoom-in, zoom-out, ken-burns, pan-le
 
 ## 7. Cross-Cutting Concerns
 
-### 7.1 Typecheck — ❌ 314 Errors
+### 7.1 Typecheck — ✅ FIXED (was 314 errors, now 0)
 
-```
-314 diagnostics in 98 files
-Top codes: TS2307 (180x), TS7006 (122x), TS2353 (8x), TS2532 (2x), TS2322 (1x)
-```
+Root cause: `packages/ai/` had no `tsconfig.json`, so `tsc --noEmit` fell back to the root `tsconfig.json` which has no `include` restriction — it typechecked the entire monorepo including web files that use `@/` path aliases the root tsconfig doesn't define. This accounted for ~300 of the 314 errors.
 
-- TS2307 (180x): `@/` path aliases not resolving — likely a `tsconfig.json` `paths` configuration issue
-- TS7006 (122x): Implicit `any` — missing type annotations on lambda parameters
-- TS2353 (8x): `llm` property doesn't exist on provider settings type
-- Only `@audiocomic/domain` and `@audiocomic/evals` typecheck cleanly
+Fixes applied:
+- Created `packages/ai/tsconfig.json` extending root with `include: ["src"]`
+- Fixed `packages/storage/tsconfig.json` to extend root (was standalone, missing `@audiocomic/domain` path)
+- Added `@audiocomic/media` and `@audiocomic/storage` path aliases to `apps/web/tsconfig.json`
+- Fixed `defaultProviderSettings()` to return flat `ProviderSettings` shape instead of nested `{llm:{...}}`
+- Fixed TS2532 in `CanvasTab.tsx`: `models[0].value` → `models[0]?.value ?? ""`
 
 ### 7.2 Tests — ❌ None
 
@@ -358,13 +357,13 @@ Plus `ARCHITECTURE_PLAN.md` (target architecture), `PLAN.md` (MangaFlow gaps), `
 
 ## 8. Priority Recommendations
 
-### P0 — Fix Broken Basics
+### P0 — Fix Broken Basics (✅ COMPLETED 2026-06-29)
 
-1. **Fix typecheck** — 314 errors is unacceptable for a production codebase. Most are path alias config + implicit any.
-2. **Fix Drizzle ↔ migration drift** — `transcript_chunks.speaker` and `render_model` columns will cause runtime errors.
-3. **Add tests** — at minimum, test the pure functions: `composePanelPrompt`, `buildSectionMemory`, `validatePageLayout`, `evaluateLayout`, `parseTextBook`, `exportMotionComic` config.
-4. **Delete orphaned step files** — 8 dead code files are confusing. Either remove them or re-register them as standalone DAG steps.
-5. **Remove dead AI SDK planner** — `packages/ai/src/planner.ts` is not used in production. Keep one planner implementation.
+1. ✅ **Fix typecheck** — Root cause: missing `packages/ai/tsconfig.json` caused tsc to fall back to root tsconfig with no `include` restriction, typechecking the entire monorepo. Also fixed: `packages/storage/tsconfig.json` not extending root (missing `@audiocomic/domain` path), missing `@audiocomic/media`/`@audiocomic/storage` aliases in web tsconfig, `defaultProviderSettings()` returning wrong shape (nested vs flat `ProviderSettings`), TS2532 in `CanvasTab.tsx`. **314 errors → 0.**
+2. ✅ **Fix Drizzle ↔ migration drift** — Added `speaker` column to `transcriptChunks` Drizzle schema, added `model`/`provider` columns to `panelRenderRequests` Drizzle schema, created migration `0006_missing_columns.sql` for `projects.render_model` and the new `panel_render_requests` columns.
+3. **Add tests** — SKIPPED per user request.
+4. ✅ **Delete orphaned step files** — Removed 8 dead code files (normalize, transcribe, segment, plan_story, section_memory, plan_pages, compose_prompts, validate_layout) and their unused type guards from helpers.ts.
+5. ❌ **Remove dead AI SDK planner** — CORRECTED: `packages/ai/src/planner.ts` is NOT dead code. It's the LLM backend for `makeWikiIngestor` (called from chapter/live.ts, knowledge-base/live.ts, ingest_knowledge.ts). The Mastra agent handles story planning; the AI SDK planner handles wiki ingestion. Both are needed.
 
 ### P1 — MangaFlow Core Gaps
 
