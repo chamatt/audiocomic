@@ -141,15 +141,16 @@ export function makePipelineBridgeLayer(
     },
   };
 
-  const llmProvider: LLMProvider = env.OPENROUTER_API_KEY
-    ? "openrouter"
-    : env.OPENAI_API_KEY
-      ? "openai"
-      : env.ANTHROPIC_API_KEY
-        ? "anthropic"
-        : env.GOOGLE_GENERATIVE_AI_API_KEY
-          ? "google"
-          : "openrouter";
+  const llmProvider: LLMProvider =
+    env.LLM_PROVIDER ?? (env.OPENROUTER_API_KEY
+      ? "openrouter"
+      : env.OPENAI_API_KEY
+        ? "openai"
+        : env.ANTHROPIC_API_KEY
+          ? "anthropic"
+          : env.GOOGLE_GENERATIVE_AI_API_KEY
+            ? "google"
+            : "openrouter");
   const transcriptionProvider: TranscriptionProvider = env.GROQ_API_KEY
     ? "groq"
     : env.OPENAI_API_KEY
