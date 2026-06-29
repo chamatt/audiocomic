@@ -57,19 +57,17 @@ async function runBin(
   args: string[],
   captureStderr = true,
 ): Promise<void> {
-  const proc = Bun.spawn([bin, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const { execFile } = await import('node:child_process');
+  await new Promise<void>((resolve, reject) => {
+    execFile(bin, args, { timeout: 300_000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        const detail = captureStderr ? (stderr || '').trim() || (stdout || '').trim() : '';
+        reject(new Error(`${bin} exited with code ${err.code ?? 1}\n${detail}`));
+      } else {
+        resolve();
+      }
+    });
   });
-  const [stderr, stdout, exitCode] = await Promise.all([
-    new Response(proc.stderr).text(),
-    new Response(proc.stdout).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0) {
-    const detail = captureStderr ? stderr.trim() || stdout.trim() : '';
-    throw new Error(`${bin} exited with code ${exitCode}\n${detail}`);
-  }
 }
 
 /**

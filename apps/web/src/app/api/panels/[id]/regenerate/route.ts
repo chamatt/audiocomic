@@ -51,22 +51,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const existingResults = await repo.panelRenderResults.getByProjectId(panel.projectId);
     const version = existingResults.filter((r) => r.panelId === panelId).length;
 
-    // Always generate at 1024×1024 (native model resolution) and crop to
-    // the panel's aspect ratio afterwards. This avoids stretching because
-    // models generate at their native 1:1 aspect ratio — requesting
-    // non-square dimensions causes the backend to resize (stretch) the
-    // output. Cropping preserves proportions and just trims edges.
-    // See: https://promptingpixels.com/tutorial/width-height
+    // Always generate at 1024×1024 (native model resolution).
+    // Models generate at their native 1:1 aspect ratio — requesting
+    // non-square dimensions causes the backend to resize (stretch).
+    // We keep the square image as-is; the canvas uses object-cover to
+    // fill the panel bbox, and the slideshow export uses square slides.
     const GEN_SIZE = 1024;
     const width = GEN_SIZE;
     const height = GEN_SIZE;
-
-    // Compute the crop aspect ratio from the panel's display dimensions.
-    // bbox is normalized (0-1) relative to the page, but the page isn't
-    // square (800×1131), so we must account for page dimensions.
-    const PAGE_WIDTH = 800;
-    const PAGE_HEIGHT = 1131;
-    const panelAspect = (panel.bbox.w * PAGE_WIDTH) / (panel.bbox.h * PAGE_HEIGHT);
 
     const project = await repo.projects.getById(panel.projectId);
     const renderReq: PanelRenderRequest = {
@@ -130,49 +122,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       });
     }
 
-    // Crop the square 1024×1024 image to the panel's aspect ratio.
-    // This avoids the stretching that occurs when models generate at
-    // non-native aspect ratios — we generate at native 1:1 and crop.
-    // The renderer already wrote the square image to storage, so we
-    // read it back, crop, and overwrite.
-    try {
-      const squareBuffer = await readAsset(result.imageKey);
-      const meta = await sharp(squareBuffer).metadata();
-      const sw = meta.width ?? GEN_SIZE;
-      const sh = meta.height ?? GEN_SIZE;
-
-      // Compute crop dimensions preserving the panel's aspect ratio.
-      let cropW: number;
-      let cropH: number;
-      if (panelAspect >= 1) {
-        // Wide: full width, reduce height
-        cropW = sw;
-        cropH = Math.round(sw / panelAspect);
-      } else {
-        // Tall: full height, reduce width
-        cropH = sh;
-        cropW = Math.round(sh * panelAspect);
-      }
-      // Center crop
-      const left = Math.round((sw - cropW) / 2);
-      const top = Math.round((sh - cropH) / 2);
-
-      const croppedBuffer = await sharp(squareBuffer)
-        .extract({ left, top, width: cropW, height: cropH })
-        .jpeg({ quality: 90 })
-        .toBuffer();
-
-      // Overwrite the square image in storage with the cropped version.
-      await writeAsset(result.imageKey, croppedBuffer);
-
-      log.info(`cropped ${sw}×${sh} → ${cropW}×${cropH} (aspect ${panelAspect.toFixed(2)})`, {
-        panelId,
-      });
-    } catch (e) {
-      log.warn("failed to crop image, using square original", {
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
+    // NOTE: We keep the native 1024×1024 square image — no cropping.
+    // Square images work for the slideshow export, and the canvas uses
+    // object-cover so the image fills the panel bbox without letterboxing.
+    // The aspect ratio is handled visually by CSS, not by cropping the file.
 
     const imageUrl = `/api/assets/${result.imageKey}`;
     log.info(`panel ${panelId} rendered`, {

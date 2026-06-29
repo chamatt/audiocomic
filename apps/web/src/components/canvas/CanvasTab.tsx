@@ -428,17 +428,58 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [currentPageIndex, pages, selectPage],
   );
 
-  // Export handler
-  const handleExport = useCallback(
-    (type: "pages" | "mp4") => {
-      void fetch(`/api/projects/${projectId}/export`, {
+  // ── Export panel ──
+  const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportType, setExportType] = useState<"mp4" | "cbz">("mp4");
+  const [chapterExports, setChapterExports] = useState<
+    { id: string; type: string; downloadUrl: string; sizeBytes: number; durationSec: number; slides: number; createdAt: string }[]
+  >([]);
+
+  // Load existing exports when export panel opens or chapter changes
+  const loadExports = useCallback(async (chapterId: string) => {
+    try {
+      const res = await fetch(`/api/chapters/${chapterId}/exports`);
+      if (res.ok) {
+        const data = await res.json();
+        setChapterExports(data.exports ?? []);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showExport && selectedChapterId) {
+      void loadExports(selectedChapterId);
+    }
+  }, [showExport, selectedChapterId, loadExports]);
+
+  const handleExport = useCallback(async () => {
+    if (!selectedChapterId) return;
+    setExporting(true);
+    try {
+      const endpoint = exportType === "mp4" ? "export-motion" : "export-cbz";
+      const res = await fetch(`/api/chapters/${selectedChapterId}/${endpoint}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
       });
-    },
-    [projectId],
-  );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Export failed" }));
+        alert(err.error ?? "Export failed");
+        return;
+      }
+      const data = await res.json();
+      // Refresh exports list
+      await loadExports(selectedChapterId);
+      // Auto-download the new file
+      const url = data.mp4Url ?? data.cbzUrl;
+      if (url) window.open(url, "_blank");
+    } catch (e) {
+      alert("Export failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setExporting(false);
+    }
+  }, [selectedChapterId, exportType, loadExports]);
 
   // Add blank page
   const handleAddPage = useCallback(async () => {
@@ -710,13 +751,111 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
             📖 KB
           </button>
           <button
-            onClick={() => handleExport("pages")}
-            className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+            onClick={() => setShowExport((v) => !v)}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              showExport
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted",
+            )}
           >
-            Export
+            🎬 Export
           </button>
         </div>
       </div>
+      {/* ── Export panel (slides in from right) ── */}
+      {showExport && (
+        <div className="pointer-events-auto absolute right-4 top-36 z-20 w-80 rounded-lg border bg-background/95 p-4 shadow-lg backdrop-blur">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Motion Export</h3>
+            <button
+              onClick={() => setShowExport(false)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+          {!selectedChapterId ? (
+            <p className="text-xs text-muted-foreground">
+              Select a chapter first to export.
+            </p>
+          ) : (
+            <>
+              {/* Format toggle */}
+              <div className="mb-3 flex gap-1 rounded-md border p-0.5">
+                <button
+                  onClick={() => setExportType("mp4")}
+                  className={cn(
+                    "flex-1 rounded px-2 py-1 text-xs font-medium transition-colors",
+                    exportType === "mp4" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  🎬 MP4
+                </button>
+                <button
+                  onClick={() => setExportType("cbz")}
+                  className={cn(
+                    "flex-1 rounded px-2 py-1 text-xs font-medium transition-colors",
+                    exportType === "cbz" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  📖 CBZ
+                </button>
+              </div>
+
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="mb-3 w-full rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {exporting
+                  ? exportType === "mp4"
+                    ? "Rendering MP4... (this takes a while)"
+                    : "Creating CBZ..."
+                  : exportType === "mp4"
+                    ? "🎬 Generate Motion Comic MP4"
+                    : "📖 Generate CBZ (Comic Book ZIP)"}
+              </button>
+              <p className="mb-3 text-xs text-muted-foreground">
+                {exportType === "mp4"
+                  ? "Ken-burns slideshow of panel images synced to the chapter's original audio."
+                  : "ZIP of panel images with dialogue bubbles, named in reading order. Opens in comic book readers."}
+              </p>
+              {chapterExports.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-medium text-muted-foreground">
+                    Previous exports ({chapterExports.length})
+                  </h4>
+                  {chapterExports.map((exp) => (
+                    <div
+                      key={exp.id}
+                      className="flex items-center justify-between rounded-md border p-2 text-xs"
+                    >
+                      <div className="flex-1 overflow-hidden">
+                        <div className="font-medium">
+                          {exp.type === "mp4" ? "🎬" : "📖"}{" "}
+                          {exp.type === "mp4" ? `${exp.durationSec.toFixed(0)}s` : `${exp.slides} panels`} ·{" "}
+                          {(exp.sizeBytes / 1024 / 1024).toFixed(1)} MB
+                        </div>
+                        <div className="text-muted-foreground">
+                          {new Date(exp.createdAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <a
+                        href={exp.downloadUrl}
+                        download
+                        className="ml-2 rounded-md bg-muted px-2 py-1 text-xs font-medium hover:bg-muted/80"
+                      >
+                        ⬇
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Floating UI: right PanelEditor (slides in/out) ── */}
       <div

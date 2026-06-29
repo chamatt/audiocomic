@@ -139,7 +139,9 @@ export function composePanelPrompt(
   // See: single-panel prompting research (June 2026).
 
   const refsById = new Map(characterRefs.map((c) => [c.id, c]));
-  const aspect = panel.bbox.w / panel.bbox.h;
+  // Pixel-space aspect ratio (bbox is normalized to a non-square page)
+  const PAGE_W = 800, PAGE_H = 1131;
+  const aspect = (panel.bbox.w * PAGE_W) / (panel.bbox.h * PAGE_H);
 
   // ── 1. Framing constraint (always first — highest weight) ──
   const framing = "A single illustration of one scene showing";
