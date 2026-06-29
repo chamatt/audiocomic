@@ -135,10 +135,19 @@ export function composePanelPrompt(
   sectionMemoryOrAllSections?: string | StorySection[],
 ): string {
   const parts: string[] = [];
+  // ── 0. Single-panel framing — prevent the model from generating a full comic page ──
+  parts.push("SINGLE COMIC PANEL — one isolated illustration, NOT a full comic page. No panel grid, no multiple panels, no page layout. Just one single frame image.");
 
-  // ── 1. Art direction ──
   if (worldBible.artStyle) {
-    parts.push(`Art style: ${worldBible.artStyle}.`);
+    // Strip page-level direction that causes the model to generate
+    // multi-panel comic pages instead of a single panel image.
+    const singlePanelArtStyle = worldBible.artStyle
+      .replace(/panel-to-panel[^.]*\./gi, "")
+      .replace(/smooth panel[^.]*\./gi, "")
+      .replace(/reaction-panel[^.]*\./gi, "")
+      .replace(/establishing shots?/gi, "establishing shot")
+      .trim();
+    parts.push(`Art style: ${singlePanelArtStyle}.`);
   }
   if (worldBible.colorPalette.length > 0) {
     parts.push(`Color palette: ${worldBible.colorPalette.join(", ")}.`);
@@ -235,7 +244,7 @@ export function composeNegativePrompt(
     ...characterRefs.flatMap((c) => c.negativeConstraints),
   ];
 
-  // If no human characters are in the panel, add "no humans"
+  negatives.push("no comic page layout", "no multiple panels", "no panel grid", "no gibberish text", "no watermarks", "no extra borders");
   const hasHuman = panel.characters.some((slot) => {
     const profile = characterRefs.find((c) => c.id === slot.characterId);
     return profile?.description?.toLowerCase().includes("human");
@@ -244,7 +253,6 @@ export function composeNegativePrompt(
     negatives.push("no human characters");
   }
 
-  negatives.push("no gibberish text", "no watermarks", "no extra borders");
 
   return negatives.join(", ");
 }
