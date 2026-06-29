@@ -52,23 +52,12 @@ function freshState(): ChapterState {
 
 // --- Plan helpers (from plan_chapters step) ---
 
-const DEFAULT_MAX_PAGES = 4;
 const DEFAULT_BEATS_PER_PAGE = 3;
 
 function isBeatSection(v: unknown): v is StorySection {
   if (typeof v !== "object" || v === null) return false;
   const r = v as Record<string, unknown>;
   return r.level === "beat" && typeof r.summary === "string" && Array.isArray(r.charactersPresent);
-}
-
-function sampleEvenly<T>(items: T[], max: number): T[] {
-  if (items.length <= max) return items;
-  const out: T[] = [];
-  const step = items.length / max;
-  for (let i = 0; i < max; i++) {
-    out.push(items[Math.floor(i * step)]!);
-  }
-  return out;
 }
 
 function hasImageData(v: PanelRenderResult): v is PanelRenderResult & { imageData: Buffer } {
@@ -366,13 +355,14 @@ export const ChapterLive = Chapter.toLayer(
             return;
           }
 
-          const maxBeats = DEFAULT_MAX_PAGES * DEFAULT_BEATS_PER_PAGE;
-          const selected = sampleEvenly(effectiveBeats, maxBeats);
+          // Use ALL beats — every beat gets its own panel.
+          const selected = effectiveBeats;
+          const pageCount = Math.ceil(selected.length / DEFAULT_BEATS_PER_PAGE);
 
           const pages: PageSpec[] = [];
           const panels: PanelSpec[] = [];
 
-          for (let pageIdx = 0; pageIdx < DEFAULT_MAX_PAGES; pageIdx++) {
+          for (let pageIdx = 0; pageIdx < pageCount; pageIdx++) {
             const pageBeats = selected.slice(
               pageIdx * DEFAULT_BEATS_PER_PAGE,
               (pageIdx + 1) * DEFAULT_BEATS_PER_PAGE,
