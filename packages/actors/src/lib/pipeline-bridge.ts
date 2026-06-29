@@ -43,6 +43,7 @@ import {
   renderLetteringOverlay as mediaRenderLettering,
   exportMotionComic as mediaExportMotionComic,
   exportPageBundle as mediaExportPageBundle,
+  exportPdf as mediaExportPdf,
 } from "@audiocomic/media";
 
 // ============================================================================
@@ -52,6 +53,7 @@ import {
 export interface PipelineBridgeShape {
   readonly repo: Repository;
   readonly env: Env;
+  readonly db: import("@audiocomic/db").Db;
   readonly storage: {
     readAsset(key: string): Promise<Buffer>;
     writeAsset(key: string, data: Buffer): Promise<void>;
@@ -88,6 +90,7 @@ export interface PipelineBridgeShape {
     outputPath: string,
   ): Promise<{ sizeBytes: number; durationSec: number }>;
   exportPageBundle(pageImagePaths: string[], outputPath: string): Promise<{ sizeBytes: number }>;
+  exportPdf(pageImagePaths: string[], outputPath: string): Promise<{ sizeBytes: number }>;
   composePanelPrompt(
     panel: unknown,
     section: unknown,
@@ -170,6 +173,7 @@ export function makePipelineBridgeLayer(
   const bridge: PipelineBridgeShape = {
     repo,
     env,
+    db: dbResult.db,
     storage,
     mediaManager,
     getTranscriptionAdapter() {
@@ -271,6 +275,10 @@ export function makePipelineBridgeLayer(
     },
     async exportPageBundle(pageImagePaths: string[], outputPath: string) {
       const result = await mediaExportPageBundle(pageImagePaths, outputPath);
+      return { sizeBytes: result.sizeBytes };
+    },
+    async exportPdf(pageImagePaths: string[], outputPath: string) {
+      const result = await mediaExportPdf(pageImagePaths, outputPath);
       return { sizeBytes: result.sizeBytes };
     },
     composePanelPrompt(

@@ -6,9 +6,10 @@ import { uuid, nowIso, exportKey } from "@audiocomic/shared";
 import type { ExportBundle } from "@audiocomic/domain";
 
 // ─── export_static step ───
-// Bundles the composed page images into a single downloadable archive (zip).
-// Reads the pageImageKeys map from the compose_pages result, exports the
-// bundle via the media adapter, and persists an ExportBundle record.
+// Bundles the composed page images into a PDF document.
+// Reads the pageImageKeys map from the compose_pages result, exports
+// via the media adapter's exportPdf (pdf-lib), and persists an
+// ExportBundle record.
 
 export interface ExportStaticResult {
 	step: "export_static";
@@ -38,13 +39,13 @@ export const ExportStaticStep: StepExecutor = {
 				);
 			}
 
-			// Build the export bundle.
 			const exportId = uuid();
-			const key = exportKey(ctx.projectId, exportId, "zip");
+			// Build the export bundle.
+			const key = exportKey(ctx.projectId, exportId, "pdf");
 			const localPath = `${bridge.env.EXPORT_DIR}/${key}`;
 
 			const result = yield* Effect.tryPromise({
-				try: () => bridge.exportPageBundle(pageImageKeyArray, localPath),
+				try: () => bridge.exportPdf(pageImageKeyArray, localPath),
 				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
 			});
 

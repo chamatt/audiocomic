@@ -375,7 +375,7 @@ Plus `ARCHITECTURE_PLAN.md` (target architecture), `PLAN.md` (MangaFlow gaps), `
 ### P2 — Product Completeness
 
 10. **Storyboard review UI** — show the structured story plan (chapters → scenes → beats → panels) before rendering. Let users edit beat summaries and panel descriptions before committing to rendering.
-11. **PDF export** — add a PDF library (pdf-lib, puppeteer) or use sharp to compose pages into a PDF.
+11. ✅ **PDF export** (COMPLETED 2026-06-29) — Rewrote `exportPdf()` in `packages/media/src/static.ts` to use `pdf-lib` (installed as dependency) instead of producing CBZ. Each page image (PNG/JPEG) is embedded at native pixel dimensions (1px = 1pt at 72 DPI). Added `exportPdf` to the pipeline bridge interface and implementation. Updated `export_static` step to produce `.pdf` output instead of `.zip`/CBZ.
 12. ✅ **Audio chapter detection** (COMPLETED 2026-06-29) — New `probeChapters()` in `packages/media/src/audio.ts` uses `ffprobe -show_chapters` to detect embedded chapter markers in m4b/mp4 files. New `splitAudioChapter()` uses ffmpeg stream copy to split at chapter boundaries. New API endpoint `/api/projects/[id]/chapters/upload-audiobook` accepts a single m4b file, probes for chapters, splits if found (creating one chapter record per embedded marker), or creates a single chapter if no markers. Enables single-file audiobook upload.
 13. **Face occlusion avoidance** — use a face detection model (or VLM) to check if lettering bubbles occlude character faces. The paper's Bubble Placement Score metric.
 14. **Consolidate documentation** — merge the 5 plan docs + ARCHITECTURE_PLAN.md + PLAN.md into a single ARCHITECTURE.md that reflects the current state.

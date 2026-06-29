@@ -2,11 +2,11 @@ import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 
 import { zipSync, strToU8 } from 'fflate';
+import { PDFDocument } from 'pdf-lib';
 
 import type { ExportResult } from './types';
-
 // ============================================================================
-// Static page export — bundle / PDF (CBZ fallback)
+// Static page export — bundle (CBZ) / PDF
 // ============================================================================
 
 async function fileStats(path: string): Promise<number> {
@@ -62,13 +62,11 @@ export async function exportPageBundle(
 }
 
 /**
- * Export page images as a PDF.
+ * Export page images as a real PDF using pdf-lib.
  *
- * MVP note: no native PDF library is bundled with this package, so this
- * produces a CBZ (zip of page images) instead — a widely supported comic
- * archive format. The output path's extension is rewritten to `.cbz` and the
- * CBZ path is returned. Callers wanting a real PDF should swap in img2pdf or a
- * headless renderer in a downstream stage.
+ * Each page image (PNG, JPEG) is embedded at its native pixel dimensions
+ * (72 DPI mapping: 1px = 1pt). The output path's extension is forced to
+ * `.pdf`.
  */
 export async function exportPdf(
   pageImages: string[],
@@ -78,31 +76,30 @@ export async function exportPdf(
     throw new Error('exportPdf: no page images supplied');
   }
 
-  const cbzPath =
-    outputPath.toLowerCase().endsWith('.pdf') ||
-    outputPath.toLowerCase().endsWith('.cbz')
-      ? outputPath.replace(/\.(pdf|cbz)$/i, '.cbz')
-      : `${outputPath}.cbz`;
+  const pdfPath = outputPath.toLowerCase().endsWith('.pdf')
+    ? outputPath
+    : `${outputPath}.pdf`;
 
-  const pad = String(pageImages.length).length;
-  const files: Record<string, Uint8Array> = {};
-  for (let i = 0; i < pageImages.length; i++) {
-    const src = pageImages[i]!;
-    const ext = extname(src) || '.png';
-    const name = `page-${String(i + 1).padStart(pad, '0')}${ext}`;
-    files[name] = await readFile(src);
+  const doc = await PDFDocument.create();
+
+  for (const src of pageImages) {
+    const bytes = await readFile(src);
+    const ext = extname(src).toLowerCase();
+    let img;
+    if (ext === '.jpg' || ext === '.jpeg') {
+      img = await doc.embedJpg(bytes);
+    } else {
+      // Default to PNG for .png and anything else — pdf-lib will throw
+      // if the bytes aren't valid PNG, which is the right behavior.
+      img = await doc.embedPng(bytes);
+    }
+    const page = doc.addPage([img.width, img.height]);
+    page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
   }
-  // Minimal ComicInfo.xml so readers detect the archive as a comic.
-  const comicInfo =
-    '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<ComicInfo xmlns="https://anansi-project.org/docs/comicinfo/schema">' +
-    `<PageCount>${pageImages.length}</PageCount>` +
-    '</ComicInfo>';
-  files['ComicInfo.xml'] = strToU8(comicInfo);
 
-  const zipped = zipSync(files);
-  await writeFile(cbzPath, zipped);
-  return { path: cbzPath, durationSec: 0, sizeBytes: await fileStats(cbzPath) };
+  const pdfBytes = await doc.save();
+  await writeFile(pdfPath, pdfBytes);
+  return { path: pdfPath, durationSec: 0, sizeBytes: await fileStats(pdfPath) };
 }
 
 // Re-export so callers can reach the basename helper if needed.
