@@ -30,6 +30,7 @@ const POLLINATIONS_MODELS = [
   { value: "seedream-pro", label: "Seedream Pro" },
   { value: "kontext", label: "Kontext" },
   { value: "zimage", label: "Z Image" },
+  { value: "z-image-turbo", label: "Z Image Turbo" },
   { value: "klein", label: "Klein" },
   { value: "nova-canvas", label: "Nova Canvas" },
   { value: "qwen-image", label: "Qwen Image" },
