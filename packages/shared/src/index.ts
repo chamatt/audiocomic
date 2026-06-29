@@ -174,6 +174,7 @@ export const EnvSchema = z.object({
   // Defaults
   DEFAULT_RENDERER: z.enum(['comfyui', 'aisdk', 'pollinations', 'placeholder']).default('placeholder'),
   DEFAULT_LLM_MODEL: z.string().default('gpt-4o'),
+  LLM_PROVIDER: z.enum(['openrouter', 'pollinations']).default('openrouter'),
   DEFAULT_IMAGE_MODEL: z.string().default('gpt-image-1-mini'),
   DEFAULT_TTS_VOICE: z.string().default('alloy'),
 });

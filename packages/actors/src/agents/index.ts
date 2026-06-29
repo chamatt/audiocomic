@@ -3,6 +3,7 @@
 // and character bible, enabling cross-chapter consistency.
 
 import { Agent, tryGenerateWithJsonFallback } from "@mastra/core/agent";
+import type { MastraModelConfig } from "@mastra/core/llm";
 import { z } from "zod";
 import { createProjectTools, type ToolContext } from "./tools.ts";
 import type { StorySection, CharacterProfile, WorldBible } from "@audiocomic/domain";
@@ -11,12 +12,25 @@ import { uuid, nowIso, logger } from "@audiocomic/shared";
 import type { Repository } from "@audiocomic/db";
 
 /**
- * Resolve the LLM model from env. Falls back to google/gemini-flash-1.5
- * (cheap, reliable structured output) when not configured.
+ * Resolve the LLM model from env. Supports two providers:
+ *   - openrouter (default): model string like "openrouter/deepseek/deepseek-v4-flash"
+ *   - pollinations: OpenAI-compatible config pointing at gen.pollinations.ai/v1
+ *
+ * Set LLM_PROVIDER=pollinations to use Pollinations' gen.pollinations.ai endpoint
+ * (bills to POLLINATIONS_API_KEY balance). Set DEFAULT_LLM_MODEL to the model name
+ * (e.g. "openai" for gpt-5.4-nano, "deepseek" for deepseek-v4-flash, "openai-fast" for gpt-5-nano).
  */
-const LLM_MODEL = process.env.DEFAULT_LLM_MODEL
-  ? `openrouter/${process.env.DEFAULT_LLM_MODEL}`
-  : "openrouter/mistralai/mistral-nemo";
+const LLM_PROVIDER = process.env.LLM_PROVIDER ?? "openrouter";
+const LLM_MODEL = process.env.DEFAULT_LLM_MODEL ?? "mistralai/mistral-nemo";
+
+const modelConfig: MastraModelConfig =
+  LLM_PROVIDER === "pollinations"
+    ? {
+        id: `pollinations/${LLM_MODEL}`,
+        url: "https://gen.pollinations.ai/v1",
+        apiKey: process.env.POLLINATIONS_API_KEY ?? "",
+      }
+    : `openrouter/${LLM_MODEL}`;
 
 // ============================================================================
 // Structured output schemas — 3-pass decomposition
@@ -232,7 +246,7 @@ STEP 2: Break the text into chapters and scenes. Each scene is a distinct narrat
 STEP 3: Identify all characters, their physical appearance, and role. Characters should look and act the same as in previous chapters unless there's a narrative reason for change.
 
 Output: structured JSON with world setting, characters (with descriptions and roles), chapters (each containing scenes with summaries and text excerpts), and character states.`,
-    model: LLM_MODEL,
+    model: modelConfig,
     tools,
   });
 }
@@ -246,7 +260,7 @@ function makeBeatDecomposerAgent(projectId: string): Agent {
     id: `beat-decomposer-${projectId}`,
     name: "Beat Decomposer",
     instructions: `You are a comic beat breakdown assistant. Split the given scene into a sequence of narrative beats. Each beat is ONE visual moment that will become one or more comic panels. Aim for 3-8 beats per scene. Preserve the scene's emotional tone unless a beat clearly shifts it. Include a camera hint for each beat.`,
-    model: LLM_MODEL,
+    model: modelConfig,
   });
 }
 
@@ -270,7 +284,7 @@ For each beat:
 5. Choose camera framing that fits the action
 
 beatIndex must match the supplied beat list order (0-based).`,
-    model: LLM_MODEL,
+    model: modelConfig,
   });
 }
 
@@ -296,7 +310,7 @@ When processing a new chapter:
 6. Flag contradictions with previous chapters
 
 Output: structured JSON with knowledge updates.`,
-    model: LLM_MODEL,
+    model: modelConfig,
     tools,
   });
 }

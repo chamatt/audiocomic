@@ -28,5 +28,5 @@
       "@audiocomic/knowledge": ["./packages/knowledge/src/index.ts"]
     }
   },
-  "exclude": ["node_modules", "dist", ".next"]
+  "exclude": ["node_modules", "dist", ".next", "repos", "scripts"]
 }

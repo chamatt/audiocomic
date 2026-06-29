@@ -15,7 +15,7 @@ import type { Env } from '@audiocomic/shared';
 // Provider identifiers
 // ============================================================================
 
-export type LLMProvider = 'openai' | 'anthropic' | 'google' | 'groq' | 'openrouter';
+export type LLMProvider = 'openai' | 'anthropic' | 'google' | 'groq' | 'openrouter' | 'pollinations';
 export type TranscriptionProvider = 'openai' | 'deepgram' | 'groq';
 export type TTSProvider = 'openai' | 'elevenlabs' | 'coqui';
 export type ImageProvider = 'openai' | 'fal' | 'stability' | 'comfyui' | 'placeholder';

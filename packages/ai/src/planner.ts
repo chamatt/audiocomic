@@ -59,17 +59,18 @@ function resolveLanguageModel(
         compatibility: 'compatible',
       }).chat(model);
     }
-    case 'openrouter': {
-      // OpenRouter is OpenAI-compatible; reuse the OpenAI provider against OpenRouter's base URL.
-      if (!env.OPENROUTER_API_KEY) throw new Error('OpenRouter LLM requires OPENROUTER_API_KEY');
+    case 'pollinations': {
+      // Pollinations gen.pollinations.ai is OpenAI-compatible.
+      // Uses POLLINATIONS_API_KEY for auth; bills to account balance.
+      if (!env.POLLINATIONS_API_KEY) throw new Error('Pollinations LLM requires POLLINATIONS_API_KEY');
       return createOpenAI({
-        apiKey: env.OPENROUTER_API_KEY,
-        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: env.POLLINATIONS_API_KEY,
+        baseURL: 'https://gen.pollinations.ai/v1',
         compatibility: 'compatible',
       }).chat(model);
     }
     default:
-      throw new Error(`Unsupported LLM provider: ${provider satisfies never}`);
+      throw new Error(`Unsupported LLM provider: ${provider as string}`);
   }
 }
 
