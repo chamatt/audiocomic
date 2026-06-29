@@ -5,7 +5,7 @@ import { getEnv } from '@audiocomic/shared';
 import type { Env } from '@audiocomic/shared';
 import type { PanelRenderRequest, PanelRenderResult, RenderPreset } from '@audiocomic/domain';
 import type { RendererAdapter } from './types';
-import { panelRenderKey, promptHash, writeLocalImage } from './util';
+import { panelRenderKey, promptHash, writeLocalImage, readLocalImage } from './util';
 
 /**
  * Map a {@link RenderPreset.qualityTier} to the OpenAI image `quality`
@@ -87,27 +87,67 @@ export class AISDKImageRenderer implements RendererAdapter {
     const provider = createOpenAI({ apiKey: this.apiKey, baseURL: this.baseURL });
     const model = provider.image(this.modelId);
 
-    const prompt = req.negativePrompt
+    const promptText = req.negativePrompt
       ? `${req.prompt}\n\nAvoid: ${req.negativePrompt}`
       : req.prompt;
 
-    const result = await generateImage({
-      model,
-      prompt,
-      size: sizeFor(req),
-      aspectRatio: preset.aspectRatio,
-      seed: req.seed,
-      n: 1,
-      providerOptions: {
-        openai: { quality: qualityFor(preset.qualityTier) },
-      },
-    });
+    // When reference images are provided, use the OpenAI image edit API
+    // (/v1/images/edits) for image-to-image conditioning. The AI SDK 4.x
+    // generateImage only supports text-to-image, so we call the API directly
+    // with multipart form data when character face refs are available.
+    let imageData: Buffer;
+    if (req.referenceImageKeys.length > 0) {
+      const env = getEnv();
+      const refBuffers = await Promise.all(
+        req.referenceImageKeys.map((key) => readLocalImage(env, key)),
+      );
+      // Use the first reference image as the input for the edit endpoint.
+      // Additional refs could be passed as additional images in the future.
+      const primaryRef = refBuffers[0]!;
+      const baseURL = this.baseURL ?? 'https://api.openai.com/v1';
+      const form = new FormData();
+      form.append('model', this.modelId);
+      form.append('prompt', promptText);
+      form.append('n', '1');
+      form.append('size', sizeFor(req));
+      form.append('image', new Blob([new Uint8Array(primaryRef)], { type: 'image/png' }), 'reference.png');
+      if (req.seed !== undefined) form.append('seed', String(req.seed));
 
-    const file = result.images[0];
-    if (!file) throw new Error('AI SDK image generation returned no images');
-    const data = Buffer.from(file.uint8Array);
+      const response = await fetch(`${baseURL}/images/edits`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        body: form,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => 'unknown');
+        throw new Error(`OpenAI image edit failed (${response.status}): ${body}`);
+      }
+      const json = await response.json() as { data: { b64_json?: string; url?: string }[] };
+      const item = json.data[0];
+      if (!item) throw new Error('OpenAI image edit returned no results');
+      imageData = item.b64_json
+        ? Buffer.from(item.b64_json, 'base64')
+        : Buffer.from(await (await fetch(item.url!)).arrayBuffer());
+    } else {
+      // Text-to-image via the AI SDK.
+      const result = await generateImage({
+        model,
+        prompt: promptText,
+        size: sizeFor(req),
+        aspectRatio: preset.aspectRatio,
+        seed: req.seed,
+        n: 1,
+        providerOptions: {
+          openai: { quality: qualityFor(preset.qualityTier) },
+        },
+      });
+      const file = result.images[0];
+      if (!file) throw new Error('AI SDK image generation returned no images');
+      imageData = Buffer.from(file.uint8Array);
+    }
+
     const imageKey = panelRenderKey(req.projectId, req.panelId, req.version, 'png');
-    await writeLocalImage(getEnv(), imageKey, data);
+    await writeLocalImage(getEnv(), imageKey, imageData);
 
     return {
       id: crypto.randomUUID(),

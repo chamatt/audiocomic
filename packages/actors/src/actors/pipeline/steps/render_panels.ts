@@ -15,20 +15,28 @@ export const RenderPanelsStep: StepExecutor = {
 	outputs: ["render_panels"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {
-			const bridge = yield* PipelineBridge;
+		const bridge = yield* PipelineBridge;
 
-			// Read ALL panels for this project from DB — not from in-memory
-			// step results. This ensures panels already rendered from the
-			// canvas (which patched renderResultId in DB) are skipped.
-			const allPanels = yield* Effect.tryPromise({
-				try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
-				catch: (e) => (e instanceof Error ? e : new Error(String(e))),
-			});
+		// Read ALL panels for this project from DB — not from in-memory
+		// step results. This ensures panels already rendered from the
+		// canvas (which patched renderResultId in DB) are skipped.
+		const allPanels = yield* Effect.tryPromise({
+			try: () => bridge.repo.panelSpecs.getByProjectId(ctx.projectId),
+			catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+		});
 
-			// Only render panels that have a renderPrompt but no renderResultId.
-			const panelsToRender = allPanels.filter(
-				(p) => p.renderPrompt && !p.renderResultId,
-			) as PanelSpec[];
+		// Fetch character profiles to populate referenceImageKeys from
+		// canonicalFaceRef / canonicalBodyRef for image-to-image conditioning.
+		const allCharacters = yield* Effect.tryPromise({
+			try: () => bridge.repo.characterProfiles.getByProjectId(ctx.projectId),
+			catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+		});
+		const charById = new Map(allCharacters.map((c) => [c.id, c]));
+
+		// Only render panels that have a renderPrompt but no renderResultId.
+		const panelsToRender = allPanels.filter(
+			(p) => p.renderPrompt && !p.renderResultId,
+		) as PanelSpec[];
 
 			const panelImageKeys = new Map<string, string>();
 			let renderedCount = 0;
@@ -72,7 +80,14 @@ export const RenderPanelsStep: StepExecutor = {
 					height: 1024,
 					version: 0,
 					createdAt: nowIso(),
-					referenceImageKeys: [],
+					referenceImageKeys: panel.characters
+						.map((slot) => charById.get(slot.characterId))
+						.filter((c): c is NonNullable<typeof c> => c !== undefined)
+						.flatMap((c) =>
+							[c.canonicalFaceRef, c.canonicalBodyRef].filter(
+								(k): k is string => typeof k === "string",
+							),
+						),
 				};
 
 				const result = yield* Effect.tryPromise({

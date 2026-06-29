@@ -36,6 +36,15 @@ export async function writeLocalImage(env: Env, key: string, data: Uint8Array): 
 }
 
 /**
+ * Read image bytes from object storage by key.
+ * Uses the same MediaManager as writeLocalImage.
+ */
+export async function readLocalImage(env: Env, key: string): Promise<Buffer> {
+  const mm = getMediaManager(env);
+  return mm.downloadBuffer(key);
+}
+
+/**
  * Build a storage key for a rendered panel image with an explicit extension,
  * reusing the shared `storageKey` scheme so keys stay consistent across the
  * local and remote object-storage backends.
