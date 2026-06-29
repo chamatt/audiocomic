@@ -386,7 +386,7 @@ Plus `ARCHITECTURE_PLAN.md` (target architecture), `PLAN.md` (MangaFlow gaps), `
 16. **Add per-panel regeneration action** to PipelineActor — currently must re-run entire `render_panels` step.
 17. **Fix `Effect.orDie` overuse** — use `Effect.catchAll` or `Effect.catchCause` for state reads/writes to handle schema migration gracefully.
 18. ✅ **Fix `getPrevResult` raw throws** (COMPLETED 2026-06-29) — Converted `getPrevResult` from a sync function that `throw new Error()` to an `Effect.Effect<T, Error>` that uses `Effect.fail()`. All 5 call sites updated to use `yield*`. Raw throws inside `Effect.gen` are uncaught defects; `Effect.fail` properly propagates through the error channel.
-19. **Add React Error Boundaries** — at minimum at the page level.
+19. ✅ **Add React Error Boundaries** (COMPLETED 2026-06-29) — Added three Next.js App Router error boundaries: `app/error.tsx` (root segment), `app/global-error.tsx` (layout-level, renders its own html/body), and `app/projects/[id]/error.tsx` (project detail page with back-to-projects link). All are client components with retry buttons and error digest display.
 20. **Add server state library** (SWR or React Query) — replace ad-hoc `useEffect` + `fetch` patterns.
 
 ---
