@@ -69,6 +69,15 @@ function resolveLanguageModel(
         compatibility: 'compatible',
       }).chat(model);
     }
+    case 'openrouter': {
+      // OpenRouter is OpenAI-compatible; model IDs are "org/model" paths.
+      if (!env.OPENROUTER_API_KEY) throw new Error('OpenRouter LLM requires OPENROUTER_API_KEY');
+      return createOpenAI({
+        apiKey: env.OPENROUTER_API_KEY,
+        baseURL: 'https://openrouter.ai/api/v1',
+        compatibility: 'compatible',
+      }).chat(model);
+    }
     default:
       throw new Error(`Unsupported LLM provider: ${provider as string}`);
   }
