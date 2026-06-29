@@ -134,101 +134,117 @@ export function composePanelPrompt(
   worldBible: WorldBible,
   sectionMemoryOrAllSections?: string | StorySection[],
 ): string {
-  const parts: string[] = [];
-  // ── 0. Single-panel framing — prevent the model from generating a full comic page ──
-  parts.push("SINGLE COMIC PANEL — one isolated illustration, NOT a full comic page. No panel grid, no multiple panels, no page layout. Just one single frame image.");
+  // ── Master formula: [Framing] of [Subject+Action], [Setting], [Style], [Technical] ──
+  // Visual-first, comma-separated keywords. No narrative prose.
+  // See: single-panel prompting research (June 2026).
 
-  if (worldBible.artStyle) {
-    // Strip page-level direction that causes the model to generate
-    // multi-panel comic pages instead of a single panel image.
-    const singlePanelArtStyle = worldBible.artStyle
-      .replace(/panel-to-panel[^.]*\./gi, "")
-      .replace(/smooth panel[^.]*\./gi, "")
-      .replace(/reaction-panel[^.]*\./gi, "")
-      .replace(/establishing shots?/gi, "establishing shot")
-      .trim();
-    parts.push(`Art style: ${singlePanelArtStyle}.`);
-  }
-  if (worldBible.colorPalette.length > 0) {
-    parts.push(`Color palette: ${worldBible.colorPalette.join(", ")}.`);
-  }
-
-  // ── 2. Characters in action (front-loaded — most important) ──
   const refsById = new Map(characterRefs.map((c) => [c.id, c]));
+  const aspect = panel.bbox.w / panel.bbox.h;
+
+  // ── 1. Framing constraint (always first — highest weight) ──
+  const framing = "A single illustration of one scene showing";
+
+  // ── 2. Subject and action (visual, not narrative) ──
   const charBlocks: string[] = [];
   for (const slot of panel.characters) {
     const profile = refsById.get(slot.characterId);
     if (!profile) continue;
     const bits: string[] = [];
-    if (profile.description) {
-      bits.push(profile.description);
-    }
-    bits.push(profile.name);
-    if (slot.expression) bits.push(`expression: ${slot.expression}`);
-    if (slot.pose) bits.push(`pose: ${slot.pose}`);
-    if (slot.position) bits.push(`position: ${slot.position} of frame`);
+    if (profile.description) bits.push(profile.description);
+    if (slot.pose) bits.push(slot.pose);
+    if (slot.expression) bits.push(`${slot.expression} expression`);
+    if (slot.position) bits.push(`positioned ${slot.position} of frame`);
     if (profile.paletteNotes.length > 0) {
       bits.push(`colors: ${profile.paletteNotes.join(", ")}`);
     }
-    charBlocks.push(bits.join("; "));
+    charBlocks.push(bits.join(", "));
   }
+  const subjectParts: string[] = [];
   if (charBlocks.length > 0) {
-    parts.push(`Characters in this panel:\n${charBlocks.map((b) => `  - ${b}`).join("\n")}`);
+    subjectParts.push(charBlocks.join("; "));
   }
+  // Panel description is the action — strip narrative prefixes
+  const action = panel.description
+    .replace(/^(A clear visual beat:?|The scene shows:?|We see:?)/gi, "")
+    .trim();
+  subjectParts.push(action);
+  const subject = subjectParts.join(", ");
 
-  // ── 3. Panel visual description (the specific moment) ──
-  parts.push(`Scene: ${panel.description}`);
+  // ── 3. Setting / background (keep minimal — long settings cause multi-panel) ──
+  const settingParts: string[] = [];
+  if (worldBible.setting) {
+    // Truncate setting to first sentence — image models interpret long
+    // world descriptions as instructions to show multiple scenes
+    const firstSentence = worldBible.setting.split(/[.!?]/)[0]?.trim() ?? "";
+    if (firstSentence) settingParts.push(firstSentence);
+  }
+  if (section.objects.length > 0) {
+    settingParts.push(`${section.objects.join(", ")} visible in scene`);
+  }
+  // NOTE: Continuity context (section memory) is intentionally omitted from
+  // the image prompt. It causes the model to generate multi-panel pages
+  // because it describes multiple scenes/chapters. Continuity is handled
+  // by the planner agents, not the image renderer.
+  const setting = settingParts.join(", ");
 
-  // ── 4. Visual tone cues (concrete, not abstract) ──
+  // ── 4. Style modifiers ──
+  const styleParts: string[] = [];
+  if (worldBible.artStyle) {
+    // Strip page-level direction that causes multi-panel generation
+    const cleanStyle = worldBible.artStyle
+      .replace(/panel-to-panel[^.]*\./gi, "")
+      .replace(/smooth panel[^.]*\./gi, "")
+      .replace(/reaction-panel[^.]*\./gi, "")
+      .replace(/establishing shots?/gi, "establishing shot")
+      .trim();
+    styleParts.push(cleanStyle);
+  }
+  if (worldBible.colorPalette.length > 0) {
+    styleParts.push(worldBible.colorPalette.join(", "));
+  }
+  // Visual tone cues
   const tone = section.emotionalTone;
   if (tone && tone !== "neutral" && TONE_VISUAL[tone]) {
-    parts.push(TONE_VISUAL[tone]!);
+    styleParts.push(TONE_VISUAL[tone]!);
   }
   if (worldBible.tone && worldBible.tone !== "neutral") {
     const worldToneVisual = TONE_VISUAL[worldBible.tone];
-    if (worldToneVisual) parts.push(worldToneVisual);
+    if (worldToneVisual) styleParts.push(worldToneVisual);
   }
+  const style = styleParts.join(", ");
 
-  // ── 5. Key objects described visually (placed in the scene) ──
-  if (section.objects.length > 0) {
-    const objectDescs = section.objects.map((obj) => `${obj} visible in the scene`);
-    parts.push(`Key objects to include: ${objectDescs.join("; ")}.`);
-  }
-
-  // ── 6. Camera framing ──
+  // ── 5. Technical framing / ratio ──
+  const techParts: string[] = [];
   const camera = panel.cameraFraming ?? section.cameraHint;
   if (camera && CAMERA_LABEL[camera]) {
-    parts.push(`Camera: ${CAMERA_LABEL[camera]}.`);
+    techParts.push(CAMERA_LABEL[camera]!);
   }
-
-  // ── 7. Panel layout (aspect ratio) ──
-  const aspect = panel.bbox.w / panel.bbox.h;
+  // Express aspect ratio explicitly
   if (aspect > 1.3) {
-    parts.push(`Panel shape: wide horizontal panel (aspect ~${aspect.toFixed(1)}:1).`);
+    techParts.push(`wide horizontal panel, aspect ratio ${aspect.toFixed(1)}:1`);
   } else if (aspect < 0.77) {
-    parts.push(`Panel shape: tall vertical panel (aspect ~1:${(1 / aspect).toFixed(1)}).`);
+    techParts.push(`tall vertical panel, aspect ratio 1:${(1 / aspect).toFixed(1)}`);
   } else {
-    parts.push(`Panel shape: roughly square panel.`);
+    techParts.push("roughly square panel, aspect ratio 1:1");
   }
-
-  // ── 8. Continuity context (background knowledge, less weighted) ──
-  let memoryStr: string | undefined;
-  if (Array.isArray(sectionMemoryOrAllSections)) {
-    memoryStr = buildSectionMemory(section, sectionMemoryOrAllSections, characterRefs, worldBible);
-  } else {
-    memoryStr = sectionMemoryOrAllSections;
-  }
-  if (memoryStr && memoryStr.trim().length > 0) {
-    parts.push(`Continuity context (background):\n${memoryStr.trim()}`);
-  }
-
-  // ── 9. Speech bubble space ──
+  // Dialogue bubble space
   if (panel.dialogueLines.length > 0) {
-    const lines = panel.dialogueLines.map((l) => `${l.speaker} (${l.type}): "${l.text}"`);
-    parts.push(`Leave space for speech bubbles: ${lines.join(" ; ")}`);
+    const lines = panel.dialogueLines.map((l) => `${l.speaker}: "${l.text}"`);
+    techParts.push(`leave empty space in upper corner for dialogue: ${lines.join(" | ")}`);
   }
+  const tech = techParts.join(", ");
 
-  return parts.join("\n\n");
+  // ── Assemble: [Framing] of [Subject], [Setting], [Style], [Technical] ──
+  // ── Assemble: [Framing] [Subject], [Setting], [Style], [Technical] ──
+  // Framing + subject joined with space (no comma), rest with commas
+  const rest: string[] = [];
+  if (setting) rest.push(setting);
+  if (style) rest.push(style);
+  if (tech) rest.push(tech);
+  const result = rest.length > 0
+    ? `${framing} ${subject}, ${rest.join(", ")}.`
+    : `${framing} ${subject}.`;
+  return result;
 }
 
 /**
@@ -244,7 +260,7 @@ export function composeNegativePrompt(
     ...characterRefs.flatMap((c) => c.negativeConstraints),
   ];
 
-  negatives.push("no comic page layout", "no multiple panels", "no panel grid", "no gibberish text", "no watermarks", "no extra borders");
+  negatives.push("no comic page", "no page layout", "no multiple panels", "no panel grid", "no panel borders", "no divided layout", "no split frame", "no gibberish text", "no watermarks", "no extra borders");
   const hasHuman = panel.characters.some((slot) => {
     const profile = characterRefs.find((c) => c.id === slot.characterId);
     return profile?.description?.toLowerCase().includes("human");

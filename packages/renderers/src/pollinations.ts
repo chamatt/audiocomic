@@ -72,13 +72,9 @@ export class PollinationsRenderer implements RendererAdapter {
       params.set("nologo", "true");
       params.set("private", "true");
     }
-    // Let the model enhance the prompt for better results
-    // Only enhance short prompts — long prompts cause FLUX upstream failures
-    // ("negative dimension" tensor error) when the enhanced version exceeds
-    // the model's token limit.
-    if (fullPrompt.length < 1500) {
-      params.set("enhance", "true");
-    }
+    // enhance=true disabled — causes FLUX upstream failures on long prompts
+    // and inconsistent results across models. Re-enable per-model if needed.
+    // params.set("enhance", "true");
 
     const base = usePaid ? POLLINATIONS_PAID_BASE : POLLINATIONS_FREE_BASE;
     const url = `${base}/${encodedPrompt}?${params.toString()}`;
