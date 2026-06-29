@@ -42,7 +42,6 @@ export interface PlanChaptersResult {
 
 // --- Helpers (adapted from the old plan_pages + compose_prompts steps) ---
 
-const DEFAULT_MAX_PAGES = 4;
 const DEFAULT_BEATS_PER_PAGE = 3;
 
 function isBeatSection(v: unknown): v is StorySection {
@@ -56,15 +55,6 @@ function isBeatSection(v: unknown): v is StorySection {
   );
 }
 
-function sampleEvenly<T>(items: T[], max: number): T[] {
-  if (items.length <= max) return items;
-  const out: T[] = [];
-  const step = items.length / max;
-  for (let i = 0; i < max; i++) {
-    out.push(items[Math.floor(i * step)]!);
-  }
-  return out;
-}
 
 export const PlanChaptersStep: StepExecutor = {
   type: "plan_chapters",
@@ -200,13 +190,14 @@ export const PlanChaptersStep: StepExecutor = {
           continue;
         }
 
-        const maxBeats = DEFAULT_MAX_PAGES * DEFAULT_BEATS_PER_PAGE;
-        const selected = sampleEvenly(beats, maxBeats);
+        // Use ALL beats — every beat gets its own panel.
+        const selected = beats;
+        const pageCount = Math.ceil(selected.length / DEFAULT_BEATS_PER_PAGE);
 
         const pages: PageSpec[] = [];
         const panels: PanelSpec[] = [];
 
-        for (let pageIdx = 0; pageIdx < DEFAULT_MAX_PAGES; pageIdx++) {
+        for (let pageIdx = 0; pageIdx < pageCount; pageIdx++) {
           const pageBeats = selected.slice(
             pageIdx * DEFAULT_BEATS_PER_PAGE,
             (pageIdx + 1) * DEFAULT_BEATS_PER_PAGE,
