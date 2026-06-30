@@ -89,6 +89,7 @@ export async function seed(): Promise<void> {
     description: "A demo project — a short story about a woman returning to her grandfather's lighthouse.",
     status: 'created',
     modality: 'text',
+    artStyle: 'comic book art',
     createdAt: now,
     updatedAt: now,
     providerSettings: {},

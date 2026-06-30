@@ -1,71 +1,76 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
-import type { PanelSpec, BoundingBox } from "@audiocomic/domain";
-import { ComicCanvas } from "./ComicCanvas";
-import { PanelEditor } from "./PanelEditor";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import type { PanelSpec, BoundingBox } from '@audiocomic/domain';
+import { ComicCanvas } from './ComicCanvas';
+import { PanelEditor, QaBadge } from './PanelEditor';
+import { ToolRail } from './ToolRail';
+import { RightDock } from './RightDock';
+import { CanvasSettingsPopover } from './CanvasSettingsPopover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
-import { PageThumbnailBar } from "./PageThumbnailBar";
-import { useCanvasStore } from "@/stores/canvas-store";
-import { useCanvasData } from "@/lib/canvas/use-canvas-data";
-import { throttle } from "@/lib/canvas/throttle";
-import type { CanvasPageData } from "./types";
-import { cn } from "@/lib/utils";
-import { KnowledgePanel } from "./KnowledgePanel";
-
-const MODES = [
-  { value: "select" as const, label: "Select", icon: "↖" },
-  { value: "move" as const, label: "Move", icon: "✥" },
-  { value: "bubble" as const, label: "Bubbles", icon: "💬" },
-];
+import { PageThumbnailBar } from './PageThumbnailBar';
+import { useCanvasStore } from '@/stores/canvas-store';
+import { useCanvasData } from '@/lib/canvas/use-canvas-data';
+import { throttle } from '@/lib/canvas/throttle';
+import type { CanvasPageData } from './types';
+import { cn } from '@/lib/utils';
+import { KnowledgePanel } from './KnowledgePanel';
 
 const POLLINATIONS_MODELS = [
-  { value: "flux", label: "Flux" },
-  { value: "gptimage", label: "GPT Image" },
-  { value: "gptimage-large", label: "GPT Image Large" },
-  { value: "gpt-image-2", label: "GPT Image 2" },
-  { value: "nanobanana-pro", label: "NanoBanana Pro" },
-  { value: "nanobanana2", label: "NanoBanana 2" },
-  { value: "seedream5", label: "Seedream 5" },
-  { value: "seedream-pro", label: "Seedream Pro" },
-  { value: "kontext", label: "Kontext" },
-  { value: "zimage", label: "Z Image" },
-  { value: "z-image-turbo", label: "Z Image Turbo" },
-  { value: "klein", label: "Klein" },
-  { value: "nova-canvas", label: "Nova Canvas" },
-  { value: "qwen-image", label: "Qwen Image" },
-  { value: "grok-imagine", label: "Grok Imagine" },
-  { value: "p-image", label: "P Image" },
+  { value: 'flux', label: 'Flux' },
+  { value: 'gptimage', label: 'GPT Image' },
+  { value: 'gptimage-large', label: 'GPT Image Large' },
+  { value: 'gpt-image-2', label: 'GPT Image 2' },
+  { value: 'nanobanana-pro', label: 'NanoBanana Pro' },
+  { value: 'nanobanana2', label: 'NanoBanana 2' },
+  { value: 'seedream5', label: 'Seedream 5' },
+  { value: 'seedream-pro', label: 'Seedream Pro' },
+  { value: 'kontext', label: 'Kontext' },
+  { value: 'zimage', label: 'Z Image' },
+  { value: 'z-image-turbo', label: 'Z Image Turbo' },
+  { value: 'klein', label: 'Klein' },
+  { value: 'nova-canvas', label: 'Nova Canvas' },
+  { value: 'qwen-image', label: 'Qwen Image' },
+  { value: 'grok-imagine', label: 'Grok Imagine' },
+  { value: 'p-image', label: 'P Image' },
 ] as const;
 
 const POLLINATIONS_PROVIDERS = [
-  { value: "pollinations-paid", label: "Pollinations Paid" },
-  { value: "pollinations-free", label: "Pollinations Free" },
+  { value: 'pollinations-paid', label: 'Pollinations Paid' },
+  { value: 'pollinations-free', label: 'Pollinations Free' },
 ] as const;
 
 const LLM_PROVIDERS = [
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "pollinations", label: "Pollinations" },
-  { value: "openai", label: "OpenAI" },
+  { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'pollinations', label: 'Pollinations' },
+  { value: 'openai', label: 'OpenAI' },
 ] as const;
 
 const LLM_MODELS: Record<string, { value: string; label: string }[]> = {
   openrouter: [
-    { value: "mistralai/mistral-nemo", label: "Mistral Nemo" },
-    { value: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-    { value: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-    { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
-    { value: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+    { value: 'mistralai/mistral-nemo', label: 'Mistral Nemo' },
+    { value: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    { value: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout' },
+    { value: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
   ],
   pollinations: [
-    { value: "openai", label: "GPT-5.4 Nano" },
-    { value: "openai-fast", label: "GPT-5 Nano" },
-    { value: "deepseek", label: "DeepSeek V4 Flash" },
+    { value: 'openai', label: 'GPT-5.4 Nano' },
+    { value: 'openai-fast', label: 'GPT-5 Nano' },
+    { value: 'deepseek', label: 'DeepSeek V4 Flash' },
   ],
   openai: [
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
   ],
 };
 interface CanvasTabProps {
@@ -88,10 +93,14 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     selectedPanelId,
     selectedPageId,
     selectPage,
+    selectPanel,
     selectedChapterId,
     selectChapter,
-    mode,
     setMode,
+    rightPanel,
+    setRightPanel,
+    thumbnailsCollapsed,
+    toggleThumbnails,
   } = useCanvasStore();
 
   // Chapter metadata for the selector bar (id + title + stage)
@@ -102,6 +111,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     stage: string;
   }
   const [chapters, setChapters] = useState<ChapterMeta[]>([]);
+  const hasAutoSelectedChapter = useRef(false);
   useEffect(() => {
     let cancelled = false;
     const fetchChapters = async () => {
@@ -120,6 +130,13 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       cancelled = true;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    if (selectedChapterId !== null || hasAutoSelectedChapter.current) return;
+    if (chapters.length === 0) return;
+    hasAutoSelectedChapter.current = true;
+    selectChapter(chapters[0]!.id);
+  }, [chapters, selectedChapterId, selectChapter]);
 
   // Convert pages to canvas format
   const canvasPages: CanvasPageData[] = useMemo(
@@ -174,8 +191,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const savePanelBbox = useRef(
     throttle((panelId: string, bbox: BoundingBox) => {
       void fetch(`/api/panels/${panelId}/bbox`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bbox),
       });
     }, 150),
@@ -195,8 +212,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     async (panelId: string, patch: Partial<PanelSpec>) => {
       updatePanel(panelId, patch);
       await fetch(`/api/panels/${panelId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
     },
@@ -204,8 +221,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   );
 
   // Image model + provider selection (persisted to project in DB)
-  const [selectedModel, setSelectedModel] = useState<string>("z-image-turbo");
-  const [selectedProvider, setSelectedProvider] = useState<string>("pollinations-paid");
+  const [selectedModel, setSelectedModel] = useState<string>('flux');
+  const [selectedProvider, setSelectedProvider] = useState<string>('pollinations-free');
+  const [artStyle, setArtStyle] = useState<string>('comic book art');
   useEffect(() => {
     let cancelled = false;
     const fetchModel = async () => {
@@ -215,8 +233,10 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           const data = await res.json();
           const model = data.detail?.project?.renderModel;
           const provider = data.detail?.project?.renderProvider;
+          const style = data.detail?.project?.artStyle;
           if (model) setSelectedModel(model);
           if (provider) setSelectedProvider(provider);
+          if (style) setArtStyle(style);
         }
       } catch {
         /* ignore */
@@ -227,9 +247,20 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       cancelled = true;
     };
   }, [projectId]);
+  const handleArtStyleChange = useCallback(
+    (value: string) => {
+      setArtStyle(value);
+      void fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artStyle: value }),
+      });
+    },
+    [projectId],
+  );
   // LLM provider + model selection (persisted to project in DB, used for story planning)
-  const [selectedLlmProvider, setSelectedLlmProvider] = useState<string>("");
-  const [selectedLlmModel, setSelectedLlmModel] = useState<string>("");
+  const [selectedLlmProvider, setSelectedLlmProvider] = useState<string>('');
+  const [selectedLlmModel, setSelectedLlmModel] = useState<string>('');
   useEffect(() => {
     let cancelled = false;
     const fetchLlmConfig = async () => {
@@ -256,12 +287,12 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       setSelectedLlmProvider(provider);
       const models = LLM_MODELS[provider];
       if (models && models.length > 0) {
-        setSelectedLlmModel(models[0]?.value ?? "");
+        setSelectedLlmModel(models[0]?.value ?? '');
       }
       void fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ llmProvider: provider, llmModel: models?.[0]?.value ?? "" }),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ llmProvider: provider, llmModel: models?.[0]?.value ?? '' }),
       });
     },
     [projectId],
@@ -270,8 +301,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     (model: string) => {
       setSelectedLlmModel(model);
       void fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ llmModel: model }),
       });
     },
@@ -281,8 +312,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     (model: string) => {
       setSelectedModel(model);
       void fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ renderModel: model }),
       });
     },
@@ -292,8 +323,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     (provider: string) => {
       setSelectedProvider(provider);
       void fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ renderProvider: provider }),
       });
     },
@@ -308,8 +339,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       setRenderingPanelIds((prev) => new Set(prev).add(panelId));
       try {
         const res = await fetch(`/api/panels/${panelId}/regenerate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: selectedModel, provider: selectedProvider }),
         });
         if (!res.ok) return;
@@ -340,8 +371,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const saveBubblePosition = useRef(
     throttle((pageId: string, boxId: string, bbox: Partial<BoundingBox>) => {
       void fetch(`/api/lettering/${pageId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boxId, bbox }),
       });
     }, 150),
@@ -369,8 +400,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       const newBoxes = page.lettering.map((b) => (b.id === boxId ? { ...b, text } : b));
       updateLettering(pageId, newBoxes);
       void fetch(`/api/lettering/${pageId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boxId, text }),
       });
     },
@@ -385,7 +416,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       const newBoxes = page.lettering.filter((b) => b.id !== boxId);
       updateLettering(pageId, newBoxes);
       void fetch(`/api/lettering/${pageId}?boxId=${boxId}`, {
-        method: "DELETE",
+        method: 'DELETE',
       });
     },
     [pages, updateLettering],
@@ -395,9 +426,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const handleBubbleAdd = useCallback(
     (pageId: string, bbox: BoundingBox, panelId?: string) => {
       void fetch(`/api/pages/${pageId}/lettering`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "speech", text: "", bbox, panelId }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'speech', text: '', bbox, panelId }),
       }).then(() => {
         void refresh();
       });
@@ -412,8 +443,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       newOrder.forEach((page, i) => {
         if (page.index !== i) {
           void fetch(`/api/pages/${page.id}/reorder`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ index: i }),
           });
         }
@@ -426,8 +457,8 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
   // Page navigation
   const handlePageNavigate = useCallback(
-    (direction: "prev" | "next") => {
-      const targetIdx = direction === "prev" ? currentPageIndex - 1 : currentPageIndex + 1;
+    (direction: 'prev' | 'next') => {
+      const targetIdx = direction === 'prev' ? currentPageIndex - 1 : currentPageIndex + 1;
       if (targetIdx >= 0 && targetIdx < pages.length) {
         const target = pages[targetIdx];
         if (target) selectPage(target.id);
@@ -436,13 +467,23 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     [currentPageIndex, pages, selectPage],
   );
 
-  // ── Export panel ──
-  const [showExport, setShowExport] = useState(false);
+  // ── Export panel ── (visibility is driven by the shared right-dock store)
+  const showExport = rightPanel === 'export';
   const [exporting, setExporting] = useState(false);
-  const [exportType, setExportType] = useState<"mp4" | "cbz">("mp4");
-  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [exportType, setExportType] = useState<'mp4' | 'cbz'>('mp4');
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [chapterExports, setChapterExports] = useState<
-    { id: string; type: string; downloadUrl: string; sizeBytes: number; durationSec: number; slides: number; createdAt: string }[]
+    {
+      id: string;
+      type: string;
+      downloadUrl: string;
+      sizeBytes: number;
+      durationSec: number;
+      slides: number;
+      createdAt: string;
+    }[]
   >([]);
 
   // Load existing exports when export panel opens or chapter changes
@@ -469,19 +510,19 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     setExporting(true);
     setExportProgress(null);
     try {
-      const endpoint = exportType === "mp4" ? "export-motion" : "export-cbz";
+      const endpoint = exportType === 'mp4' ? 'export-motion' : 'export-cbz';
       const res = await fetch(`/api/chapters/${selectedChapterId}/${endpoint}`, {
-        method: "POST",
+        method: 'POST',
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Export failed" }));
-        alert(err.error ?? "Export failed");
+        const err = await res.json().catch(() => ({ error: 'Export failed' }));
+        alert(err.error ?? 'Export failed');
         return;
       }
       const data = await res.json();
 
       // MP4 export returns a jobId — poll until done.
-      if (exportType === "mp4" && data.jobId) {
+      if (exportType === 'mp4' && data.jobId) {
         const jobId = data.jobId;
         const total = data.total ?? 0;
         setExportProgress({ done: 0, total });
@@ -492,18 +533,18 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
             `/api/chapters/${selectedChapterId}/export-motion?jobId=${jobId}`,
           );
           if (!statusRes.ok) {
-            throw new Error("Failed to check export status");
+            throw new Error('Failed to check export status');
           }
           const status = await statusRes.json();
 
-          if (status.status === "done" && status.result) {
+          if (status.status === 'done' && status.result) {
             setExportProgress(null);
             await loadExports(selectedChapterId);
-            window.open(status.result.mp4Url, "_blank");
+            window.open(status.result.mp4Url, '_blank');
             return;
           }
-          if (status.status === "failed") {
-            throw new Error(status.error ?? "Export failed");
+          if (status.status === 'failed') {
+            throw new Error(status.error ?? 'Export failed');
           }
           // Still rendering or uploading — update progress and keep polling.
           if (status.progress) {
@@ -522,9 +563,9 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       // CBZ export is synchronous — result is immediate.
       await loadExports(selectedChapterId);
       const url = data.mp4Url ?? data.cbzUrl;
-      if (url) window.open(url, "_blank");
+      if (url) window.open(url, '_blank');
     } catch (e) {
-      alert("Export failed: " + (e instanceof Error ? e.message : String(e)));
+      alert('Export failed: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       setExporting(false);
       setExportProgress(null);
@@ -542,13 +583,13 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       setRenderingPanelIds((prev) => new Set(prev).add(panelId));
       try {
         const res = await fetch(`/api/panels/${panelId}/regenerate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: selectedModel, provider: selectedProvider }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          console.error("panel render failed", body);
+          console.error('panel render failed', body);
           return;
         }
         const data = await res.json();
@@ -562,7 +603,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           updatePanelImage(panelId, `${data.imageUrl}?v=${Date.now()}`);
         }
       } catch (e) {
-        console.error("panel render request failed", e);
+        console.error('panel render request failed', e);
       } finally {
         setRenderingPanelIds((prev) => {
           const next = new Set(prev);
@@ -580,9 +621,13 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     const ch = chapters.find((c) => c.id === selectedChapterId);
     return ch?.stage ?? null;
   }, [chapters, selectedChapterId]);
+  const selectedChapter = useMemo(() => {
+    if (!selectedChapterId) return null;
+    return chapters.find((c) => c.id === selectedChapterId) ?? null;
+  }, [chapters, selectedChapterId]);
 
-  // Knowledge panel toggle
-  const [showKnowledge, setShowKnowledge] = useState(false);
+  // Knowledge panel visibility is driven by the shared right-dock store.
+  const showKnowledge = rightPanel === 'knowledge';
 
   // Render all unrendered panels in the current chapter sequentially.
   const [isRenderingAll, setIsRenderingAll] = useState(false);
@@ -605,6 +650,47 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
       setIsRenderingAll(false);
     }
   }, [pages, selectedChapterId, handlePanelRender]);
+
+  // Keyboard shortcuts: V/M/B switch tools, arrows page through, Esc clears
+  // the current selection / closes the dock. Ignored while typing in a field.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      switch (e.key.toLowerCase()) {
+        case 'v':
+          setMode('select');
+          break;
+        case 'm':
+          setMode('move');
+          break;
+        case 'b':
+          setMode('bubble');
+          break;
+        case 'arrowleft':
+          handlePageNavigate('prev');
+          break;
+        case 'arrowright':
+          handlePageNavigate('next');
+          break;
+        case 'escape':
+          selectPanel(null);
+          setRightPanel(null);
+          break;
+        default:
+          return;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [setMode, handlePageNavigate, selectPanel, setRightPanel]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -633,46 +719,89 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         renderingPanelIds={renderingPanelIds}
       />
 
-      {/* ── Floating UI: top-center toolbar ── */}
-      <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-lg border bg-background/95 p-1.5 shadow-md backdrop-blur">
-          {/* Mode toggle */}
-          <div className="flex items-center rounded-md border">
-            {MODES.map((m) => (
-              <button
-                key={m.value}
-                onClick={() => setMode(m.value)}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-medium transition-colors",
-                  mode === m.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted",
-                )}
-              >
-                <span className="mr-1">{m.icon}</span>
-                {m.label}
-              </button>
-            ))}
-          </div>
+      {/* ── Left tool rail: modes + keyboard shortcuts ── */}
+      <div className="pointer-events-none absolute left-3 top-1/2 z-20 -translate-y-1/2">
+        <ToolRail />
+      </div>
 
-          <div className="h-5 w-px bg-border" />
+      {/* ── Top-center: chapter selector + page navigation ── */}
+      <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2">
+        <div className="pointer-events-auto flex items-center gap-3 rounded-lg border bg-background/95 p-1.5 shadow-md backdrop-blur">
+          {chapters.length > 0 && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Chapter
+                </span>
+                <Select
+                  value={selectedChapterId ?? '__all__'}
+                  onValueChange={(value) => {
+                    if (value === '__all__') {
+                      selectChapter(null);
+                      return;
+                    }
+                    selectChapter(value);
+                  }}
+                >
+                  <SelectTrigger className="h-11 min-w-[20rem] max-w-[28rem] rounded-lg border-border bg-background px-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <SelectValue
+                        placeholder="All chapters"
+                        className="min-w-0 truncate text-left text-sm font-medium"
+                      />
+                      {selectedChapter ? (
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {selectedChapter.stage}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          overview
+                        </span>
+                      )}
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent align="start" className="min-w-[20rem]">
+                    {chapters.map((ch) => (
+                      <SelectItem key={ch.id} value={ch.id}>
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            Chapter {ch.index} · {ch.title}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            {ch.stage}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    <SelectSeparator />
+                    <SelectItem value="__all__">
+                      <span className="font-medium text-muted-foreground">All chapters</span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="h-5 w-px bg-border" />
+            </>
+          )}
 
           {/* Page navigation */}
           <div className="flex items-center gap-1">
             <button
-              onClick={() => handlePageNavigate("prev")}
+              onClick={() => handlePageNavigate('prev')}
               disabled={currentPageIndex === 0}
               className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+              title="Previous page (←)"
             >
               ←
             </button>
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {currentPageIndex + 1}/{filteredPages.length}
+            <span className="min-w-[2.5rem] text-center text-xs tabular-nums text-muted-foreground">
+              {filteredPages.length > 0 ? `${currentPageIndex + 1}/${filteredPages.length}` : '0/0'}
             </span>
             <button
-              onClick={() => handlePageNavigate("next")}
+              onClick={() => handlePageNavigate('next')}
               disabled={currentPageIndex >= filteredPages.length - 1}
               className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+              title="Next page (→)"
             >
               →
             </button>
@@ -686,287 +815,205 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           >
             + Page
           </button>
+        </div>
+      </div>
 
-          <div className="h-5 w-px bg-border" />
+      {/* ── Top-right: generation settings + actions ── */}
+      <div className="pointer-events-none absolute right-3 top-4 z-20">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
+          <CanvasSettingsPopover
+            imageProvider={selectedProvider}
+            imageProviderOptions={POLLINATIONS_PROVIDERS}
+            onImageProviderChange={handleProviderChange}
+            imageModel={selectedModel}
+            imageModelOptions={POLLINATIONS_MODELS}
+            onImageModelChange={handleModelChange}
+            llmProvider={selectedLlmProvider}
+            llmProviderOptions={LLM_PROVIDERS}
+            onLlmProviderChange={handleLlmProviderChange}
+            llmModel={selectedLlmModel}
+            llmModelOptions={LLM_MODELS[selectedLlmProvider] ?? []}
+            onLlmModelChange={handleLlmModelChange}
+            artStyle={artStyle}
+            onArtStyleChange={handleArtStyleChange}
+          />
 
-          {/* Provider selector (paid = bills balance, free = rate-limited) */}
-          <select
-            value={selectedProvider}
-            onChange={(e) => handleProviderChange(e.target.value)}
-            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
-            title="Image generation provider / endpoint"
-          >
-            {POLLINATIONS_PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-
-          {/* Model selector */}
-          <select
-            value={selectedModel}
-            onChange={(e) => handleModelChange(e.target.value)}
-            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
-            title="Image generation model"
-          >
-            {POLLINATIONS_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-
-          <div className="h-5 w-px bg-border" />
-
-          {/* LLM provider selector (for story planning) */}
-          <select
-            value={selectedLlmProvider}
-            onChange={(e) => handleLlmProviderChange(e.target.value)}
-            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
-            title="LLM provider for story planning"
-          >
-            {LLM_PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-
-          {/* LLM model selector */}
-          <select
-            value={selectedLlmModel}
-            onChange={(e) => handleLlmModelChange(e.target.value)}
-            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
-            title="LLM model for story planning"
-          >
-            {(LLM_MODELS[selectedLlmProvider] ?? []).map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-
-          {selectedChapterStage === "ready_for_review" && (
+          {selectedChapterStage === 'ready_for_review' && (
             <button
               onClick={handleRenderAll}
               disabled={isRenderingAll || renderingPanelIds.size > 0}
               className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {isRenderingAll ? "Rendering…" : "Render All"}
+              {isRenderingAll ? 'Rendering…' : 'Render All'}
             </button>
           )}
-        </div>
-      </div>
 
-      {/* ── Floating UI: top-left chapter selector ── */}
-      <div className="pointer-events-none absolute left-4 top-20 z-20">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
-          <span className="px-2 text-xs font-medium text-muted-foreground">Chapter</span>
-          {chapters.map((ch) => (
-            <button
-              key={ch.id}
-              onClick={() => selectChapter(ch.id)}
-              className={cn(
-                "rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                selectedChapterId === ch.id
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {ch.index}
-            </button>
-          ))}
-          <button
-            onClick={() => selectChapter(null)}
-            className={cn(
-              "rounded-md px-2 py-1 text-xs font-medium transition-colors",
-              selectedChapterId === null
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted",
-            )}
-          >
-            All
-          </button>
-        </div>
-      </div>
+          <div className="h-5 w-px bg-border" />
 
-      {/* ── Floating UI: top-right actions ── */}
-      <div className="pointer-events-none absolute right-4 top-20 z-20">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
           <button
-            onClick={() => setShowKnowledge(!showKnowledge)}
+            onClick={() => setRightPanel(showKnowledge ? null : 'knowledge')}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
               showKnowledge
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted",
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted',
             )}
           >
-            📖 KB
+            <span aria-hidden>📖</span> Knowledge
           </button>
           <button
-            onClick={() => setShowExport((v) => !v)}
+            onClick={() => setRightPanel(showExport ? null : 'export')}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
               showExport
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted",
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted',
             )}
           >
-            🎬 Export
+            <span aria-hidden>🎬</span> Export
           </button>
         </div>
       </div>
-      {/* ── Export panel (slides in from right) ── */}
-      {showExport && (
-        <div className="pointer-events-auto absolute right-4 top-36 z-20 w-80 rounded-lg border bg-background/95 p-4 shadow-lg backdrop-blur">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Motion Export</h3>
-            <button
-              onClick={() => setShowExport(false)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              ✕
-            </button>
-          </div>
-          {!selectedChapterId ? (
-            <p className="text-xs text-muted-foreground">
-              Select a chapter first to export.
-            </p>
-          ) : (
-            <>
-              {/* Format toggle */}
-              <div className="mb-3 flex gap-1 rounded-md border p-0.5">
-                <button
-                  onClick={() => setExportType("mp4")}
-                  className={cn(
-                    "flex-1 rounded px-2 py-1 text-xs font-medium transition-colors",
-                    exportType === "mp4" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  🎬 MP4
-                </button>
-                <button
-                  onClick={() => setExportType("cbz")}
-                  className={cn(
-                    "flex-1 rounded px-2 py-1 text-xs font-medium transition-colors",
-                    exportType === "cbz" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  📖 CBZ
-                </button>
-              </div>
+      {/* ── Right dock: panel editor / export / knowledge (mutually exclusive) ── */}
+      {selectedPanel ? (
+        <RightDock
+          title={`Panel ${selectedPanel.index + 1}`}
+          headerExtra={<QaBadge status={selectedPanel.qaStatus} />}
+          onClose={() => selectPanel(null)}
+        >
+          <PanelEditor
+            panel={selectedPanel}
+            panelImageUrl={selectedPanelImageUrl}
+            projectId={projectId}
+            isRendering={renderingPanelIds.has(selectedPanel.id)}
+            onPatch={handlePanelPatch}
+            onRegenerate={handleRegenerate}
+          />
+        </RightDock>
+      ) : showExport ? (
+        <RightDock title="Export" onClose={() => setRightPanel(null)}>
+          <div className="p-4">
+            {!selectedChapterId ? (
+              <p className="text-xs text-muted-foreground">Select a chapter first to export.</p>
+            ) : (
+              <>
+                {/* Format toggle */}
+                <div className="mb-3 flex gap-1 rounded-md border p-0.5">
+                  <button
+                    onClick={() => setExportType('mp4')}
+                    className={cn(
+                      'flex-1 rounded px-2 py-1 text-xs font-medium transition-colors',
+                      exportType === 'mp4'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted',
+                    )}
+                  >
+                    🎬 MP4
+                  </button>
+                  <button
+                    onClick={() => setExportType('cbz')}
+                    className={cn(
+                      'flex-1 rounded px-2 py-1 text-xs font-medium transition-colors',
+                      exportType === 'cbz'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted',
+                    )}
+                  >
+                    📖 CBZ
+                  </button>
+                </div>
 
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="mb-3 w-full rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {exporting
-                  ? exportType === "mp4"
-                    ? exportProgress
-                      ? `Rendering... ${exportProgress.done}/${exportProgress.total} segments`
-                      : "Rendering MP4..."
-                    : "Creating CBZ..."
-                  : exportType === "mp4"
-                    ? "🎬 Generate Motion Comic MP4"
-                    : "📖 Generate CBZ (Comic Book ZIP)"}
-              </button>
-              {exporting && exportProgress && (
-                <div className="mb-3">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-300"
-                      style={{
-                        width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              <p className="mb-3 text-xs text-muted-foreground">
-                {exportType === "mp4"
-                  ? "Ken-burns slideshow of panel images synced to the chapter's original audio."
-                  : "ZIP of panel images with dialogue bubbles, named in reading order. Opens in comic book readers."}
-              </p>
-              {chapterExports.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-muted-foreground">
-                    Previous exports ({chapterExports.length})
-                  </h4>
-                  {chapterExports.map((exp) => (
-                    <div
-                      key={exp.id}
-                      className="flex items-center justify-between rounded-md border p-2 text-xs"
-                    >
-                      <div className="flex-1 overflow-hidden">
-                        <div className="font-medium">
-                          {exp.type === "mp4" ? "🎬" : "📖"}{" "}
-                          {exp.type === "mp4" ? `${exp.durationSec.toFixed(0)}s` : `${exp.slides} panels`} ·{" "}
-                          {(exp.sizeBytes / 1024 / 1024).toFixed(1)} MB
-                        </div>
-                        <div className="text-muted-foreground">
-                          {new Date(exp.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <a
-                        href={exp.downloadUrl}
-                        download
-                        className="ml-2 rounded-md bg-muted px-2 py-1 text-xs font-medium hover:bg-muted/80"
-                      >
-                        ⬇
-                      </a>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="mb-3 w-full rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {exporting
+                    ? exportType === 'mp4'
+                      ? exportProgress
+                        ? `Rendering... ${exportProgress.done}/${exportProgress.total} segments`
+                        : 'Rendering MP4...'
+                      : 'Creating CBZ...'
+                    : exportType === 'mp4'
+                      ? '🎬 Generate Motion Comic MP4'
+                      : '📖 Generate CBZ (Comic Book ZIP)'}
+                </button>
+                {exporting && exportProgress && (
+                  <div className="mb-3">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-300"
+                        style={{
+                          width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%`,
+                        }}
+                      />
                     </div>
-                  ))}
-                </div>
-              )}
-            </>
+                  </div>
+                )}
+                <p className="mb-3 text-xs text-muted-foreground">
+                  {exportType === 'mp4'
+                    ? "Ken-burns slideshow of panel images synced to the chapter's original audio."
+                    : 'ZIP of panel images with dialogue bubbles, named in reading order. Opens in comic book readers.'}
+                </p>
+                {chapterExports.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-muted-foreground">
+                      Previous exports ({chapterExports.length})
+                    </h4>
+                    {chapterExports.map((exp) => (
+                      <div
+                        key={exp.id}
+                        className="flex items-center justify-between rounded-md border p-2 text-xs"
+                      >
+                        <div className="flex-1 overflow-hidden">
+                          <div className="font-medium">
+                            {exp.type === 'mp4' ? '🎬' : '📖'}{' '}
+                            {exp.type === 'mp4'
+                              ? `${exp.durationSec.toFixed(0)}s`
+                              : `${exp.slides} panels`}{' '}
+                            · {(exp.sizeBytes / 1024 / 1024).toFixed(1)} MB
+                          </div>
+                          <div className="text-muted-foreground">
+                            {new Date(exp.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                        <a
+                          href={exp.downloadUrl}
+                          download
+                          className="ml-2 rounded-md bg-muted px-2 py-1 text-xs font-medium hover:bg-muted/80"
+                        >
+                          ⬇
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </RightDock>
+      ) : showKnowledge ? (
+        <RightDock title="Knowledge Base" onClose={() => setRightPanel(null)}>
+          <KnowledgePanel projectId={projectId} />
+        </RightDock>
+      ) : null}
+
+      {/* ── Bottom-center: page thumbnails (collapsible) ── */}
+      <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
+        <div className="pointer-events-auto flex flex-col items-center gap-1">
+          <button
+            onClick={toggleThumbnails}
+            className="rounded-md border bg-background/95 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted"
+          >
+            {thumbnailsCollapsed ? '▲ Pages' : '▼ Hide pages'}
+          </button>
+          {!thumbnailsCollapsed && (
+            <div className="rounded-lg border bg-background/95 p-1.5 shadow-md backdrop-blur">
+              <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
+            </div>
           )}
         </div>
-      )}
-
-      {/* ── Floating UI: right PanelEditor (slides in/out) ── */}
-      <div
-        className={cn(
-          "pointer-events-auto absolute right-0 top-16 z-30 h-[calc(100%-140px)] transition-transform duration-200",
-          selectedPanel ? "translate-x-0" : "translate-x-full",
-        )}
-      >
-        <PanelEditor
-          panel={selectedPanel}
-          panelImageUrl={selectedPanelImageUrl}
-          projectId={projectId}
-          isRendering={selectedPanel ? renderingPanelIds.has(selectedPanel.id) : false}
-          onPatch={handlePanelPatch}
-          onRegenerate={handleRegenerate}
-        />
       </div>
-
-      {/* ── Floating UI: bottom-center page thumbnails ── */}
-      <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
-        <div className="pointer-events-auto rounded-lg border bg-background/95 p-1.5 shadow-md backdrop-blur">
-          <PageThumbnailBar pages={filteredPages} onReorder={handlePageReorder} />
-        </div>
-      </div>
-
-      {/* ── Floating UI: Knowledge panel (right side, below toolbar) ── */}
-      {showKnowledge && (
-        <div className="pointer-events-auto absolute right-4 top-36 z-20 w-[420px] max-w-[calc(100vw-2rem)] rounded-lg border bg-background/95 shadow-lg backdrop-blur">
-          <div className="flex items-center justify-between border-b p-2">
-            <span className="text-xs font-medium">Knowledge Base</span>
-            <button
-              onClick={() => setShowKnowledge(false)}
-              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="max-h-[calc(100vh-12rem)] overflow-auto">
-            <KnowledgePanel projectId={projectId} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

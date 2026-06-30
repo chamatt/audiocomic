@@ -1,6 +1,12 @@
 'use client';
 
-import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type JSX } from 'react';
+import {
+  useCallback,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type JSX,
+} from 'react';
 import type { BoundingBox, LetteringBox } from '@audiocomic/domain';
 import { useCanvasStore } from '@/stores/canvas-store';
 import type { CanvasPageData } from './types';
@@ -31,7 +37,7 @@ export function BubbleOverlay({
   onBubbleDelete,
   onBubbleAdd,
 }: BubbleOverlayProps): JSX.Element {
-  const { selectedBubbleId, selectBubble } = useCanvasStore();
+  const { selectedBubbleId, selectBubble, zoom } = useCanvasStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const dragState = useRef<BubbleDragState | null>(null);
 
@@ -55,13 +61,13 @@ export function BubbleOverlay({
     (e: ReactPointerEvent<HTMLDivElement>) => {
       const ds = dragState.current;
       if (!ds) return;
-      const dx = (e.clientX - ds.startX) / pageWidth;
-      const dy = (e.clientY - ds.startY) / pageHeight;
+      const dx = (e.clientX - ds.startX) / (pageWidth * zoom);
+      const dy = (e.clientY - ds.startY) / (pageHeight * zoom);
       const x = Math.max(0, Math.min(1 - ds.origBbox.w, ds.origBbox.x + dx));
       const y = Math.max(0, Math.min(1 - ds.origBbox.h, ds.origBbox.y + dy));
       onBubbleChange(page.id, ds.boxId, { x, y });
     },
-    [page.id, pageWidth, pageHeight, onBubbleChange],
+    [page.id, pageWidth, pageHeight, zoom, onBubbleChange],
   );
 
   const handlePointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {

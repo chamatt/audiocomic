@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -15,11 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -68,127 +63,116 @@ export function PanelEditor({
     void onRegenerate(panel.id);
   };
   return (
-    <div className="flex h-full w-[360px] flex-col rounded-lg border bg-background/95 shadow-lg backdrop-blur">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">Panel {panel.index + 1}</h3>
-          <QaBadge status={panel.qaStatus} />
+    <div className="space-y-6 p-4">
+      {/* Preview */}
+      {panelImageUrl && (
+        <div className="overflow-hidden rounded-md border">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={panelImageUrl} alt={panel.description} className="w-full" />
         </div>
+      )}
+
+      {/* Description */}
+      <FieldSection title="Description">
+        <DebouncedTextarea
+          key={`desc-${panel.id}`}
+          value={panel.description}
+          onChange={(v) => onPatch(panel.id, { description: v })}
+          placeholder="What does this panel show?"
+          rows={3}
+        />
+      </FieldSection>
+
+      {/* Camera Framing */}
+      <FieldSection title="Camera Framing">
+        <Select
+          value={panel.cameraFraming ?? ""}
+          onValueChange={(v) => onPatch(panel.id, { cameraFraming: v as CameraFraming })}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select framing" />
+          </SelectTrigger>
+          <SelectContent>
+            {CAMERA_FRAMINGS.map((f) => (
+              <SelectItem key={f} value={f}>
+                {f}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldSection>
+
+      <Separator />
+
+      {/* Render Prompt — LLM-generated, display only */}
+      <FieldSection title="Render Prompt (LLM-generated)">
+        <textarea
+          value={panel.renderPrompt ?? ""}
+          readOnly
+          disabled
+          placeholder="No prompt yet — click Regenerate to generate"
+          rows={4}
+          className="w-full resize-none rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground"
+        />
+      </FieldSection>
+
+      <FieldSection title="Negative Prompt (editable)">
+        <DebouncedTextarea
+          key={`neg-${panel.id}`}
+          value={panel.renderNegativePrompt ?? ""}
+          onChange={(v) => onPatch(panel.id, { renderNegativePrompt: v || undefined })}
+          placeholder="No negative prompt yet"
+          rows={2}
+          className="w-full resize-none rounded-md border bg-background px-3 py-2 font-mono text-xs"
+        />
+      </FieldSection>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FieldSection title="Seed">
+          <DebouncedInput
+            key={`seed-${panel.id}`}
+            type="number"
+            value={panel.seed?.toString() ?? ""}
+            onChange={(v) => onPatch(panel.id, { seed: v ? parseInt(v, 10) : undefined })}
+          />
+        </FieldSection>
+        <FieldSection title="QA Status">
+          <Select
+            value={panel.qaStatus}
+            onValueChange={(v) => onPatch(panel.id, { qaStatus: v as PanelSpec["qaStatus"] })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {QA_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FieldSection>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-6 p-4">
-          {/* Preview */}
-          {panelImageUrl && (
-            <div className="overflow-hidden rounded-md border">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={panelImageUrl} alt={panel.description} className="w-full" />
-            </div>
-          )}
+      <Button
+        onClick={handleRegenerate}
+        disabled={isRendering}
+        className="w-full"
+        variant="default"
+      >
+        {isRendering ? "Regenerating..." : "Regenerate Panel"}
+      </Button>
 
-          {/* Description */}
-          <FieldSection title="Description">
-            <DebouncedTextarea
-              key={`desc-${panel.id}`}
-              value={panel.description}
-              onChange={(v) => onPatch(panel.id, { description: v })}
-              placeholder="What does this panel show?"
-              rows={3}
-            />
-          </FieldSection>
+      <Separator />
 
-          {/* Camera Framing */}
-          <FieldSection title="Camera Framing">
-            <Select
-              value={panel.cameraFraming ?? ""}
-              onValueChange={(v) => onPatch(panel.id, { cameraFraming: v as CameraFraming })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select framing" />
-              </SelectTrigger>
-              <SelectContent>
-                {CAMERA_FRAMINGS.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldSection>
+      {/* Characters */}
+      <CharacterEditor panel={panel} projectId={projectId} onPatch={onPatch} />
 
-          <Separator />
+      <Separator />
 
-          {/* Render Prompt — LLM-generated, display only */}
-          <FieldSection title="Render Prompt (LLM-generated)">
-            <textarea
-              value={panel.renderPrompt ?? ""}
-              readOnly
-              disabled
-              placeholder="No prompt yet — click Regenerate to generate"
-              rows={4}
-              className="w-full resize-none rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground"
-            />
-          </FieldSection>
-
-          <FieldSection title="Negative Prompt (editable)">
-            <DebouncedTextarea
-              key={`neg-${panel.id}`}
-              value={panel.renderNegativePrompt ?? ""}
-              onChange={(v) => onPatch(panel.id, { renderNegativePrompt: v || undefined })}
-              placeholder="No negative prompt yet"
-              rows={2}
-              className="w-full resize-none rounded-md border bg-background px-3 py-2 font-mono text-xs"
-            />
-          </FieldSection>
-
-          <div className="grid grid-cols-2 gap-3">
-            <FieldSection title="Seed">
-              <DebouncedInput
-                key={`seed-${panel.id}`}
-                type="number"
-                value={panel.seed?.toString() ?? ""}
-                onChange={(v) => onPatch(panel.id, { seed: v ? parseInt(v, 10) : undefined })}
-              />
-            </FieldSection>
-            <FieldSection title="QA Status">
-              <Select
-                value={panel.qaStatus}
-                onValueChange={(v) => onPatch(panel.id, { qaStatus: v as PanelSpec["qaStatus"] })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {QA_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FieldSection>
-          </div>
-
-          <Button
-            onClick={handleRegenerate}
-            disabled={isRendering}
-            className="w-full"
-            variant="default"
-          >
-            {isRendering ? "Regenerating..." : "Regenerate Panel"}
-          </Button>
-
-          <Separator />
-
-          {/* Characters */}
-          <CharacterEditor panel={panel} projectId={projectId} onPatch={onPatch} />
-
-          <Separator />
-
-          {/* Dialogue */}
-          <DialogueEditor panel={panel} onPatch={onPatch} />
-        </div>
-      </ScrollArea>
+      {/* Dialogue */}
+      <DialogueEditor panel={panel} onPatch={onPatch} />
     </div>
   );
 }
@@ -212,7 +196,7 @@ function FieldSection({
   );
 }
 
-function QaBadge({ status }: { status: PanelSpec["qaStatus"] }): JSX.Element {
+export function QaBadge({ status }: { status: PanelSpec["qaStatus"] }): JSX.Element {
   const variants: Record<string, "default" | "outline" | "destructive" | "warning"> = {
     pending: "outline",
     passed: "default",
@@ -324,13 +308,12 @@ function CharacterEditor({
       }
     };
     void fetchChars();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
-  const charById = useMemo(
-    () => new Map(projectChars.map((c) => [c.id, c])),
-    [projectChars],
-  );
+  const charById = useMemo(() => new Map(projectChars.map((c) => [c.id, c])), [projectChars]);
 
   const updateChar = (index: number, patch: Partial<PanelSpec["characters"][number]>) => {
     const newChars = characters.map((c, i) => (i === index ? { ...c, ...patch } : c));
@@ -410,7 +393,12 @@ function CharacterEditor({
                     </Command>
                   </PopoverContent>
                 </Popover>
-                <Button size="sm" variant="ghost" onClick={() => removeChar(i)} className="h-7 px-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeChar(i)}
+                  className="h-7 px-2"
+                >
                   ×
                 </Button>
               </div>

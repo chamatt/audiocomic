@@ -337,7 +337,10 @@ function KnowledgeTab({
             characters.map((c) => {
               const others = characters.filter((o) => o.id !== c.id);
               return (
-                <div key={c.id} className="flex flex-col gap-1 pb-3 border-b last:border-0 last:pb-0">
+                <div
+                  key={c.id}
+                  className="flex flex-col gap-1 pb-3 border-b last:border-0 last:pb-0"
+                >
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sm">{c.name}</span>
                     <Badge variant="outline" className="capitalize text-xs">
@@ -576,11 +579,10 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
           >
             Settings
           </button>
-        </div>
-
-        {/* Project name — top-center, subtle */}
-        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
-          <span className="text-sm font-medium text-muted-foreground">{project.name}</span>
+          <div className="mx-1 h-4 w-px bg-border" />
+          <span className="max-w-[16rem] truncate pr-2 text-xs font-medium text-muted-foreground">
+            {project.name}
+          </span>
         </div>
 
         {/* Canvas fills the entire viewport */}
@@ -661,8 +663,8 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
               <CardHeader>
                 <CardTitle className="text-base">Art Style</CardTitle>
                 <CardDescription>
-                  Global visual style applied to all panels. Defaults to "comic book art".
-                  This overrides the LLM-generated art style from planning.
+                  Global visual style applied to all panels. Defaults to "comic book art". This
+                  overrides the LLM-generated art style from planning.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
@@ -690,10 +692,14 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                   <div className="flex flex-col gap-2">
                     <Label>LLM Provider</Label>
                     <Select value={llmProvider} onValueChange={handleLlmProviderChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         {LLM_PROVIDERS.map((p) => (
-                          <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -701,10 +707,14 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                   <div className="flex flex-col gap-2">
                     <Label>LLM Model</Label>
                     <Select value={llmModel} onValueChange={handleLlmModelChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         {(LLM_MODELS[llmProvider] ?? []).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
