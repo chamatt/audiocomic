@@ -85,8 +85,15 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
   // Sort sections by index (within each parent level) so the storyboard
   // tree renders in narrative order, not DB insertion order.
   const sections = sectionsRaw.sort((a, b) => a.index - b.index);
-  // Sort pages by index so the storyboard and canvas show them in order.
-  const pages = pagesRaw.sort((a, b) => a.index - b.index);
+  // Sort pages by chapter order, then page index within chapter.
+  // Pages without a chapter go last.
+  const chapters = await repo.chapters.getByProjectId(id);
+  const chapterOrder = new Map(chapters.map((c, i) => [c.id, i]));
+  const pages = pagesRaw.sort((a, b) => {
+    const ca = a.chapterId ? (chapterOrder.get(a.chapterId) ?? Infinity) : Infinity;
+    const cb = b.chapterId ? (chapterOrder.get(b.chapterId) ?? Infinity) : Infinity;
+    return ca !== cb ? ca - cb : a.index - b.index;
+  });
 
   // Load panels + composites for each page (panels sorted by index)
   const pagesWithPanels = await Promise.all(

@@ -7,7 +7,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   try {
     const repo = await getRepo();
-    const pages = (await repo.pageSpecs.getByProjectId(id)).sort((a, b) => a.index - b.index);
+    // Sort by chapter index, then page index within chapter.
+    // Pages without a chapter go last.
+    const chapters = await repo.chapters.getByProjectId(id);
+    const chapterOrder = new Map(chapters.map((c, i) => [c.id, i]));
+    const pages = (await repo.pageSpecs.getByProjectId(id)).sort((a, b) => {
+      const ca = a.chapterId ? (chapterOrder.get(a.chapterId) ?? Infinity) : Infinity;
+      const cb = b.chapterId ? (chapterOrder.get(b.chapterId) ?? Infinity) : Infinity;
+      return ca !== cb ? ca - cb : a.index - b.index;
+    });
 
     const pagesWithPanels = await Promise.all(
       pages.map(async (page) => {
