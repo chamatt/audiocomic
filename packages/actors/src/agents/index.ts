@@ -304,7 +304,7 @@ Rules:
 - Include the beat's text — a verbatim excerpt from the source that contains any dialogue or narration for this beat.
 - Preserve the scene's emotional tone unless a beat clearly shifts it.
 - Include a camera hint for each beat: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov, or establishing.
-- List characters present in each beat by name.
+- List ALL characters that appear or are mentioned in each beat by name — including characters who speak, are addressed, or are physically present. Do NOT omit a character just because they're not the focus. If the beat summary mentions "Carl and Donut exchange looks", BOTH Carl and Donut must be in charactersPresent.
 - List any notable objects that appear (weapons, items, UI elements).
 
 Output: structured JSON with a beats array.`,

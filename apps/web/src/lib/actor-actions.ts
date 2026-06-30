@@ -415,6 +415,30 @@ export async function setupChapterActor(
   );
 }
 
+/**
+ * Initialize a chapter actor WITHOUT starting transcription.
+ * Used when importing a chapter from another project — the transcript
+ * and KB are already copied, so we just need the actor to exist.
+ */
+export async function initChapterActor(
+  chapterId: string,
+  projectId: string,
+  index: number,
+  title: string,
+  sourceAssetId: string,
+): Promise<ActorResult<unknown>> {
+  log.info("initializing chapter actor (no transcription)", { chapterId, projectId, index });
+  return run(
+    Effect.gen(function* () {
+      const accessor = yield* chapterClient;
+      const handle = accessor.getOrCreate(chapterId);
+      yield* handle.Init({ id: chapterId, projectId, index });
+      yield* handle.UpdateTitle({ title });
+      return yield* handle.LinkAsset({ sourceAssetId });
+    }),
+  );
+}
+
 export async function getChapterStateActor(chapterId: string): Promise<ActorResult<unknown>> {
   return run(
     Effect.gen(function* () {

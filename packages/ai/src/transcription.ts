@@ -212,11 +212,51 @@ export class GroqTranscriptionAdapter implements TranscriptionAdapter {
       throw new Error(`Groq transcription returned unexpected response: ${stdout.slice(0, 500)}`);
     }
 
-    const segCount = result.segments?.length ?? 0;
-    log.info('Groq response received', { segments: segCount, duration: result.duration, textLen: result.text?.length ?? 0 });
-
-    const chunks = chunkPlainText(result.text ?? '', opts.projectId);
-    log.info('transcription complete', { chunks: chunks.length, textPreview: result.text?.slice(0, 100) });
+    // Use Groq's segment timestamps directly — chunkPlainText discards timing.
+    // Group small segments into ~40-word chunks while preserving start/end.
+    // Falls back to chunkPlainText if Groq returns no segments.
+    let chunks: TranscriptChunk[];
+    const segments = result.segments ?? [];
+    if (segments.length > 0) {
+      chunks = [];
+      let bucket: string[] = [];
+      let bucketStart: number | null = null;
+      let bucketEnd: number | null = null;
+      let wordCount = 0;
+      for (const seg of segments) {
+        if (bucketStart === null) bucketStart = seg.start;
+        bucketEnd = seg.end;
+        bucket.push(seg.text.trim());
+        wordCount += seg.text.trim().split(/\s+/).length;
+        if (wordCount >= WORDS_PER_CHUNK) {
+          chunks.push({
+            id: uuid(),
+            projectId: opts.projectId,
+            index: chunks.length,
+            text: bucket.join(' ').trim(),
+            start: bucketStart,
+            end: bucketEnd,
+          });
+          bucket = [];
+          bucketStart = null;
+          bucketEnd = null;
+          wordCount = 0;
+        }
+      }
+      if (bucket.length > 0) {
+        chunks.push({
+          id: uuid(),
+          projectId: opts.projectId,
+          index: chunks.length,
+          text: bucket.join(' ').trim(),
+          start: bucketStart ?? undefined,
+          end: bucketEnd ?? undefined,
+        });
+      }
+    } else {
+      chunks = chunkPlainText(result.text ?? '', opts.projectId);
+    }
+    log.info('transcription complete', { chunks: chunks.length, segments: segments.length, duration: result.duration, textPreview: result.text?.slice(0, 100) });
     done();
 
     // Clean up compact file

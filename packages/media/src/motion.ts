@@ -93,32 +93,38 @@ function buildSegmentChain(
   const panY = p.panY;
 
   // Fit the source into WxH without upscaling distortion, letterboxing black.
-  const base = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${fps}`;
+  // For zoompan-based motions, we select only the FIRST input frame — zoompan's
+  // `d` parameter is output frames PER input frame, so feeding it a looped
+  // stream of N frames produces N×d output frames (not d). Selecting one frame
+  // ensures zoompan outputs exactly `d` frames = the segment duration.
+  const scalePad = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+  const baseLooped = `${scalePad},fps=${fps}`;
+  const baseSingle = `${scalePad},select='eq(n\\,0)'`;
   const zoompanSuffix = `:d=${frames}:s=${W}x${H}:fps=${fps}`;
 
   switch (seg.motion) {
     case 'static':
-      return `${base},trim=duration=${dur.toFixed(3)},setpts=PTS-STARTPTS[${label}]`;
+      return `${baseLooped},trim=duration=${dur.toFixed(3)},setpts=PTS-STARTPTS[${label}]`;
 
     case 'zoom-in': {
       const z = `if(lte(on,0),${zoomStart},min(${zoomEnd},${zoomStart}+(${zoomEnd}-${zoomStart})*on/${frames}))`;
       const x = `iw/2-(iw/zoom/2)`;
       const y = `ih/2-(ih/zoom/2)`;
-      return `${base},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
+      return `${baseSingle},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
     }
 
     case 'zoom-out': {
       const z = `if(lte(on,0),${zoomStart},max(${zoomEnd},${zoomStart}-(${zoomStart}-${zoomEnd})*on/${frames}))`;
       const x = `iw/2-(iw/zoom/2)`;
       const y = `ih/2-(ih/zoom/2)`;
-      return `${base},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
+      return `${baseSingle},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
     }
 
     case 'ken-burns': {
       const z = `${zoomStart}+(${zoomEnd}-${zoomStart})*on/${frames}`;
       const x = `iw/2-(iw/zoom/2)+(${panX})*on/${frames}*iw*0.1`;
       const y = `ih/2-(ih/zoom/2)+(${panY})*on/${frames}*ih*0.1`;
-      return `${base},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
+      return `${baseSingle},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
     }
 
     case 'pan-left': {
@@ -126,7 +132,7 @@ function buildSegmentChain(
       const z = `${zoomStart}`;
       const x = `(iw-iw/zoom)*(1-on/${frames})`;
       const y = `ih/2-(ih/zoom/2)`;
-      return `${base},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
+      return `${baseSingle},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
     }
 
     case 'pan-right': {
@@ -134,11 +140,11 @@ function buildSegmentChain(
       const z = `${zoomStart}`;
       const x = `(iw-iw/zoom)*on/${frames}`;
       const y = `ih/2-(ih/zoom/2)`;
-      return `${base},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
+      return `${baseSingle},zoompan=z='${z}':x='${x}':y='${y}'${zoompanSuffix}[${label}]`;
     }
 
     default:
-      return `${base},trim=duration=${dur.toFixed(3)},setpts=PTS-STARTPTS[${label}]`;
+      return `${baseLooped},trim=duration=${dur.toFixed(3)},setpts=PTS-STARTPTS[${label}]`;
   }
 }
 

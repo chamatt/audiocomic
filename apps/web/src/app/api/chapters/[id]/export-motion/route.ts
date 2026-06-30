@@ -124,25 +124,92 @@ export async function POST(
     const audioDuration = parseFloat(durationStr);
     log.info(`Audio duration: ${audioDuration.toFixed(1)}s`);
 
-    // ── 7. Build narration timeline — one ken-burns segment per panel ──
-    const perSlideDuration = audioDuration / slides.length;
+    // ── 7. Build narration timeline — sync slides to panel timestamps ──
+    // Use panel.startSec/endSec (from transcript chunk matching) when available.
+    // Fall back to even division for panels without timestamps or broken ones.
     const segments: NarrationSegment[] = [];
-    let currentTime = 0;
 
+    // First pass: collect panels with valid timestamps.
+    // A timestamp is valid only if start < end AND the segment doesn't
+    // massively overlap others (we detect this via total-duration sanity check).
+    const timedPanels: { start: number | null; end: number | null }[] = [];
+    const untimedIndices: number[] = [];
+    for (let i = 0; i < slides.length; i++) {
+      const panel = allPanels.find((p) => p.id === slides[i]!.panelId);
+      const start = panel?.startSec;
+      const end = panel?.endSec;
+      if (start != null && end != null && end > start) {
+        timedPanels.push({ start, end });
+      } else {
+        untimedIndices.push(i);
+        timedPanels.push({ start: null, end: null });
+      }
+    }
+
+    // Sanity check: if the total timed duration exceeds the audio duration,
+    // the timestamps are broken (overlapping matches from embedding search).
+    // Fall back to even distribution across ALL slides.
+    const timedDuration = timedPanels
+      .filter((t) => t.start !== null)
+      .reduce((sum, t) => sum + (t.end! - t.start!), 0);
+    const timestampsValid = timedDuration <= audioDuration * 1.1;
+
+    let perSlideDuration: number;
+    if (!timestampsValid || untimedIndices.length === slides.length) {
+      // Timestamps are broken or entirely absent — distribute evenly.
+      log.warn(
+        `Timestamps ${timestampsValid ? 'absent' : `invalid (timed sum ${timedDuration.toFixed(0)}s > audio ${audioDuration.toFixed(0)}s)`}, ` +
+        `distributing ${audioDuration.toFixed(0)}s evenly across ${slides.length} slides`,
+      );
+      perSlideDuration = audioDuration / slides.length;
+      for (let i = 0; i < slides.length; i++) {
+        timedPanels[i] = { start: null, end: null };
+      }
+      untimedIndices.length = 0;
+      for (let i = 0; i < slides.length; i++) untimedIndices.push(i);
+    }
+
+    // Cap each segment to prevent any single slide from dominating.
+    // Max 3x the even-split duration.
+    const maxSegmentDur = (audioDuration / slides.length) * 3;
+
+    // Calculate remaining time for untimed panels after timed ones (capped).
+    const cappedTimedDuration = timedPanels
+      .filter((t) => t.start !== null)
+      .reduce((sum, t) => sum + Math.min(t.end! - t.start!, maxSegmentDur), 0);
+    const remainingDuration = audioDuration - cappedTimedDuration;
+    const perUntimedDuration = untimedIndices.length > 0
+      ? Math.max(2, remainingDuration / untimedIndices.length)
+      : 0;
+
+    // Second pass: build segments with actual timestamps
+    let untimedIdx = 0;
     for (let i = 0; i < slides.length; i++) {
       const slide = slides[i]!;
-      // Use panelId as both panelId and pageId — each panel is its own "page"
       const slideId = `slide-${i}`;
+      const timed = timedPanels[i]!;
+      let startSec: number;
+      let endSec: number;
+      if (timed.start !== null && timed.end !== null) {
+        // Cap the duration to prevent domination
+        const dur = Math.min(timed.end - timed.start, maxSegmentDur);
+        startSec = timed.start;
+        endSec = timed.start + dur;
+      } else {
+        // Distribute untimed panels in the gaps
+        startSec = i === 0 ? 0 : (timedPanels[i - 1]?.end ?? 0);
+        endSec = startSec + perUntimedDuration;
+        untimedIdx++;
+      }
       segments.push({
         panelId: slide.panelId,
         pageId: slideId,
-        startSec: currentTime,
-        endSec: currentTime + perSlideDuration,
+        startSec,
+        endSec,
         motion: 'ken-burns',
         motionParams: { zoomStart: 1.0, zoomEnd: 1.15, panX: 0, panY: 0 },
         text: `Panel ${i + 1}`,
       });
-      currentTime += perSlideDuration;
     }
 
     const timeline: NarrationTimeline = {

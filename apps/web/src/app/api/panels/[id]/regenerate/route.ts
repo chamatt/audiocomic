@@ -4,6 +4,7 @@ import { writeAsset, readAsset } from "@/lib/storage";
 import { logger } from "@audiocomic/shared";
 import { getEnv, uuid, nowIso } from "@audiocomic/shared";
 import { createRenderer } from "@audiocomic/renderers";
+import { optimizePanelPrompt, resolveLanguageModel, type LLMProvider, type OptimizePanelPromptInput } from "@audiocomic/ai";
 import type { PanelRenderRequest } from "@audiocomic/domain";
 
 const log = logger.scoped("api:panel-regen");
@@ -35,9 +36,98 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const repo = await getRepo();
-    const panel = await repo.panelSpecs.getById(panelId);
+    let panel = await repo.panelSpecs.getById(panelId);
     if (!panel) {
       return Response.json({ error: "Panel not found" }, { status: 404 });
+    }
+
+    // ── LLM prompt optimization ──
+    // If the panel's prompt is stale (edited characters/description/camera, or
+    // never optimized), re-optimize via the project's LLM before rendering.
+    // The optimized prompt is cached on the panel (promptStale = false) so
+    // repeated regenerates don't re-run the LLM.
+    if (panel.promptStale) {
+      // Capture the narrowed non-null panel for reads inside this block.
+      // `let panel` is widened back to `PanelSpec | null` after awaits.
+      const p = panel;
+      try {
+        const env = getEnv();
+        const project = await repo.projects.getById(p.projectId);
+        const provider = (project?.llmProvider ?? env.LLM_PROVIDER) as LLMProvider | undefined;
+        const modelName = project?.llmModel ?? env.DEFAULT_LLM_MODEL;
+
+        if (provider && modelName) {
+          const model = resolveLanguageModel(provider, modelName, env);
+
+          const [allSections, allCharacters, allBibles] = await Promise.all([
+            repo.storySections.getByProjectId(p.projectId),
+            repo.characterProfiles.getByProjectId(p.projectId),
+            repo.worldBibles.getByProjectId(p.projectId),
+          ]);
+          const section = allSections.find((s) => s.id === p.storySectionId);
+          const worldBible = allBibles[0];
+          const charById = new Map(allCharacters.map((c) => [c.id, c]));
+
+          // Aspect ratio from bbox (same computation as composePanelPrompt).
+          const PAGE_W = 800, PAGE_H = 1131;
+          const aspect = (p.bbox.w * PAGE_W) / (p.bbox.h * PAGE_H);
+          const aspectRatio =
+            aspect > 1.3 ? `wide horizontal panel, aspect ratio ${aspect.toFixed(1)}:1`
+            : aspect < 0.77 ? `tall vertical panel, aspect ratio 1:${(1 / aspect).toFixed(1)}`
+            : "roughly square panel, aspect ratio 1:1";
+
+          const optimizeInput: OptimizePanelPromptInput = {
+            panelDescription: p.description,
+            cameraFraming: p.cameraFraming ?? section?.cameraHint,
+            emotionalTone: section?.emotionalTone,
+            characters: p.characters
+              .map((slot) => {
+                const profile = charById.get(slot.characterId);
+                if (!profile) return null;
+                return {
+                  name: profile.name,
+                  description: profile.description,
+                  pose: slot.pose,
+                  expression: slot.expression,
+                  position: slot.position,
+                };
+              })
+              .filter((c): c is NonNullable<typeof c> => c !== null),
+            dialogueLines: p.dialogueLines.map((d) => ({
+              speaker: d.speaker,
+              text: d.text,
+              type: d.type,
+            })),
+            sceneSummary: section?.summary,
+            sceneObjects: section?.objects,
+            worldSetting: worldBible?.setting,
+            worldArtStyle: worldBible?.artStyle,
+            worldColorPalette: worldBible?.colorPalette,
+            worldArtStyleNegative: worldBible?.artStyleNegative,
+            worldTone: worldBible?.tone,
+            aspectRatio,
+          };
+
+          const optimized = await optimizePanelPrompt(optimizeInput, model);
+          await repo.panelSpecs.patch(panelId, {
+            renderPrompt: optimized.prompt,
+            renderNegativePrompt: optimized.negativePrompt,
+            promptStale: false,
+          });
+          panel = { ...p, renderPrompt: optimized.prompt, renderNegativePrompt: optimized.negativePrompt };
+          log.info(`panel ${panelId} prompt optimized via LLM`, {
+            promptLen: optimized.prompt.length,
+          });
+        } else {
+          log.warn(`panel ${panelId} stale but no LLM provider/model configured — using existing prompt`);
+        }
+      } catch (e) {
+        // Fall back to the existing deterministic baseline prompt.
+        // Panel stays promptStale = true so the next regenerate retries.
+        log.warn(`panel ${panelId} LLM optimization failed — using existing prompt`, {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
     }
 
     if (!panel.renderPrompt) {

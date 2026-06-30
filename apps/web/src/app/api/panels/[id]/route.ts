@@ -4,11 +4,11 @@ import type { PanelSpec } from '@audiocomic/domain';
 
 const log = logger.scoped('api:panel-update');
 
-// Editable fields on a panel
+// Editable fields on a panel.
+// renderPrompt / renderNegativePrompt are NOT editable here — they are
+// LLM-generated and only updated by the optimize step or regenerate route.
 const EDITABLE_FIELDS = [
   'description',
-  'renderPrompt',
-  'renderNegativePrompt',
   'cameraFraming',
   'dialogueLines',
   'characters',
@@ -50,6 +50,12 @@ export async function PATCH(
 
     if (Object.keys(patch).length === 0) {
       return Response.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    // Edits to visual content mark the prompt stale so the LLM optimization
+    // layer re-optimizes on the next regenerate.
+    if ('description' in patch || 'characters' in patch || 'cameraFraming' in patch || 'dialogueLines' in patch) {
+      patch.promptStale = true;
     }
 
     const updated = await repo.panelSpecs.patch(id, patch);

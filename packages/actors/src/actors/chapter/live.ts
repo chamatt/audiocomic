@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { Chapter, ChapterState, type StageProgress } from "./api.ts";
 import type { TranscriptionOptions, TranscriptResult } from "@audiocomic/ai";
+import { backfillBeatCharacters } from "@audiocomic/ai";
 import { PipelineBridge } from "../../lib/pipeline-bridge.ts";
 import { mergeCharacters } from "../../agents/merge.ts";
 import { uuid, nowIso, logger, pageImageKey, letteringKey } from "@audiocomic/shared";
@@ -337,11 +338,21 @@ export const ChapterLive = Chapter.toLayer(
           // Embed each beat's text and search knowledge_embeddings (which have
           // startSec/endSec in metadata from the ingest process) to find the
           // closest matching transcript segment and its time range.
+          //
+          // Monotonic enforcement: beats are processed in narrative order
+          // (scene index → beat index). Each beat's startSec must be >= the
+          // previous beat's startSec. If the embedding match produces a
+          // timestamp that would go backwards, we skip it and leave the beat
+          // untimed — the export route will distribute untimed beats in gaps.
           const embedder = createEmbeddingProvider(bridge.env);
           const { searchKnowledgeBase } = yield* Effect.promise(() => import("@audiocomic/knowledge"));
+          let lastBeatStart = -1;
           for (const section of sections) {
             if (section.level !== "beat") continue;
-            if (section.startSec != null) continue;
+            if (section.startSec != null) {
+              lastBeatStart = Math.max(lastBeatStart, section.startSec);
+              continue;
+            }
             const queryText = section.text ?? section.summary;
             if (!queryText) continue;
             const results = yield* Effect.tryPromise({
@@ -350,8 +361,17 @@ export const ChapterLive = Chapter.toLayer(
             }).pipe(Effect.catch(() => Effect.succeed([] as { text: string; score: number; metadata: Record<string, unknown> }[])));
             if (results.length > 0) {
               const meta = results[0]!.metadata;
-              if (meta.startSec != null) section.startSec = meta.startSec as number;
-              if (meta.endSec != null) section.endSec = meta.endSec as number;
+              const start = meta.startSec as number | undefined;
+              const end = meta.endSec as number | undefined;
+              // Only accept if monotonically increasing and not inverted
+              if (
+                start != null && end != null && end > start &&
+                start >= lastBeatStart
+              ) {
+                section.startSec = start;
+                section.endSec = end;
+                lastBeatStart = start;
+              }
             }
           }
 
@@ -425,11 +445,12 @@ export const ChapterLive = Chapter.toLayer(
                 },
                 zIndex: panelIdx,
                 description: beat.summary,
-                characters: beat.charactersPresent.map((charId) => ({ characterId: charId })),
+                characters: backfillBeatCharacters(beat.summary, beat.charactersPresent, characters).map((charId) => ({ characterId: charId })),
                 dialogueLines: [],
                 startSec: beat.startSec,
                 endSec: beat.endSec,
                 qaStatus: "pending",
+                promptStale: true,
               });
             }
 

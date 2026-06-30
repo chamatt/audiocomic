@@ -37,9 +37,9 @@ export async function ingestChapterTranscription(
 
   // Filter to the target chapter. Chunks without a chapterId are excluded —
   // a chapter-scoped ingest must not pull in unattributed transcript text.
-  const chapterChunks: TranscriptChunk[] = allChunks.filter(
-    (c) => c.chapterId === chapterId,
-  );
+  const chapterChunks: TranscriptChunk[] = allChunks
+    .filter((c) => c.chapterId === chapterId)
+    .sort((a, b) => a.index - b.index);
 
   if (chapterChunks.length === 0) {
     return { chunkCount: 0, embeddingCount: 0 };

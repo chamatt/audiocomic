@@ -542,6 +542,7 @@ export class FullPipelineHandler implements JobHandler {
           startSec: beat.startSec,
           endSec: beat.endSec,
           qaStatus: 'pending',
+          promptStale: true,
         };
         pagePanels.push(panel);
         panels.push(panel);

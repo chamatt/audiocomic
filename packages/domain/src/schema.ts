@@ -338,6 +338,7 @@ export const PanelSpec = z.object({
   // QA
   qaStatus: z.enum(["pending", "passed", "failed", "regenerate"]).default("pending"),
   qaNotes: z.string().optional(),
+  promptStale: z.boolean().default(true),
 });
 export type PanelSpec = z.infer<typeof PanelSpec>;
 

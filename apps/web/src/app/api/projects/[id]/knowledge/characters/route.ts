@@ -35,11 +35,80 @@ export async function GET(
       role: c.role,
       description: c.description,
       aliases: c.aliases ?? [],
+      paletteNotes: c.paletteNotes ?? [],
+      negativeConstraints: c.negativeConstraints ?? [],
     }));
     return NextResponse.json({ characters: result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log.error('characters route failed', { projectId, error: msg });
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+// PATCH /api/projects/[id]/knowledge/characters — edit a single character
+// Body: { characterId, name?, description?, role?, aliases? }
+// Editing the description marks all panels referencing this character as
+// prompt-stale so the LLM optimizer re-optimizes on next regenerate.
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: projectId } = await params;
+  try {
+    const body = await req.json();
+    const { characterId, ...fields } = body as {
+      characterId?: string;
+      name?: string;
+      description?: string;
+      role?: string;
+      aliases?: string[];
+    };
+
+    if (!characterId) {
+      return NextResponse.json({ error: 'characterId is required' }, { status: 400 });
+    }
+
+    const repo = await getRepo();
+    const existing = await repo.characterProfiles.getById(characterId);
+    if (!existing || existing.projectId !== projectId) {
+      return NextResponse.json({ error: 'Character not found' }, { status: 404 });
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (typeof fields.name === 'string' && fields.name.trim()) patch.name = fields.name.trim();
+    if (typeof fields.description === 'string') patch.description = fields.description;
+    if (typeof fields.role === 'string') patch.role = fields.role;
+    if (Array.isArray(fields.aliases)) patch.aliases = fields.aliases;
+
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    const updated = await repo.characterProfiles.patch(characterId, patch);
+
+    // If description changed, mark all panels referencing this character stale.
+    if ('description' in patch && patch.description !== existing.description) {
+      try {
+        const allPanels = await repo.panelSpecs.getByProjectId(projectId);
+        await Promise.all(
+          allPanels
+            .filter((p) => p.characters.some((c) => c.characterId === characterId))
+            .map((p) => repo.panelSpecs.patch(p.id, { promptStale: true })),
+        );
+      } catch (e) {
+        log.warn('Failed to mark panels stale after character edit', {
+          characterId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    log.info('Character edited', { projectId, characterId, fields: Object.keys(patch) });
+    return NextResponse.json({ ok: true, character: updated });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log.error('character PATCH failed', { projectId, error: msg });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

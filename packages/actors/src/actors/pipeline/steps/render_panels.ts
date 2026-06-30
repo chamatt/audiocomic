@@ -11,7 +11,7 @@ function hasImageData(v: PanelRenderResult): v is PanelRenderResult & { imageDat
 
 export const RenderPanelsStep: StepExecutor = {
 	type: "render_panels",
-	inputs: ["plan_chapters"],
+	inputs: ["optimize_prompts"],
 	outputs: ["render_panels"],
 	execute: (ctx: StepContext) =>
 		Effect.gen(function* () {

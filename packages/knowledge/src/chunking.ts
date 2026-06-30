@@ -96,13 +96,23 @@ export function chunkTranscription(
       const firstChunk = chunks[firstSrc]!;
       const lastChunk = chunks[lastSrc]!;
 
+      // Ensure startSec <= endSec. With overlap, a segment's first source
+      // chunk can have a later start than the last source chunk's end if
+      // the input is not sorted. Even with sorted input, clamp to be safe.
+      const rawStart = firstChunk.start;
+      const rawEnd = lastChunk.end;
+      const startSec = rawStart != null && rawEnd != null && rawStart > rawEnd
+        ? rawEnd
+        : rawStart;
+      const endSec = rawEnd;
+
       segments.push({
         text,
         metadata: {
           chapterId,
           chunkIndex: segIndex,
-          startSec: firstChunk.start,
-          endSec: lastChunk.end,
+          startSec,
+          endSec,
           // Speaker is only meaningful when the whole segment came from one
           // speaker; otherwise omit it rather than pick arbitrarily.
           speaker: firstSrc === lastSrc ? firstChunk.speaker : undefined,

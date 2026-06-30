@@ -36,6 +36,13 @@
       "when": 1733000004000,
       "tag": "0005_llm_config",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1733000005000,
+      "tag": "0007_prompt_stale",
+      "breakpoints": true
     }
   ]
 }

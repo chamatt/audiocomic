@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { uuid } from "@audiocomic/shared";
-import { buildSectionMemory } from "@audiocomic/ai";
+import { buildSectionMemory, backfillBeatCharacters } from "@audiocomic/ai";
 import { createEmbeddingProvider } from "@audiocomic/knowledge";
 import { mergeCharacters } from "../../../agents/merge.ts";
 import type {
@@ -251,11 +251,12 @@ export const PlanChaptersStep: StepExecutor = {
               zIndex: panelIdx,
               description: beat.summary,
               cameraFraming: beat.cameraHint,
-              characters: beat.charactersPresent.map((charId) => ({ characterId: charId })),
+              characters: backfillBeatCharacters(beat.summary, beat.charactersPresent, characters).map((charId) => ({ characterId: charId })),
               dialogueLines: [],
               startSec: beat.startSec,
               endSec: beat.endSec,
               qaStatus: "pending",
+              promptStale: true,
             });
           }
 

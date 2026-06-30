@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { uuid } from "@audiocomic/shared";
-import { composePanelPrompt, composeNegativePrompt } from "@audiocomic/ai";
+import { composePanelPrompt, composeNegativePrompt, backfillBeatCharacters } from "@audiocomic/ai";
 import type { StorySection, PageSpec, PanelSpec, CharacterProfile, WorldBible } from "@audiocomic/domain";
 
 /**
@@ -192,7 +192,8 @@ export const LayoutPanelsStep: StepExecutor = {
             const panelId = uuid();
             panelIds.push(panelId);
 
-            const panelCharacters = beat.charactersPresent
+            const backfilledIds = backfillBeatCharacters(beat.summary, beat.charactersPresent, characters);
+            const panelCharacters = backfilledIds
               .map((charId) => charById.get(charId))
               .filter((c): c is CharacterProfile => c !== undefined);
 
@@ -225,13 +226,14 @@ export const LayoutPanelsStep: StepExecutor = {
               zIndex: panelIdx,
               description: beat.summary,
               cameraFraming: beat.cameraHint,
-              characters: beat.charactersPresent.map((charId) => ({ characterId: charId })),
+              characters: backfillBeatCharacters(beat.summary, beat.charactersPresent, characters).map((charId) => ({ characterId: charId })),
               dialogueLines: [],
               startSec: beat.startSec,
               endSec: beat.endSec,
               renderPrompt: prompt,
               renderNegativePrompt: negativePrompt,
               qaStatus: "pending",
+              promptStale: true,
             });
           }
 

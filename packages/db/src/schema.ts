@@ -296,6 +296,7 @@ export const panelSpecs = pgTable(
     renderResultId: uuid("render_result_id"),
     qaStatus: text("qa_status").notNull().default("pending"),
     qaNotes: text("qa_notes"),
+    promptStale: boolean("prompt_stale").notNull().default(true),
   },
   (t) => [
     index("panel_specs_project_id_idx").on(t.projectId),

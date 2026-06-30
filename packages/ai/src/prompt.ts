@@ -276,3 +276,86 @@ export function composeNegativePrompt(
 
   return negatives.join(", ");
 }
+
+// ============================================================================
+// Character resolution from text — safety net for incomplete charactersPresent
+// ============================================================================
+
+/**
+ * Build a lookup map from lowercased name/alias → character ID.
+ * Used to scan text for character mentions and resolve them to IDs.
+ */
+export function buildCharacterNameIndex(
+  characters: CharacterProfile[],
+): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const c of characters) {
+    index.set(c.name.toLowerCase(), c.id);
+    for (const alias of c.aliases ?? []) {
+      index.set(alias.toLowerCase(), c.id);
+    }
+  }
+  return index;
+}
+
+/**
+ * Scan a text string for mentions of known characters (by name or alias)
+ * and return the IDs of all characters found. This is a safety net for
+ * when the LLM beat decomposer omits characters from `charactersPresent`
+ * even though they appear in the beat summary.
+ *
+ * Uses word-boundary matching to avoid false positives (e.g. "Carl" won't
+ * match inside "Carlyle"). Matches the longest alias first so "Princess
+ * Donut" wins over "Donut" if both are aliases of the same character.
+ */
+export function resolveCharactersFromText(
+  text: string,
+  nameIndex: Map<string, string>,
+): string[] {
+  if (!text || nameIndex.size === 0) return [];
+  const lower = text.toLowerCase();
+  const found = new Set<string>();
+
+  // Sort by length descending so multi-word aliases match before their
+  // substrings (e.g. "Princess Donut" before "Donut").
+  const names = Array.from(nameIndex.keys()).sort((a, b) => b.length - a.length);
+
+  for (const name of names) {
+    // Word-boundary regex — matches "Carl" but not inside "Carlyle".
+    // For names starting/ending with non-word chars (e.g. "the crawler"),
+    // the \b boundary still works at the word-char edges.
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\b${escaped}\\b`, "i");
+    if (re.test(lower)) {
+      const id = nameIndex.get(name);
+      if (id) found.add(id);
+    }
+  }
+
+ return Array.from(found);
+}
+
+/**
+ * Given a beat's charactersPresent and its summary text, plus the project's
+ * character roster, return the complete list of character IDs that should be
+ * assigned to the beat — including any mentioned in the summary but missing
+ * from charactersPresent.
+ */
+export function backfillBeatCharacters(
+  summary: string,
+  declaredPresent: string[],
+  characters: CharacterProfile[],
+): string[] {
+  const nameIndex = buildCharacterNameIndex(characters);
+  const detected = resolveCharactersFromText(summary, nameIndex);
+  const declared = new Set(declaredPresent);
+  // Merge: keep declared order, append any newly detected
+  const result = [...declaredPresent];
+  for (const id of detected) {
+    if (!declared.has(id)) {
+      result.push(id);
+      declared.add(id);
+    }
+  }
+  return result;
+}

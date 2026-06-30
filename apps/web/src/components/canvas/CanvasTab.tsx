@@ -882,7 +882,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
 
       {/* ── Floating UI: Knowledge panel (right side, below toolbar) ── */}
       {showKnowledge && (
-        <div className="pointer-events-auto absolute right-4 top-36 z-20 w-72 rounded-lg border bg-background/95 shadow-md backdrop-blur">
+        <div className="pointer-events-auto absolute right-4 top-36 z-20 w-[420px] max-w-[calc(100vw-2rem)] rounded-lg border bg-background/95 shadow-lg backdrop-blur">
           <div className="flex items-center justify-between border-b p-2">
             <span className="text-xs font-medium">Knowledge Base</span>
             <button
@@ -892,7 +892,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
               ✕
             </button>
           </div>
-          <div className="max-h-[400px] overflow-auto">
+          <div className="max-h-[calc(100vh-12rem)] overflow-auto">
             <KnowledgePanel projectId={projectId} />
           </div>
         </div>

@@ -24,6 +24,8 @@ export async function GET(
       genre: w.genre ?? [],
       tone: w.tone ?? '',
       artStyle: w.artStyle ?? '',
+      colorPalette: w.colorPalette ?? [],
+      artStyleNegative: w.artStyleNegative ?? [],
     }));
 
     const pages = knowledgePages.map((p) => ({

@@ -92,15 +92,37 @@ export const ExportMotionStep: StepExecutor = {
 			}
 
 			// Build the narration timeline: one ken-burns segment per panel,
-			// ordered by page then panel. Timing falls back to a running clock
-			// when panel.startSec/endSec are absent (5s per panel).
+			// ordered by page then panel. Timing falls back to even distribution
+			// when panel.startSec/endSec are absent or broken (inverted).
+			const validPanels = allPanels.filter(
+				(p) => p.startSec != null && p.endSec != null && p.endSec > p.startSec,
+			);
+			const useTimestamps = validPanels.length > 0;
+			const evenDur = useTimestamps
+				? 0 // unused when timestamps are valid
+				: 5; // 5s per panel when no valid timestamps
+
 			const segments: NarrationSegment[] = [];
 			let currentTime = 0;
 			for (const page of pages) {
-				const pagePanels = allPanels.filter((p) => p.pageId === page.id);
+				const pagePanels = allPanels
+					.filter((p) => p.pageId === page.id)
+					.sort((a, b) => a.index - b.index);
 				for (const panel of pagePanels) {
-					const start = panel.startSec ?? currentTime;
-					const end = panel.endSec ?? start + 5;
+					let start: number;
+					let end: number;
+					if (
+						useTimestamps &&
+						panel.startSec != null &&
+						panel.endSec != null &&
+						panel.endSec > panel.startSec
+					) {
+						start = panel.startSec;
+						end = panel.endSec;
+					} else {
+						start = currentTime;
+						end = start + evenDur;
+					}
 					segments.push({
 						panelId: panel.id,
 						pageId: page.id,

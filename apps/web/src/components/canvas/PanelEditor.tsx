@@ -125,26 +125,26 @@ export function PanelEditor({
 
           <Separator />
 
-          {/* Render Prompt */}
-          <FieldSection title="Render Prompt">
-            <DebouncedTextarea
-              key={`prompt-${panel.id}`}
+          {/* Render Prompt — LLM-generated, display only */}
+          <FieldSection title="Render Prompt (LLM-generated)">
+            <textarea
               value={panel.renderPrompt ?? ""}
-              onChange={(v) => onPatch(panel.id, { renderPrompt: v })}
-              placeholder="Prompt sent to image generator"
+              readOnly
+              disabled
+              placeholder="No prompt yet — click Regenerate to generate"
               rows={4}
-              className="font-mono text-xs"
+              className="w-full resize-none rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground"
             />
           </FieldSection>
 
-          <FieldSection title="Negative Prompt">
-            <DebouncedTextarea
-              key={`neg-${panel.id}`}
+          <FieldSection title="Negative Prompt (LLM-generated)">
+            <textarea
               value={panel.renderNegativePrompt ?? ""}
-              onChange={(v) => onPatch(panel.id, { renderNegativePrompt: v })}
-              placeholder="Things to avoid"
+              readOnly
+              disabled
+              placeholder="No negative prompt yet"
               rows={2}
-              className="font-mono text-xs"
+              className="w-full resize-none rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground"
             />
           </FieldSection>
 

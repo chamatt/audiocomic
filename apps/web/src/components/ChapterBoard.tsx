@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Upload, Loader2 } from 'lucide-react';
+import { Plus, Upload, Loader2, Library } from 'lucide-react';
 import { ChapterUploadModal } from '@/components/ChapterUploadModal';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,22 @@ interface BoardChapter {
   sourceAssetId?: string;
 }
 
+
+/** Chapter from the library (other projects) available for import */
+interface LibraryChapter {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  index: number;
+  stage: string;
+  transcriptionStatus: string;
+  durationSec?: number;
+  sectionCount: number;
+  pageCount: number;
+  panelCount: number;
+  renderedPanelCount: number;
+}
 interface ChapterBoardProps {
   projectId: string;
   onReview: (chapterId: string) => void;
@@ -187,6 +203,10 @@ export function ChapterBoard({ projectId, onReview }: ChapterBoardProps): JSX.El
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [importOpen, setImportOpen] = useState(false);
+  const [libraryChapters, setLibraryChapters] = useState<LibraryChapter[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [importing, setImporting] = useState<string | null>(null);
   const refreshChapters = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}/chapters`);
@@ -270,6 +290,45 @@ export function ChapterBoard({ projectId, onReview }: ChapterBoardProps): JSX.El
     }
   };
 
+  const openImportDialog = async () => {
+    setImportOpen(true);
+    setLibraryLoading(true);
+    try {
+      const res = await fetch('/api/library/chapters');
+      if (res.ok) {
+        const data = await res.json();
+        // Filter out chapters from this project
+        const filtered = (data.chapters as LibraryChapter[]).filter(
+          (c) => c.projectId !== projectId,
+        );
+        setLibraryChapters(filtered);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const onImportChapter = async (sourceChapterId: string) => {
+    setImporting(sourceChapterId);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/import-chapter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceChapterId }),
+      });
+      if (res.ok) {
+        setImportOpen(false);
+        await refreshChapters();
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setImporting(null);
+    }
+  };
+
   const onDrop = (e: ReactDragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -315,10 +374,16 @@ export function ChapterBoard({ projectId, onReview }: ChapterBoardProps): JSX.El
             {chapters.length} chapter{chapters.length === 1 ? '' : 's'}
           </p>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Add Chapter
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={openImportDialog}>
+            <Library className="h-3.5 w-3.5 mr-1.5" />
+            Import from Library
+          </Button>
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Add Chapter
+          </Button>
+        </div>
       </div>
 
       {/* Batch drag-and-drop upload zone */}
@@ -447,6 +512,75 @@ export function ChapterBoard({ projectId, onReview }: ChapterBoardProps): JSX.El
           onUploaded={refreshChapters}
         />
       )}
+
+      {/* Import from library dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Import Chapter from Library</DialogTitle>
+            <DialogDescription>
+              Import a chapter from another project — copies audio, transcript, KB (characters, world bible, story sections), and plans (pages, panels). No re-transcription needed. Render results are not copied.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto py-2">
+            {libraryLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : libraryChapters.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-12">
+                No chapters available from other projects.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {libraryChapters.map((ch) => (
+                  <div
+                    key={ch.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex flex-col gap-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{ch.title}</span>
+                        <Badge variant="outline" className="text-xs shrink-0">
+                          {ch.projectName}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{ch.sectionCount} sections</span>
+                        <span>{ch.pageCount} pages</span>
+                        <span>{ch.panelCount} panels</span>
+                        {ch.renderedPanelCount > 0 && (
+                          <span>{ch.renderedPanelCount} rendered</span>
+                        )}
+                        {ch.durationSec && (
+                          <span>{Math.round(ch.durationSec / 60)}min</span>
+                        )}
+                        <Badge
+                          variant={ch.stage === 'ready_for_review' || ch.stage === 'done' ? 'success' : 'warning'}
+                          className="text-xs"
+                        >
+                          {ch.stage}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => onImportChapter(ch.id)}
+                      disabled={importing !== null}
+                    >
+                      {importing === ch.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        'Import'
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

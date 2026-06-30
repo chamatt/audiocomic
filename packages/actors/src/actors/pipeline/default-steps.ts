@@ -1,7 +1,7 @@
 import type { StepDefinition, StepState } from "../../lib/schemas.ts";
 
 /**
- * The 10 default pipeline steps with their DAG dependencies.
+ * The 11 default pipeline steps with their DAG dependencies.
  *
  * Flow:
  *   ingest_knowledge (project-level: embeddings + wiki + character states)
@@ -9,6 +9,7 @@ import type { StepDefinition, StepState } from "../../lib/schemas.ts";
  *   → generate_refs (project-level: face reference images for each character)
  *   → plan_chapters (per-chapter: segment → plan_story → plan_pages → compose_prompts)
  *   → layout_panels (per-chapter: re-lays-out pages/panels from beats with full-width layout)
+ *   → optimize_prompts (LLM-powered text-to-image prompt optimization for stale panels)
  *   → 🟡 AUTO-PAUSE (review on canvas, render individual panels or all)
  *   → render_panels (reads from DB, skips already-rendered panels)
  *
@@ -21,7 +22,8 @@ export const DEFAULT_STEP_DEFINITIONS: StepDefinition[] = [
 	{ id: "generate_refs", name: "Generate Refs", type: "generate_refs", config: {}, dependsOn: ["build_bibles"] },
 	{ id: "plan_chapters", name: "Plan Chapters", type: "plan_chapters", config: {}, dependsOn: ["generate_refs"], pauseAfter: true },
 	{ id: "layout_panels", name: "Layout Panels", type: "layout_panels", config: {}, dependsOn: ["plan_chapters"] },
-	{ id: "render_panels", name: "Render Panels", type: "render_panels", config: {}, dependsOn: ["layout_panels"] },
+	{ id: "optimize_prompts", name: "Optimize Prompts", type: "optimize_prompts", config: {}, dependsOn: ["layout_panels"] },
+	{ id: "render_panels", name: "Render Panels", type: "render_panels", config: {}, dependsOn: ["optimize_prompts"] },
 	{ id: "panel_qa", name: "Panel QA", type: "panel_qa", config: {}, dependsOn: ["render_panels"] },
 	{ id: "compose_pages", name: "Compose Pages", type: "compose_pages", config: {}, dependsOn: ["render_panels"] },
 	{ id: "lettering", name: "Lettering", type: "lettering", config: {}, dependsOn: ["compose_pages"] },

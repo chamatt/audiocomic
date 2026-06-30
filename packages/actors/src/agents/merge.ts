@@ -31,6 +31,32 @@ function normaliseName(name: string): string {
 }
 
 /**
+ * Mark all panels referencing a character as prompt-stale, so the LLM
+ * prompt-optimization layer re-optimizes them on the next regenerate.
+ * Called after a character's description/aliases change (merge or cleanup).
+ */
+async function markPanelsStaleForCharacter(
+  repo: Repository,
+  projectId: string,
+  characterId: string,
+): Promise<void> {
+  try {
+    const allPanels = await repo.panelSpecs.getByProjectId(projectId);
+    await Promise.all(
+      allPanels
+        .filter((p) => p.characters.some((c) => c.characterId === characterId))
+        .map((p) => repo.panelSpecs.patch(p.id, { promptStale: true })),
+    );
+  } catch (e) {
+    log.warn("Failed to mark panels stale for character", {
+      projectId,
+      characterId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
  * Find an existing character that matches by name or alias (case-insensitive).
  */
 function findExisting(
@@ -177,6 +203,8 @@ export async function mergeCharacters(
             error: e instanceof Error ? e.message : String(e),
           });
         }
+        // Character info changed — panels referencing it need prompt re-optimization.
+        await markPanelsStaleForCharacter(repo, projectId, match.id);
       }
 
       // Use the merged version for downstream prompt composition
@@ -313,6 +341,10 @@ export async function mergeTwoCharacters(
     panelsUpdated++;
   }
 
+  // Target character's description/aliases changed and source references were
+  // remapped to target — all panels now referencing target need re-optimization.
+  await markPanelsStaleForCharacter(repo, projectId, targetId);
+
   // Remap CharacterState.characterId
   const states = await repo.characterStates.getByProjectId(projectId);
   let statesUpdated = 0;
@@ -360,6 +392,9 @@ export async function cleanupCharacterDescription(
   }
 
   await repo.characterProfiles.patch(characterId, { description: cleaned });
+
+  // Description changed — panels referencing this character need re-optimization.
+  await markPanelsStaleForCharacter(repo, char.projectId, characterId);
   log.info("Description cleaned", { characterId, name: char.name });
   return { cleaned: true, oldLength: char.description.length, newLength: cleaned.length };
 }
