@@ -4,7 +4,7 @@ import { writeAsset, readAsset } from "@/lib/storage";
 import { logger } from "@audiocomic/shared";
 import { getEnv, uuid, nowIso } from "@audiocomic/shared";
 import { createRenderer } from "@audiocomic/renderers";
-import { optimizePanelPrompt, resolveLanguageModel, type LLMProvider, type OptimizePanelPromptInput } from "@audiocomic/ai";
+import { optimizePanelPrompt, resolveLanguageModel, composeNegativePrompt, type LLMProvider, type OptimizePanelPromptInput } from "@audiocomic/ai";
 import type { PanelRenderRequest } from "@audiocomic/domain";
 
 const log = logger.scoped("api:panel-regen");
@@ -110,12 +110,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           };
 
           const optimized = await optimizePanelPrompt(optimizeInput, model);
+          const negativePrompt = composeNegativePrompt(p, allCharacters, worldBible!);
           await repo.panelSpecs.patch(panelId, {
             renderPrompt: optimized.prompt,
-            renderNegativePrompt: optimized.negativePrompt,
+            renderNegativePrompt: negativePrompt,
             promptStale: false,
           });
-          panel = { ...p, renderPrompt: optimized.prompt, renderNegativePrompt: optimized.negativePrompt };
+          panel = { ...p, renderPrompt: optimized.prompt, renderNegativePrompt: negativePrompt };
           log.info(`panel ${panelId} prompt optimized via LLM`, {
             promptLen: optimized.prompt.length,
           });

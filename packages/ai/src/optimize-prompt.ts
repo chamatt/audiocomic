@@ -30,11 +30,8 @@ Rules:
 10. If worldColorPalette tags are provided, include them in the style section (e.g. "warm tones, muted colors, high contrast").
 11. If emotionalTone is provided, translate it into concrete visual cues (e.g. "tense" → "tight body language, narrowed eyes, sharp shadows"; "joyful" → "bright eyes, wide smiles, warm lighting"). This is the per-scene mood — it overrides the global tone for this panel.
 12. If worldTone is provided and emotionalTone is not, use worldTone as the mood cue instead.
-13. On the SECOND line, output the negative prompt prefixed with "NEGATIVE:". Include: the world's artStyleNegative tags (if any), "no multi-panel page, no panel grid, no split frame, bad anatomy, deformed hands, extra digits, blurry, jpeg artifacts, watermark". Do NOT include "no text" or "no gibberish text" — the image must render legible speech-bubble lettering.
-
-Output format (exactly two lines, nothing else):
-<positive prompt>
-NEGATIVE: <negative prompt>`;
+Output format (exactly one line, nothing else):
+<positive prompt>`;
 
 export interface OptimizePanelPromptInput {
   panelDescription: string;
@@ -61,7 +58,6 @@ export interface OptimizePanelPromptInput {
 
 export interface OptimizePanelPromptResult {
   prompt: string;
-  negativePrompt: string;
 }
 
 /**
@@ -119,16 +115,7 @@ function fallbackPrompt(input: OptimizePanelPromptInput): OptimizePanelPromptRes
   }
 
   const prompt = parts.join(", ") + ".";
-  const negativeBase = [
-    "no multi-panel page", "no panel grid", "no split frame",
-    "bad anatomy", "deformed hands", "extra digits",
-    "blurry", "jpeg artifacts", "watermark",
-  ];
-  if (input.worldArtStyleNegative && input.worldArtStyleNegative.length > 0) {
-    negativeBase.push(...input.worldArtStyleNegative);
-  }
-  const negativePrompt = negativeBase.join(", ");
-  return { prompt, negativePrompt };
+  return { prompt };
 }
 
 /**
@@ -154,31 +141,21 @@ export async function optimizePanelPrompt(
     const text = result.text.trim();
     const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 
-    let prompt = "";
-    let negativePrompt = "";
-    if (lines.length >= 2) {
-      prompt = lines[0]!;
-      const negLine = lines.find((l) => /^NEGATIVE:/i.test(l));
-      negativePrompt = negLine ? negLine.replace(/^NEGATIVE:\s*/i, "").trim() : lines[1]!;
-    } else if (lines.length === 1) {
-      prompt = lines[0]!;
-    }
+    // The LLM outputs only the positive prompt (one line). The negative
+    // prompt is computed deterministically by the caller via
+    // composeNegativePrompt — it is not LLM-generated.
+    const prompt = lines[0] ?? "";
 
     if (prompt.length === 0) {
       log.warn("LLM returned empty prompt, using fallback");
       return fallbackPrompt(input);
     }
-    if (negativePrompt.length === 0) {
-      negativePrompt =
-        "no multi-panel page, no panel grid, no split frame, bad anatomy, deformed hands, extra digits, blurry, jpeg artifacts, watermark";
-    }
 
     log.info("Panel prompt optimized", {
       promptLen: prompt.length,
-      negativeLen: negativePrompt.length,
       charCount: input.characters.length,
     });
-    return { prompt, negativePrompt };
+    return { prompt };
   } catch (e) {
     log.warn("Panel prompt optimization failed, using fallback", {
       error: e instanceof Error ? e.message : String(e),
