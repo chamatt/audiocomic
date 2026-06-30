@@ -97,6 +97,8 @@ interface EntityBinding<
   schema: ZodTypeAny;
   /** Column object used to filter by project, or undefined for `projects`. */
   projectColumn?: PgColumn<any>;
+  /** Optional ORDER BY columns for getByProjectId. Pass column objects from the table. */
+  orderBy?: PgColumn<any>[];
   /** Convert a validated domain object into a Drizzle insert payload. */
   toRow: (value: TDomain) => InsertPayload<TTable>;
   /** Convert a database row back into a domain object. */
@@ -123,7 +125,7 @@ function makeEntityRepo<
   db: Db,
   binding: EntityBinding<TTable, TDomain>,
 ): EntityRepo<TDomain, Row<TTable>> {
-  const { table, schema: zodSchema, projectColumn, toRow, fromRow } = binding;
+  const { table, schema: zodSchema, projectColumn, orderBy, toRow, fromRow } = binding;
 
   return {
     async create(input: unknown): Promise<TDomain> {
@@ -142,10 +144,14 @@ function makeEntityRepo<
       if (!projectColumn) {
         throw new Error(`Entity has no project column`);
       }
-      const rows = (await db
+      let query = db
         .select()
         .from(table)
-        .where(eq(projectColumn as never, projectId))) as Row<TTable>[];
+        .where(eq(projectColumn as never, projectId)) as any;
+      if (orderBy && orderBy.length > 0) {
+        query = query.orderBy(...orderBy);
+      }
+      const rows = (await query) as Row<TTable>[];
       return rows.map(fromRow);
     },
 
@@ -307,6 +313,7 @@ export function createRepository(db: Db): Repository {
     table: schema.storySections,
     schema: StorySectionSchema,
     projectColumn: schema.storySections.projectId,
+    orderBy: [schema.storySections.level, schema.storySections.index],
     toRow: (v) => v as unknown as InsertPayload<typeof schema.storySections>,
     fromRow: (r) => toDomain(r) as unknown as StorySectionType,
   });
@@ -347,6 +354,7 @@ export function createRepository(db: Db): Repository {
     table: schema.pageSpecs,
     schema: PageSpecSchema,
     projectColumn: schema.pageSpecs.projectId,
+    orderBy: [schema.pageSpecs.chapterId, schema.pageSpecs.index],
     toRow: (v) => v as unknown as InsertPayload<typeof schema.pageSpecs>,
     fromRow: (r) => toDomain(r) as unknown as PageSpecType,
   });
@@ -355,6 +363,7 @@ export function createRepository(db: Db): Repository {
     table: schema.panelSpecs,
     schema: PanelSpecSchema,
     projectColumn: schema.panelSpecs.projectId,
+    orderBy: [schema.panelSpecs.pageId, schema.panelSpecs.index],
     toRow: (v) => v as unknown as InsertPayload<typeof schema.panelSpecs>,
     fromRow: (r) => toDomain(r) as unknown as PanelSpecType,
   });

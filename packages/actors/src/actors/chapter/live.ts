@@ -389,6 +389,17 @@ export const ChapterLive = Chapter.toLayer(
             });
           }
           const effectiveBeats = beats.length > 0 ? beats : sections;
+          // Sort beats by parent scene index, then beat index within scene.
+          // The sections array from the planner/merge may not be in narrative order.
+          const sectionById = new Map(sections.map((s) => [s.id, s]));
+          effectiveBeats.sort((a, b) => {
+            const sceneA = a.parentId ? sectionById.get(a.parentId) : undefined;
+            const sceneB = b.parentId ? sectionById.get(b.parentId) : undefined;
+            const sceneIdxA = sceneA?.index ?? 0;
+            const sceneIdxB = sceneB?.index ?? 0;
+            if (sceneIdxA !== sceneIdxB) return sceneIdxA - sceneIdxB;
+            return (a.index ?? 0) - (b.index ?? 0);
+          });
           if (effectiveBeats.length === 0) {
             yield* setStage("failed", {
               current: 0,
