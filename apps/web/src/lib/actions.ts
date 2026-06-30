@@ -64,7 +64,7 @@ export interface ProjectDetailData {
 export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
   const repo = await getRepo();
 
-  const [project, job, sections, characters, worldBibles, pages, exports] = await Promise.all([
+  const [project, job, sectionsRaw, characters, worldBibles, pagesRaw, exports] = await Promise.all([
     repo.projects.getById(id),
     repo.getLatestJobByProject(id),
     repo.storySections.getByProjectId(id),
@@ -75,13 +75,27 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
   ]);
 
   if (!project) throw new Error('Project not found');
+  const env = getEnv();
+  const projectWithDefaults = {
+    ...project,
+    llmProvider: project.llmProvider ?? env.LLM_PROVIDER ?? null,
+    llmModel: project.llmModel ?? env.DEFAULT_LLM_MODEL ?? null,
+  };
 
-  // Load panels + composites for each page
+  // Sort sections by index (within each parent level) so the storyboard
+  // tree renders in narrative order, not DB insertion order.
+  const sections = sectionsRaw.sort((a, b) => a.index - b.index);
+  // Sort pages by index so the storyboard and canvas show them in order.
+  const pages = pagesRaw.sort((a, b) => a.index - b.index);
+
+  // Load panels + composites for each page (panels sorted by index)
   const pagesWithPanels = await Promise.all(
     pages.map(async (page) => {
       const [panels, composites] = await Promise.all([
         repo.panelSpecs.getByProjectId(id).then((all) =>
-          all.filter((p) => p.pageId === page.id),
+          all
+            .filter((p) => p.pageId === page.id)
+            .sort((a, b) => a.index - b.index),
         ),
         repo.pageComposites.getByProjectId(id).then((all) =>
           all.find((c) => c.pageId === page.id),
@@ -98,7 +112,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
   );
 
   return {
-    project,
+    project: projectWithDefaults,
     job,
     pages: pagesWithPanels,
     sections,
@@ -137,6 +151,8 @@ export async function createProjectAction(input: CreateProjectInput): Promise<st
     updatedAt: now,
     providerSettings: defaultProviderSettings(env),
     stages: [],
+    llmProvider: env.LLM_PROVIDER ?? null,
+    llmModel: env.DEFAULT_LLM_MODEL ?? null,
   });
 
   if (input.modality === 'audio' && input.fileName && input.fileDataBase64) {

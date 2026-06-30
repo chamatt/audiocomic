@@ -7,7 +7,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   try {
     const repo = await getRepo();
-    const pages = await repo.pageSpecs.getByProjectId(id);
+    const pages = (await repo.pageSpecs.getByProjectId(id)).sort((a, b) => a.index - b.index);
 
     const pagesWithPanels = await Promise.all(
       pages.map(async (page) => {
