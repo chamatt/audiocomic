@@ -359,3 +359,140 @@ export function backfillBeatCharacters(
   }
   return result;
 }
+
+/**
+ * Extract dialogue lines from a beat's verbatim source text.
+ *
+ * Parses quoted speech with speaker attribution from the transcript text.
+ * Patterns matched:
+ *   "Hello," said Carl          → { speaker: "Carl", text: "Hello,", type: "speech" }
+ *   Carl said, "Hello."         → { speaker: "Carl", text: "Hello.", type: "speech" }
+ *   Carl: "Hello."              → { speaker: "Carl", text: "Hello.", type: "speech" }
+ *   "Hello." (no attribution)   → { speaker: "Narrator", text: "Hello.", type: "narration" }
+ *
+ * If no quoted dialogue is found, the entire text is returned as a single
+ * narration line so the optimizer and export overlay have content to work with.
+ *
+ * @param beatText   - The verbatim source text for this beat
+ * @param characters - Character profiles for name matching (optional)
+ * @returns Array of dialogue lines with speaker, text, and type
+ */
+export function extractDialogueFromBeatText(
+  beatText: string,
+  characters: CharacterProfile[] = [],
+): { speaker: string; text: string; type: "speech" | "thought" | "narration" | "sfx" }[] {
+  const text = beatText.trim();
+  if (text.length === 0) return [];
+
+  // Build a set of known character names + aliases for matching.
+  const nameIndex = buildCharacterNameIndex(characters);
+  const knownNames = new Set<string>();
+  for (const [alias] of nameIndex) {
+    knownNames.add(alias.toLowerCase());
+  }
+
+  const lines: { speaker: string; text: string; type: "speech" | "thought" | "narration" | "sfx" }[] = [];
+
+  // Match quoted dialogue: "..." or '...' or "..." with speaker attribution.
+  // Pattern 1: "quoted text" said Name / "quoted text" Name said / "quoted text," Name replied
+  // Pattern 2: Name said, "quoted text" / Name replied, "quoted text"
+  // Pattern 3: Name: "quoted text"
+  const quotePattern = /[""]([^""]+)[""]|'([^']+)'|"([^"]+)"/g;
+  const matches = [...text.matchAll(quotePattern)];
+
+  if (matches.length === 0) {
+    // No quoted dialogue — treat the whole text as narration.
+    return [{ speaker: "Narrator", text, type: "narration" }];
+  }
+
+  for (const match of matches) {
+    const quoted = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+    if (quoted.length === 0) continue;
+
+    const matchStart = match.index ?? 0;
+    const matchEnd = matchStart + match[0].length;
+
+    // Look for speaker name before the quote (within 60 chars before).
+    const before = text.slice(Math.max(0, matchStart - 60), matchStart);
+    // Look for speaker name after the quote (within 40 chars after).
+    const after = text.slice(matchEnd, matchEnd + 40);
+
+    const speaker = findSpeakerInContext(before, after, knownNames, nameIndex);
+
+    lines.push({
+      speaker: speaker ?? "Narrator",
+      text: quoted,
+      type: speaker ? "speech" : "narration",
+    });
+  }
+
+  // If we extracted dialogue but there's significant unquoted text between
+  // matches, add it as narration.
+  let lastEnd = 0;
+  for (const match of matches) {
+    const matchStart = match.index ?? 0;
+    const between = text.slice(lastEnd, matchStart).trim();
+    if (between.length > 20) {
+      // Only add if it's not just attribution text (e.g. "Carl said")
+      if (!/^(\w+\s+(said|replied|asked|whispered|shouted|muttered)\s*[,.]?\s*)$/i.test(between)) {
+        lines.push({ speaker: "Narrator", text: between, type: "narration" });
+      }
+    }
+    lastEnd = matchStart + match[0].length;
+  }
+  // Trailing narration after last quote
+  const trailing = text.slice(lastEnd).trim();
+  if (trailing.length > 20) {
+    lines.push({ speaker: "Narrator", text: trailing, type: "narration" });
+  }
+
+  return lines.length > 0 ? lines : [{ speaker: "Narrator", text, type: "narration" }];
+}
+
+/**
+ * Find a speaker name in the text surrounding a quoted dialogue.
+ * Checks before/after context for known character names or common
+ * attribution verbs.
+ */
+function findSpeakerInContext(
+  before: string,
+  after: string,
+  knownNames: Set<string>,
+  nameIndex: Map<string, string>,
+): string | null {
+  // Check "Name said/replied/asked" after the quote.
+  const afterPattern = /(?:^|\s|,)(\w+)\s+(?:said|replied|asked|whispered|shouted|muttered|exclaimed|continued|added)/i;
+  const afterMatch = after.match(afterPattern);
+  if (afterMatch) {
+    const name = afterMatch[1]!;
+    if (knownNames.has(name.toLowerCase())) {
+      const id = nameIndex.get(name.toLowerCase());
+      if (id) return name;
+    }
+    return name;
+  }
+
+  // Check "said Name" or "Name said" before the quote.
+  const beforePattern = /(\w+)\s+(?:said|replied|asked|whispered|shouted|muttered|exclaimed|continued|added)\s*[,.:]?\s*$/i;
+  const beforeMatch = before.match(beforePattern);
+  if (beforeMatch) {
+    const name = beforeMatch[1]!;
+    if (knownNames.has(name.toLowerCase())) {
+      return name;
+    }
+    return name;
+  }
+
+  // Check "Name:" pattern before the quote.
+  const colonPattern = /(\w+):\s*$/;
+  const colonMatch = before.match(colonPattern);
+  if (colonMatch) {
+    const name = colonMatch[1]!;
+    if (knownNames.has(name.toLowerCase())) {
+      return name;
+    }
+    return name;
+  }
+
+  return null;
+}

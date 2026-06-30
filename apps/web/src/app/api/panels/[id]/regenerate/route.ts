@@ -78,6 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
           const optimizeInput: OptimizePanelPromptInput = {
             panelDescription: p.description,
+            sourceText: section?.text,
             cameraFraming: p.cameraFraming ?? section?.cameraHint,
             emotionalTone: section?.emotionalTone,
             characters: p.characters

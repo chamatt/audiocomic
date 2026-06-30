@@ -14,7 +14,7 @@ export { OpenAITTSAdapter, createTTSAdapter } from "./tts";
 export { AISDKImageAdapter, createImageAdapter } from "./image";
 
 // Prompt composer + section memory builder (pure functions)
-export { composePanelPrompt, composeNegativePrompt, buildSectionMemory, buildCharacterNameIndex, resolveCharactersFromText, backfillBeatCharacters } from "./prompt";
+export { composePanelPrompt, composeNegativePrompt, buildSectionMemory, buildCharacterNameIndex, resolveCharactersFromText, backfillBeatCharacters, extractDialogueFromBeatText } from "./prompt";
 
 // Description cleanup (LLM-powered)
 export { cleanupDescription, mergeDescriptions } from "./cleanup";

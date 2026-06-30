@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { Chapter, ChapterState, type StageProgress } from "./api.ts";
 import type { TranscriptionOptions, TranscriptResult } from "@audiocomic/ai";
-import { backfillBeatCharacters } from "@audiocomic/ai";
+import { backfillBeatCharacters, extractDialogueFromBeatText } from "@audiocomic/ai";
 import { PipelineBridge } from "../../lib/pipeline-bridge.ts";
 import { mergeCharacters } from "../../agents/merge.ts";
 import { uuid, nowIso, logger, pageImageKey, letteringKey } from "@audiocomic/shared";
@@ -446,7 +446,7 @@ export const ChapterLive = Chapter.toLayer(
                 zIndex: panelIdx,
                 description: beat.summary,
                 characters: backfillBeatCharacters(beat.summary, beat.charactersPresent, characters).map((charId) => ({ characterId: charId })),
-                dialogueLines: [],
+                dialogueLines: beat.text ? extractDialogueFromBeatText(beat.text, characters) : [],
                 startSec: beat.startSec,
                 endSec: beat.endSec,
                 qaStatus: "pending",

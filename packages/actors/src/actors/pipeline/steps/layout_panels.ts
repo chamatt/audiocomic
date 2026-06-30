@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
 import { uuid } from "@audiocomic/shared";
-import { composePanelPrompt, composeNegativePrompt, backfillBeatCharacters } from "@audiocomic/ai";
+import { composePanelPrompt, composeNegativePrompt, backfillBeatCharacters, extractDialogueFromBeatText } from "@audiocomic/ai";
 import type { StorySection, PageSpec, PanelSpec, CharacterProfile, WorldBible } from "@audiocomic/domain";
 
 /**
@@ -227,7 +227,7 @@ export const LayoutPanelsStep: StepExecutor = {
               description: beat.summary,
               cameraFraming: beat.cameraHint,
               characters: backfillBeatCharacters(beat.summary, beat.charactersPresent, characters).map((charId) => ({ characterId: charId })),
-              dialogueLines: [],
+              dialogueLines: beat.text ? extractDialogueFromBeatText(beat.text, characters) : [],
               startSec: beat.startSec,
               endSec: beat.endSec,
               renderPrompt: prompt,

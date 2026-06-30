@@ -2,9 +2,9 @@
  * LLM-powered panel prompt optimization.
  *
  * Takes the full panel context (description, scene, tone, characters, dialog,
- * camera, world bible) and asks an LLM to produce an optimal text-to-image
- * prompt. Replaces the rigid deterministic `composePanelPrompt` for panels
- * whose `promptStale` flag is set.
+ * camera, world bible, source text) and asks an LLM to produce an optimal
+ * text-to-image prompt. Replaces the rigid deterministic `composePanelPrompt`
+ * for panels whose `promptStale` flag is set.
  */
 
 import { generateText, type LanguageModelV1 } from "ai";
@@ -23,13 +23,14 @@ Rules:
 3. Include ONLY visual information. Strip game stats, levels, abilities, backstory, relationships, personality traits, plot — the image model cannot draw those.
 4. Convert each character's description into pure visual terms (species, body type, skin, hair, clothing, colors, distinctive features). Drop anything non-visual.
 5. Strip any multi-panel / page-layout directives. No "split-panel", "panel-to-panel", "multi-panel", "page layout", "panel grid", "panel borders". The output is for ONE single illustration.
-6. If dialogue lines are present, append: "leave empty space in upper area for speech bubbles, do not draw any text or letters"
-7. Express the aspect ratio explicitly when given (e.g. "wide horizontal panel, aspect ratio 2.2:1" or "tall vertical panel, aspect ratio 1:1.4" or "roughly square panel, aspect ratio 1:1").
-8. ALWAYS include the world art style (worldArtStyle) in the style section of the prompt. This is the project's global visual identity — it MUST appear in every panel for consistency. If it contains multi-panel directives like "reaction panels" or "establishing shots", strip those phrases but keep the art technique (e.g. "bold character silhouettes", "expressive faces", "cel shading").
-9. If worldColorPalette tags are provided, include them in the style section (e.g. "warm tones, muted colors, high contrast").
-10. If emotionalTone is provided, translate it into concrete visual cues (e.g. "tense" → "tight body language, narrowed eyes, sharp shadows"; "joyful" → "bright eyes, wide smiles, warm lighting"). This is the per-scene mood — it overrides the global tone for this panel.
-11. If worldTone is provided and emotionalTone is not, use worldTone as the mood cue instead.
-12. On the SECOND line, output the negative prompt prefixed with "NEGATIVE:". Include: the world's artStyleNegative tags (if any), "no comic page, no page layout, no multiple panels, no panel grid, no panel borders, no divided layout, no split frame, no gibberish text, no watermarks".
+6. If sourceText is provided, use it as the PRIMARY narrative context — it is the verbatim text from the audiobook that the reader will HEAR while viewing this panel. The visual prompt must depict the scene, action, and mood described in the sourceText. Extract visual cues from dialogue (who is speaking, their emotional state) and narration (setting, atmosphere, action). The image must align with what the audio says at this moment.
+7. If dialogue lines are present, append: "leave empty space in upper area for speech bubbles, do not draw any text or letters"
+8. Express the aspect ratio explicitly when given (e.g. "wide horizontal panel, aspect ratio 2.2:1" or "tall vertical panel, aspect ratio 1:1.4" or "roughly square panel, aspect ratio 1:1").
+9. ALWAYS include the world art style (worldArtStyle) in the style section of the prompt. This is the project's global visual identity — it MUST appear in every panel for consistency. If it contains multi-panel directives like "reaction panels" or "establishing shots", strip those phrases but keep the art technique (e.g. "bold character silhouettes", "expressive faces", "cel shading").
+10. If worldColorPalette tags are provided, include them in the style section (e.g. "warm tones, muted colors, high contrast").
+11. If emotionalTone is provided, translate it into concrete visual cues (e.g. "tense" → "tight body language, narrowed eyes, sharp shadows"; "joyful" → "bright eyes, wide smiles, warm lighting"). This is the per-scene mood — it overrides the global tone for this panel.
+12. If worldTone is provided and emotionalTone is not, use worldTone as the mood cue instead.
+13. On the SECOND line, output the negative prompt prefixed with "NEGATIVE:". Include: the world's artStyleNegative tags (if any), "no comic page, no page layout, no multiple panels, no panel grid, no panel borders, no divided layout, no split frame, no gibberish text, no watermarks".
 
 Output format (exactly two lines, nothing else):
 <positive prompt>
@@ -46,8 +47,9 @@ export interface OptimizePanelPromptInput {
     expression?: string;
     position?: string;
   }[];
-  dialogueLines: { speaker: string; text: string; type: string }[];
+  sourceText?: string;
   sceneSummary?: string;
+  dialogueLines: { speaker: string; text: string; type: string }[];
   sceneObjects?: string[];
   worldSetting?: string;
   worldArtStyle?: string;
@@ -83,6 +85,13 @@ function fallbackPrompt(input: OptimizePanelPromptInput): OptimizePanelPromptRes
   parts.push("A single illustration of one scene showing");
   if (charBits.length > 0) parts.push(charBits.join("; "));
   parts.push(input.panelDescription.replace(/^(A clear visual beat:?|The scene shows:?|We see:?)/gi, "").trim());
+  if (input.sourceText) {
+    // Include a condensed version of the source text for visual alignment.
+    const excerpt = input.sourceText.length > 300
+      ? input.sourceText.slice(0, 300) + "..."
+      : input.sourceText;
+    parts.push(`scene from: "${excerpt}"`);
+  }
   if (input.worldSetting) {
     const first = input.worldSetting.split(/[.!?]/)[0]?.trim();
     if (first) parts.push(first);

@@ -180,6 +180,7 @@ export const OptimizePromptsStep: StepExecutor = {
 
         const input: OptimizePanelPromptInput = {
           panelDescription: panel.description,
+          sourceText: section?.text,
           cameraFraming: panel.cameraFraming ?? section?.cameraHint,
           emotionalTone: section?.emotionalTone,
           characters: panelCharacters,

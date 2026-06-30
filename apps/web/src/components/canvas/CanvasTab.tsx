@@ -432,6 +432,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportType, setExportType] = useState<"mp4" | "cbz">("mp4");
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const [chapterExports, setChapterExports] = useState<
     { id: string; type: string; downloadUrl: string; sizeBytes: number; durationSec: number; slides: number; createdAt: string }[]
   >([]);
@@ -458,6 +459,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
   const handleExport = useCallback(async () => {
     if (!selectedChapterId) return;
     setExporting(true);
+    setExportProgress(null);
     try {
       const endpoint = exportType === "mp4" ? "export-motion" : "export-cbz";
       const res = await fetch(`/api/chapters/${selectedChapterId}/${endpoint}`, {
@@ -469,15 +471,55 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         return;
       }
       const data = await res.json();
-      // Refresh exports list
+
+      // MP4 export returns a jobId — poll until done.
+      if (exportType === "mp4" && data.jobId) {
+        const jobId = data.jobId;
+        const total = data.total ?? 0;
+        setExportProgress({ done: 0, total });
+
+        const poll = async (): Promise<void> => {
+          await new Promise((r) => setTimeout(r, 1000));
+          const statusRes = await fetch(
+            `/api/chapters/${selectedChapterId}/export-motion?jobId=${jobId}`,
+          );
+          if (!statusRes.ok) {
+            throw new Error("Failed to check export status");
+          }
+          const status = await statusRes.json();
+
+          if (status.status === "done" && status.result) {
+            setExportProgress(null);
+            await loadExports(selectedChapterId);
+            window.open(status.result.mp4Url, "_blank");
+            return;
+          }
+          if (status.status === "failed") {
+            throw new Error(status.error ?? "Export failed");
+          }
+          // Still rendering or uploading — update progress and keep polling.
+          if (status.progress) {
+            setExportProgress({
+              done: status.progress.done,
+              total: status.progress.total || total,
+            });
+          }
+          return poll();
+        };
+
+        await poll();
+        return;
+      }
+
+      // CBZ export is synchronous — result is immediate.
       await loadExports(selectedChapterId);
-      // Auto-download the new file
       const url = data.mp4Url ?? data.cbzUrl;
       if (url) window.open(url, "_blank");
     } catch (e) {
       alert("Export failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setExporting(false);
+      setExportProgress(null);
     }
   }, [selectedChapterId, exportType, loadExports]);
 
@@ -810,12 +852,26 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
               >
                 {exporting
                   ? exportType === "mp4"
-                    ? "Rendering MP4... (this takes a while)"
+                    ? exportProgress
+                      ? `Rendering... ${exportProgress.done}/${exportProgress.total} segments`
+                      : "Rendering MP4..."
                     : "Creating CBZ..."
                   : exportType === "mp4"
                     ? "🎬 Generate Motion Comic MP4"
                     : "📖 Generate CBZ (Comic Book ZIP)"}
               </button>
+              {exporting && exportProgress && (
+                <div className="mb-3">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{
+                        width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
               <p className="mb-3 text-xs text-muted-foreground">
                 {exportType === "mp4"
                   ? "Ken-burns slideshow of panel images synced to the chapter's original audio."
