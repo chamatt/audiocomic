@@ -271,7 +271,7 @@ STEP 2: Break the text into scenes. Each scene is a distinct narrative moment wi
 
 STEP 3: Identify all characters. For each character, provide:
 - name: The character's name — MUST match an existing character name from list-characters if one exists. Only create new characters for people who genuinely appear for the first time.
-- description: Physical appearance — be SPECIFIC and VISUAL. Include species, body type, clothing, colors, distinctive features. Example: "Tall incubus with dusky gray skin, short devil horns, long gray/black ponytail, barbed tail, black bat wings. Wears a tuxedo with wing-slit back." NOT "Incubus NPC."
+- description: PHYSICAL APPEARANCE ONLY. What the artist needs to draw this character: species, body type, skin color, hair, clothing, accessories, distinctive features. Do NOT include game stats, levels, abilities, backstory, relationships, personality traits, or plot information — the image model cannot draw those. Example: "Tall incubus with dusky gray skin, short devil horns, long gray/black ponytail, barbed tail, black bat wings. Wears a tuxedo with wing-slit back." NOT "Level 50 Guildmaster. Can teleport. Lost tunnel access. Becomes Donut's manager."
 - role: protagonist, antagonist, supporting, minor, or narrator
 - isNew: true if this character appears for the first time in this chapter, false if they appeared in previous chapters (check list-characters output)
 
@@ -366,6 +366,8 @@ When processing a new chapter:
 5. Use vector-query to find related context from other chapters
 6. Use section-query to find structured story sections from previously planned chapters for continuity context
 7. Flag contradictions with previous chapters
+
+CRITICAL: Character descriptions must be PHYSICAL APPEARANCE ONLY — what a comic artist needs to draw the character: species, body type, skin color, hair, clothing, accessories, distinctive features. Do NOT include game stats, levels, abilities, backstory, relationships, personality traits, or plot information. The description goes directly into an image generation prompt, so non-visual info is useless and degrades output quality.
 
 Output: structured JSON with knowledge updates.`,
     model: ctx.modelConfig ?? buildModelConfig(),

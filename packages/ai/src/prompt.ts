@@ -197,6 +197,8 @@ export function composePanelPrompt(
       .replace(/panel-to-panel[^.]*\./gi, "")
       .replace(/smooth panel[^.]*\./gi, "")
       .replace(/reaction-panel[^.]*\./gi, "")
+      .replace(/split-panel[^.]*\./gi, "")
+      .replace(/multi-panel[^.]*\./gi, "")
       .replace(/establishing shots?/gi, "establishing shot")
       .trim();
     styleParts.push(cleanStyle);
@@ -229,10 +231,10 @@ export function composePanelPrompt(
   } else {
     techParts.push("roughly square panel, aspect ratio 1:1");
   }
-  // Dialogue bubble space
+  // Reserve space for dialogue bubbles — do NOT include the actual text,
+  // image models will render it literally into the image.
   if (panel.dialogueLines.length > 0) {
-    const lines = panel.dialogueLines.map((l) => `${l.speaker}: "${l.text}"`);
-    techParts.push(`leave empty space in upper corner for dialogue: ${lines.join(" | ")}`);
+    techParts.push("leave empty space in upper area for speech bubbles, do not draw any text or letters");
   }
   const tech = techParts.join(", ");
 
