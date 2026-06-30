@@ -38,7 +38,7 @@ export function PanelBlock({
   onBboxChange,
   onRender,
 }: PanelBlockProps): JSX.Element {
-  const { selectPanel, mode } = useCanvasStore();
+  const { selectPanel, mode, zoom } = useCanvasStore();
   const dragState = useRef<DragState>(null);
 
   const style: React.CSSProperties = {
@@ -81,8 +81,10 @@ export function PanelBlock({
       const ds = dragState.current;
       if (!ds) return;
 
-      const dx = (e.clientX - ds.startX) / pageWidth;
-      const dy = (e.clientY - ds.startY) / pageHeight;
+      // Screen-space delta ÷ (page size × zoom) → normalized page fraction,
+      // so dragging tracks the cursor at any zoom level.
+      const dx = (e.clientX - ds.startX) / (pageWidth * zoom);
+      const dy = (e.clientY - ds.startY) / (pageHeight * zoom);
       const orig = ds.origBbox;
 
       if (ds.kind === "move") {
@@ -112,7 +114,7 @@ export function PanelBlock({
         onBboxChange(panel.id, { x, y, w, h });
       }
     },
-    [pageWidth, pageHeight, panel.id, onBboxChange],
+    [pageWidth, pageHeight, zoom, panel.id, onBboxChange],
   );
 
   const handlePointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {

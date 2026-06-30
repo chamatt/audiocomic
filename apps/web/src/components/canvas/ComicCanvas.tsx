@@ -1,23 +1,15 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, type CSSProperties, type JSX } from 'react';
+import { useCallback, useEffect, useRef, type JSX } from "react";
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  ReactFlowProvider,
-  useReactFlow,
-  type Node,
-  type Edge,
-  type NodeTypes,
-  BackgroundVariant,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import type { BoundingBox } from '@audiocomic/domain';
-import { PageNode, type PageNodeData } from './PageNode';
-import { useCanvasStore } from '@/stores/canvas-store';
-import type { CanvasPageData } from './types';
+  TransformWrapper,
+  TransformComponent,
+  type ReactZoomPanPinchContentRef,
+} from "react-zoom-pan-pinch";
+import type { BoundingBox } from "@audiocomic/domain";
+import { ComicPage } from "./ComicPage";
+import { useCanvasStore } from "@/stores/canvas-store";
+import type { CanvasPageData } from "./types";
 
 interface ComicCanvasProps {
   pages: CanvasPageData[];
@@ -30,13 +22,20 @@ interface ComicCanvasProps {
   renderingPanelIds?: Set<string>;
 }
 
-const PAGE_GAP = 100;
-const PAGE_WIDTH = 800;
+// Page geometry on the board (px in world space). Comic page ratio ≈ 1 : 1.41.
+const PAGE_WIDTH = 700;
+const PAGE_HEIGHT = 990;
+const PAGE_GAP = 80;
+const MAX_COLS = 4;
 
-const nodeTypes: NodeTypes = {
-  comicPage: PageNode,
-};
-function ComicCanvasInner({
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 3;
+
+/** A purpose-built infinite pan/zoom board for comic pages. Replaces ReactFlow
+ *  (which is meant for node/edge graphs). Pages are laid out in a wrapping grid
+ *  and rendered as plain DOM, so all existing panel/bubble editing keeps working
+ *  — panels stop pointer propagation, so dragging them never pans the board. */
+export function ComicCanvas({
   pages,
   onPanelBboxChange,
   onBubbleChange,
@@ -47,61 +46,40 @@ function ComicCanvasInner({
   renderingPanelIds,
 }: ComicCanvasProps): JSX.Element {
   const { selectPanel, selectPage, setZoom, selectedPageId } = useCanvasStore();
-  const { setCenter, getNode } = useReactFlow();
+  const apiRef = useRef<ReactZoomPanPinchContentRef | null>(null);
+  const didInitialFit = useRef(false);
 
-  // Scroll canvas to selected page when selectedPageId changes
+  const cols = Math.min(MAX_COLS, Math.max(1, pages.length));
+
+  const fitToView = useCallback(() => {
+    apiRef.current?.zoomToElement("comic-board", undefined, 400);
+  }, []);
+
+  // Fit the whole board into view once pages first arrive.
+  useEffect(() => {
+    if (didInitialFit.current || pages.length === 0) return;
+    didInitialFit.current = true;
+    // Wait a frame so the board has measured dimensions.
+    const id = requestAnimationFrame(() => fitToView());
+    return () => cancelAnimationFrame(id);
+  }, [pages.length, fitToView]);
+
+  // Center on the selected page when it changes.
   useEffect(() => {
     if (!selectedPageId) return;
-    const node = getNode(selectedPageId);
-    if (!node) return;
-    const x = node.position.x + 400; // center of page (PAGE_WIDTH / 2)
-    const y = node.position.y + 565; // center of page (PAGE_HEIGHT / 2)
-    setCenter(x, y, { zoom: 0.5, duration: 400 });
-  }, [selectedPageId, getNode, setCenter]);
+    apiRef.current?.zoomToElement(`comic-page-${selectedPageId}`, 0.6, 400);
+  }, [selectedPageId]);
 
-  const nodes: Node<PageNodeData>[] = useMemo(
-    () =>
-      pages.map((page, i) => ({
-        id: page.id,
-        type: 'comicPage',
-        position: { x: i * (PAGE_WIDTH + PAGE_GAP), y: 0 },
-        data: {
-          page,
-          onBboxChange: onPanelBboxChange,
-          onBubbleChange,
-          onBubbleTextChange,
-          onBubbleDelete,
-          onBubbleAdd,
-          onRender: onPanelRender,
-          renderingPanelIds,
-        },
-        draggable: false,
-      })),
-    [pages, onPanelBboxChange, onBubbleChange, onBubbleTextChange, onBubbleDelete, onBubbleAdd, onPanelRender, renderingPanelIds],
+  const handleBackgroundClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // Only deselect when the empty board background itself is clicked.
+      if (e.target === e.currentTarget) {
+        selectPanel(null);
+        selectPage(null);
+      }
+    },
+    [selectPanel, selectPage],
   );
-
-  const edges: Edge[] = useMemo(() => {
-    if (pages.length < 2) return [];
-    const result: Edge[] = [];
-    for (let i = 0; i < pages.length - 1; i++) {
-      const page = pages[i];
-      const next = pages[i + 1];
-      if (!page || !next) continue;
-      result.push({
-        id: `${page.id}-${next.id}`,
-        source: page.id,
-        target: next.id,
-        type: 'smoothstep',
-        style: { stroke: 'hsl(var(--muted-foreground))', opacity: 0.3 },
-      });
-    }
-    return result;
-  }, [pages]);
-
-  const handlePaneClick = useCallback(() => {
-    selectPanel(null);
-    selectPage(null);
-  }, [selectPanel, selectPage]);
 
   if (pages.length === 0) {
     return (
@@ -115,41 +93,85 @@ function ComicCanvasInner({
   }
 
   return (
-    <div className="h-full w-full" style={{ '--xy-edge-stroke-default': 'transparent' } as CSSProperties}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onPaneClick={handlePaneClick}
-        onMove={(_, viewport) => setZoom(viewport.zoom)}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 0.5 }}
-        minZoom={0.1}
-        maxZoom={3}
-        proOptions={{ hideAttribution: true }}
+    <div className="comic-canvas relative h-full w-full overflow-hidden bg-muted/30">
+      <TransformWrapper
+        ref={apiRef}
+        minScale={MIN_SCALE}
+        maxScale={MAX_SCALE}
+        initialScale={0.5}
+        centerOnInit
+        limitToBounds={false}
+        wheel={{ step: 0.08 }}
+        doubleClick={{ disabled: true }}
+        panning={{ velocityDisabled: true }}
+        onTransform={(_ref, state) => setZoom(state.scale)}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--muted))" />
-        <Controls showInteractive={false} />
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={() => 'hsl(var(--muted))'}
-          maskColor="rgba(0,0,0,0.7)"
-          className="!bg-background !border"
-        />
-      </ReactFlow>
+        <TransformComponent
+          wrapperStyle={{ width: "100%", height: "100%" }}
+          contentStyle={{ width: "fit-content", height: "fit-content" }}
+        >
+          <div
+            id="comic-board"
+            onClick={handleBackgroundClick}
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${cols}, ${PAGE_WIDTH}px)`,
+              gap: PAGE_GAP,
+              padding: PAGE_GAP,
+            }}
+          >
+            {pages.map((page) => (
+              <ComicPage
+                key={page.id}
+                page={page}
+                width={PAGE_WIDTH}
+                height={PAGE_HEIGHT}
+                selected={selectedPageId === page.id}
+                onBboxChange={onPanelBboxChange}
+                onBubbleChange={onBubbleChange}
+                onBubbleTextChange={onBubbleTextChange}
+                onBubbleDelete={onBubbleDelete}
+                onBubbleAdd={onBubbleAdd}
+                onRender={onPanelRender}
+                renderingPanelIds={renderingPanelIds}
+              />
+            ))}
+          </div>
+        </TransformComponent>
+      </TransformWrapper>
+
+      {/* Zoom controls */}
+      <div className="pointer-events-auto absolute bottom-4 left-4 z-20 flex flex-col gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
+        <ZoomButton label="Zoom in" onClick={() => apiRef.current?.zoomIn()}>
+          +
+        </ZoomButton>
+        <ZoomButton label="Zoom out" onClick={() => apiRef.current?.zoomOut()}>
+          −
+        </ZoomButton>
+        <ZoomButton label="Fit to view" onClick={fitToView}>
+          ⤢
+        </ZoomButton>
+      </div>
     </div>
   );
 }
 
-export function ComicCanvas(props: ComicCanvasProps): JSX.Element {
-  return (
-    <ReactFlowProvider>
-      <ComicCanvasInner {...props} />
-    </ReactFlowProvider>
-  );
+interface ZoomButtonProps {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
 }
 
+function ZoomButton({ label, onClick, children }: ZoomButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex h-8 w-8 items-center justify-center rounded-md text-base text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}

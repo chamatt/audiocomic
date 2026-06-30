@@ -107,6 +107,7 @@ async function cmdCreateText(name: string, textFilePath?: string) {
     description: undefined,
     status: 'created',
     modality: 'text',
+    artStyle: 'comic book art',
     createdAt: now,
     updatedAt: now,
     providerSettings: {
@@ -171,6 +172,7 @@ async function cmdCreateAudio(name: string, filePath: string) {
     description: undefined,
     status: 'created',
     modality: 'audio',
+    artStyle: 'comic book art',
     createdAt: now,
     updatedAt: now,
     providerSettings: {
