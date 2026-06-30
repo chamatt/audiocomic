@@ -607,6 +607,17 @@ function makeStoryPlannerHandle(
           return { section, beats };
         }),
       );
+      // Deduplicate beats — the LLM sometimes returns identical beats within a scene.
+      // Keep the first occurrence of each unique summary, drop subsequent duplicates.
+      for (const result of beatResults) {
+        const seen = new Set<string>();
+        result.beats = result.beats.filter((b) => {
+          const key = (b.summary ?? "").trim().toLowerCase().slice(0, 80);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
 
       // ── Build beat sections ──
       const beatSectionLookup: { beatIndex: number; section: StorySection }[] = [];

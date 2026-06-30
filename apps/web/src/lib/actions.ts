@@ -82,9 +82,23 @@ export async function getProjectDetail(id: string): Promise<ProjectDetailData> {
     llmModel: project.llmModel ?? env.DEFAULT_LLM_MODEL ?? null,
   };
 
-  // Sort sections by index (within each parent level) so the storyboard
-  // tree renders in narrative order, not DB insertion order.
-  const sections = sectionsRaw.sort((a, b) => a.index - b.index);
+  // Sort sections by parent's index, then section's index within parent.
+  // Beats have index=0..N within each scene; sorting by index alone interleaves
+  // beats from different scenes. We sort by (parent.index, self.index) to get
+  // correct narrative order: scene 0 beats, scene 1 beats, etc.
+  const sectionById = new Map(sectionsRaw.map((s) => [s.id, s]));
+  const sections = sectionsRaw.sort((a, b) => {
+    const parentA = a.parentId ? sectionById.get(a.parentId) : undefined;
+    const parentB = b.parentId ? sectionById.get(b.parentId) : undefined;
+    // No parent (chapter-level) → sort by own index
+    if (!parentA && !parentB) return a.index - b.index;
+    // One has parent, other doesn't → chapters first
+    if (!parentA) return -1;
+    if (!parentB) return 1;
+    // Both have parents → sort by parent index, then own index
+    if (parentA.index !== parentB.index) return parentA.index - parentB.index;
+    return a.index - b.index;
+  });
   // Sort pages by chapter order, then page index within chapter.
   // Pages without a chapter go last.
   const chapters = await repo.chapters.getByProjectId(id);

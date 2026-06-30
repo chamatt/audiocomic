@@ -90,6 +90,13 @@ export const ExportMotionStep: StepExecutor = {
 				}
 				allPanels.push(p);
 			}
+			// Sort pages by chapter then page index — DB returns arbitrary order.
+			pages.sort((a, b) => {
+				const chA = a.chapterId ?? "";
+				const chB = b.chapterId ?? "";
+				if (chA !== chB) return chA.localeCompare(chB);
+				return a.index - b.index;
+			});
 
 			// Build the narration timeline: one ken-burns segment per panel,
 			// ordered by page then panel. Timing falls back to even distribution

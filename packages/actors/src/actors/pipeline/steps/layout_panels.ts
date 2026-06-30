@@ -120,6 +120,17 @@ export const LayoutPanelsStep: StepExecutor = {
           }
           return false;
         });
+        // Sort beats by scene index, then beat index within scene —
+        // the DB returns sections in arbitrary order, so without this
+        // beats from different scenes interleave (all idx=0 first, etc).
+        chapterBeats.sort((a, b) => {
+          const sceneA = sectionMap.get(a.parentId ?? "");
+          const sceneB = sectionMap.get(b.parentId ?? "");
+          const sceneIdxA = sceneA?.index ?? 0;
+          const sceneIdxB = sceneB?.index ?? 0;
+          if (sceneIdxA !== sceneIdxB) return sceneIdxA - sceneIdxB;
+          return (a.index ?? 0) - (b.index ?? 0);
+        });
 
         if (chapterBeats.length === 0) {
           yield* Effect.logWarning(
