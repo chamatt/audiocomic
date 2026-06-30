@@ -231,10 +231,19 @@ export function composePanelPrompt(
   } else {
     techParts.push("roughly square panel, aspect ratio 1:1");
   }
-  // Reserve space for dialogue bubbles — do NOT include the actual text,
-  // image models will render it literally into the image.
+  // Draw speech bubbles with the actual dialog text verbatim — the image
+  // model renders the bubbles itself, so we skip the separate lettering pass.
   if (panel.dialogueLines.length > 0) {
-    techParts.push("leave empty space in upper area for speech bubbles, do not draw any text or letters");
+    const lines = panel.dialogueLines.map((d) => {
+      const quoted = `"${d.text}"`;
+      switch (d.type) {
+        case "narration": return `narration caption box with text ${quoted}`;
+        case "thought":  return `thought bubble near ${d.speaker} with text ${quoted}`;
+        case "sfx":      return `bold sound-effect text ${quoted}`;
+        default:         return `speech bubble from ${d.speaker} with text ${quoted}`;
+      }
+    });
+    techParts.push(`draw comic lettering: ${lines.join(", ")}`);
   }
   const tech = techParts.join(", ");
 
@@ -264,7 +273,7 @@ export function composeNegativePrompt(
     ...characterRefs.flatMap((c) => c.negativeConstraints),
   ];
 
-  negatives.push("no comic page", "no page layout", "no multiple panels", "no panel grid", "no panel borders", "no divided layout", "no split frame", "no gibberish text", "no watermarks", "no extra borders");
+  negatives.push("no multi-panel page", "no panel grid", "no split frame", "bad anatomy", "deformed hands", "extra digits", "blurry", "jpeg artifacts", "watermark");
   const hasHuman = panel.characters.some((slot) => {
     const profile = characterRefs.find((c) => c.id === slot.characterId);
     return profile?.description?.toLowerCase().includes("human");

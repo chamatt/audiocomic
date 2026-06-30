@@ -24,13 +24,13 @@ Rules:
 4. Convert each character's description into pure visual terms (species, body type, skin, hair, clothing, colors, distinctive features). Drop anything non-visual.
 5. Strip any multi-panel / page-layout directives. No "split-panel", "panel-to-panel", "multi-panel", "page layout", "panel grid", "panel borders". The output is for ONE single illustration.
 6. If sourceText is provided, use it as the PRIMARY narrative context — it is the verbatim text from the audiobook that the reader will HEAR while viewing this panel. The visual prompt must depict the scene, action, and mood described in the sourceText. Extract visual cues from dialogue (who is speaking, their emotional state) and narration (setting, atmosphere, action). The image must align with what the audio says at this moment.
-7. If dialogue lines are present, append: "leave empty space in upper area for speech bubbles, do not draw any text or letters"
+7. If dialogue lines are present, instruct the image model to draw the comic lettering itself, rendering each line's text VERBATIM inside the appropriate bubble type: speech bubbles for speech (with a tail pointing at the speaker), thought bubbles for thought, narration caption boxes for narration, bold stylized SFX text for sfx. Format as: 'draw comic lettering: speech bubble from <speaker> with text "<text>", ...'. Do NOT say "leave empty space" or "do not draw text" — the model must render the actual text.
 8. Express the aspect ratio explicitly when given (e.g. "wide horizontal panel, aspect ratio 2.2:1" or "tall vertical panel, aspect ratio 1:1.4" or "roughly square panel, aspect ratio 1:1").
 9. ALWAYS include the world art style (worldArtStyle) in the style section of the prompt. This is the project's global visual identity — it MUST appear in every panel for consistency. If it contains multi-panel directives like "reaction panels" or "establishing shots", strip those phrases but keep the art technique (e.g. "bold character silhouettes", "expressive faces", "cel shading").
 10. If worldColorPalette tags are provided, include them in the style section (e.g. "warm tones, muted colors, high contrast").
 11. If emotionalTone is provided, translate it into concrete visual cues (e.g. "tense" → "tight body language, narrowed eyes, sharp shadows"; "joyful" → "bright eyes, wide smiles, warm lighting"). This is the per-scene mood — it overrides the global tone for this panel.
 12. If worldTone is provided and emotionalTone is not, use worldTone as the mood cue instead.
-13. On the SECOND line, output the negative prompt prefixed with "NEGATIVE:". Include: the world's artStyleNegative tags (if any), "no comic page, no page layout, no multiple panels, no panel grid, no panel borders, no divided layout, no split frame, no gibberish text, no watermarks".
+13. On the SECOND line, output the negative prompt prefixed with "NEGATIVE:". Include: the world's artStyleNegative tags (if any), "no multi-panel page, no panel grid, no split frame, bad anatomy, deformed hands, extra digits, blurry, jpeg artifacts, watermark". Do NOT include "no text" or "no gibberish text" — the image must render legible speech-bubble lettering.
 
 Output format (exactly two lines, nothing else):
 <positive prompt>
@@ -106,14 +106,23 @@ function fallbackPrompt(input: OptimizePanelPromptInput): OptimizePanelPromptRes
   if (input.cameraFraming) parts.push(input.cameraFraming);
   parts.push(`aspect ratio ${input.aspectRatio}`);
   if (input.dialogueLines.length > 0) {
-    parts.push("leave empty space in upper area for speech bubbles, do not draw any text or letters");
+    const lines = input.dialogueLines.map((d) => {
+      const quoted = `"${d.text}"`;
+      switch (d.type) {
+        case "narration": return `narration caption box with text ${quoted}`;
+        case "thought":  return `thought bubble near ${d.speaker} with text ${quoted}`;
+        case "sfx":      return `bold sound-effect text ${quoted}`;
+        default:         return `speech bubble from ${d.speaker} with text ${quoted}`;
+      }
+    });
+    parts.push(`draw comic lettering: ${lines.join(", ")}`);
   }
 
   const prompt = parts.join(", ") + ".";
   const negativeBase = [
-    "no comic page", "no page layout", "no multiple panels", "no panel grid",
-    "no panel borders", "no divided layout", "no split frame", "no gibberish text",
-    "no watermarks", "no extra borders",
+    "no multi-panel page", "no panel grid", "no split frame",
+    "bad anatomy", "deformed hands", "extra digits",
+    "blurry", "jpeg artifacts", "watermark",
   ];
   if (input.worldArtStyleNegative && input.worldArtStyleNegative.length > 0) {
     negativeBase.push(...input.worldArtStyleNegative);
@@ -161,7 +170,7 @@ export async function optimizePanelPrompt(
     }
     if (negativePrompt.length === 0) {
       negativePrompt =
-        "no comic page, no page layout, no multiple panels, no panel grid, no panel borders, no divided layout, no split frame, no gibberish text, no watermarks";
+        "no multi-panel page, no panel grid, no split frame, bad anatomy, deformed hands, extra digits, blurry, jpeg artifacts, watermark";
     }
 
     log.info("Panel prompt optimized", {
