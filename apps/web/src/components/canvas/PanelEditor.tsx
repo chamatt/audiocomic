@@ -49,6 +49,7 @@ interface PanelEditorProps {
   panel: PanelSpec | null;
   panelImageUrl?: string;
   projectId: string;
+  isRendering?: boolean;
   onPatch: (panelId: string, patch: Partial<PanelSpec>) => Promise<void>;
   onRegenerate: (panelId: string) => Promise<void>;
 }
@@ -56,24 +57,16 @@ export function PanelEditor({
   panel,
   panelImageUrl,
   projectId,
+  isRendering,
   onPatch,
   onRegenerate,
 }: PanelEditorProps): JSX.Element | null {
-  const [regenerating, setRegenerating] = useState(false);
-
   if (!panel) {
     return null;
   }
-
-  const handleRegenerate = async () => {
-    setRegenerating(true);
-    try {
-      await onRegenerate(panel.id);
-    } finally {
-      setRegenerating(false);
-    }
+  const handleRegenerate = () => {
+    void onRegenerate(panel.id);
   };
-
   return (
     <div className="flex h-full w-[360px] flex-col rounded-lg border bg-background/95 shadow-lg backdrop-blur">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -178,11 +171,11 @@ export function PanelEditor({
 
           <Button
             onClick={handleRegenerate}
-            disabled={regenerating}
+            disabled={isRendering}
             className="w-full"
             variant="default"
           >
-            {regenerating ? "Regenerating..." : "Regenerate Panel"}
+            {isRendering ? "Regenerating..." : "Regenerate Panel"}
           </Button>
 
           <Separator />
