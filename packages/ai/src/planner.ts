@@ -339,6 +339,8 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
             'Identify the world setting, recurring characters, and break the text into',
             'chapters and scenes. Each scene must include a short verbatim textExcerpt',
             'drawn from the source so later passes can extract beats.',
+            'Each chapter MUST contain at least one scene. A chapter with zero scenes',
+            'is invalid — every chapter has narrative content that can be segmented.',
             input.artStyle ? `Target art style: ${input.artStyle}.` : '',
             input.genre && input.genre.length > 0 ? `Genre: ${input.genre.join(', ')}.` : '',
             input.language ? `Source language: ${input.language}.` : '',
@@ -348,9 +350,22 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
           prompt: text,
           abortSignal: input.signal,
         }, input.emit);
+
+        // Validate: reject degenerate plans where any chapter has 0 scenes.
+        // The LLM sometimes returns a valid schema object with empty scene
+        // arrays (especially under load / with smaller models), which produces
+        // 0 beats → 1 fallback panel per chapter. Treat this as a retryable
+        // failure so the retry loop re-attempts instead of accepting garbage.
+        const emptyChapters = pass1.chapters.filter((c) => c.scenes.length === 0);
+        if (emptyChapters.length > 0) {
+          throw new Error(
+            `Pass 1 returned ${emptyChapters.length}/${pass1.chapters.length} chapter(s) with 0 scenes`,
+          );
+        }
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         log.info(`[planner] pass 1 failed (attempt ${attempt + 1}/3): ${lastError.message}`);
+        pass1 = null;
         if (attempt < 2) {
           // Brief pause before retry
           await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
