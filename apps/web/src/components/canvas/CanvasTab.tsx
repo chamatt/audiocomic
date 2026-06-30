@@ -35,6 +35,7 @@ const POLLINATIONS_MODELS = [
   { value: "nova-canvas", label: "Nova Canvas" },
   { value: "qwen-image", label: "Qwen Image" },
   { value: "grok-imagine", label: "Grok Imagine" },
+  { value: "p-image", label: "P Image" },
 ] as const;
 
 const POLLINATIONS_PROVIDERS = [
