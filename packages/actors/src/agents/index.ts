@@ -397,6 +397,7 @@ function makeStoryPlannerHandle(
       //   Phase A: agent.generate() with tools only — model gathers KB context
       //   Phase B: tryGenerateWithJsonFallback with structured output only — model produces the plan
       log.info("Pass 1A: gathering context with KB tools (maxSteps: 8)", { projectId });
+      const phaseATimeout = AbortSignal.timeout(120_000);
       const phaseAResponse = await agent.generate(
         `Decompose this chapter transcript into a comic plan. ` +
           `First use the available tools to look up existing characters, world info, ` +
@@ -405,6 +406,7 @@ function makeStoryPlannerHandle(
           `After gathering context, summarize what you found.\n\nTranscript:\n${text}`,
         {
           maxSteps: 8,
+          abortSignal: phaseATimeout,
           prepareStep: async ({ stepNumber, messages }) => {
             if (messages && messages.length > 0) {
               const lastMsg = messages[messages.length - 1] as {
@@ -460,6 +462,7 @@ function makeStoryPlannerHandle(
         {
           maxSteps: 3,
           structuredOutput: { schema: pass1Schema },
+          abortSignal: AbortSignal.timeout(120_000),
         },
       );
       log.info("Pass 1B: structured output received", {
@@ -597,7 +600,7 @@ function makeStoryPlannerHandle(
           const pass2Response = await tryGenerateWithJsonFallback(
             beatAgent,
             `Scene summary: ${section.summary}\n\nSource excerpt:\n${excerpt}`,
-            { maxSteps: 3, structuredOutput: { schema: pass2Schema } },
+            { maxSteps: 3, structuredOutput: { schema: pass2Schema }, abortSignal: AbortSignal.timeout(120_000) },
           );
           const beats = pass2Response.object?.beats ?? [];
           pass2Done++;
@@ -671,7 +674,7 @@ function makeStoryPlannerHandle(
                   (b.text ? `\n  Source text: "${b.text}"` : ""),
               )
               .join("\n"),
-            { maxSteps: 3, structuredOutput: { schema: pass3Schema } },
+            { maxSteps: 3, structuredOutput: { schema: pass3Schema }, abortSignal: AbortSignal.timeout(120_000) },
           );
           const panels = pass3Response.object?.panels ?? [];
           pass3Done++;
@@ -735,6 +738,7 @@ function makeBibleBuilderHandle(
         {
           maxSteps: 10,
           structuredOutput: { schema: bibleBuildSchema },
+          abortSignal: AbortSignal.timeout(180_000),
           prepareStep: async ({ stepNumber }) => {
             if (stepNumber < 3) {
               return { toolChoice: "auto" };
