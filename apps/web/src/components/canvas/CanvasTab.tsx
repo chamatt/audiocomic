@@ -312,7 +312,12 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
         if (!res.ok) return;
         const data = await res.json();
-        // Optimistically update the panel image with cache-busting.
+        // Update panel data with optimized prompt + image.
+        updatePanel(panelId, {
+          renderPrompt: data.renderPrompt,
+          renderNegativePrompt: data.renderNegativePrompt,
+          promptStale: data.promptStale,
+        });
         if (data.imageUrl) {
           updatePanelImage(panelId, `${data.imageUrl}?v=${Date.now()}`);
         }
@@ -326,7 +331,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
       }
     },
-    [selectedModel, selectedProvider, updatePanelImage],
+    [selectedModel, selectedProvider, updatePanelImage, updatePanel],
   );
 
   // Throttled API save for bubble position (fires at most once per 150ms during drag)
@@ -545,7 +550,12 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
           return;
         }
         const data = await res.json();
-        // Optimistically update the panel image with cache-busting.
+        // Update panel data with optimized prompt + image.
+        updatePanel(panelId, {
+          renderPrompt: data.renderPrompt,
+          renderNegativePrompt: data.renderNegativePrompt,
+          promptStale: data.promptStale,
+        });
         if (data.imageUrl) {
           updatePanelImage(panelId, `${data.imageUrl}?v=${Date.now()}`);
         }
@@ -559,7 +569,7 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
         });
       }
     },
-    [selectedModel, selectedProvider, updatePanelImage],
+    [selectedModel, selectedProvider, updatePanelImage, updatePanel],
   );
 
   // The selected chapter's stage (for render button visibility)

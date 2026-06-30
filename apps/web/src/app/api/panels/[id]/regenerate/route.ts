@@ -244,6 +244,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       imageKey: result.imageKey,
       imageUrl,
       status: "done",
+      renderPrompt: panel.renderPrompt,
+      renderNegativePrompt: panel.renderNegativePrompt,
+      promptStale: panel.promptStale,
     });
   } catch (err) {
     log.error("panel render failed", {
