@@ -53,8 +53,10 @@ const LLM_MODELS: Record<string, { value: string; label: string }[]> = {
   openrouter: [
     { value: "mistralai/mistral-nemo", label: "Mistral Nemo" },
     { value: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+    { value: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
     { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
     { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
+    { value: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
   ],
   pollinations: [
     { value: "openai", label: "GPT-5.4 Nano" },

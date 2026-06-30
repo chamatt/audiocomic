@@ -5,8 +5,9 @@ import type { PanelSpec } from '@audiocomic/domain';
 const log = logger.scoped('api:panel-update');
 
 // Editable fields on a panel.
-// renderPrompt / renderNegativePrompt are NOT editable here — they are
-// LLM-generated and only updated by the optimize step or regenerate route.
+// renderPrompt remains LLM-generated (optimize step / regenerate route).
+// renderNegativePrompt is user-editable so the user can tune what the image
+// model avoids without re-running the full optimization pipeline.
 const EDITABLE_FIELDS = [
   'description',
   'cameraFraming',
@@ -17,6 +18,7 @@ const EDITABLE_FIELDS = [
   'seed',
   'zIndex',
   'index',
+  'renderNegativePrompt',
 ] as const;
 
 type EditableField = (typeof EDITABLE_FIELDS)[number];

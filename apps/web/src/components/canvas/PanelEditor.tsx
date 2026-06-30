@@ -130,14 +130,14 @@ export function PanelEditor({
             />
           </FieldSection>
 
-          <FieldSection title="Negative Prompt (LLM-generated)">
-            <textarea
+          <FieldSection title="Negative Prompt (editable)">
+            <DebouncedTextarea
+              key={`neg-${panel.id}`}
               value={panel.renderNegativePrompt ?? ""}
-              readOnly
-              disabled
+              onChange={(v) => onPatch(panel.id, { renderNegativePrompt: v || undefined })}
               placeholder="No negative prompt yet"
               rows={2}
-              className="w-full resize-none rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground"
+              className="w-full resize-none rounded-md border bg-background px-3 py-2 font-mono text-xs"
             />
           </FieldSection>
 
