@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { PipelineBridge } from "../../../lib/pipeline-bridge.ts";
 import { registerStep, type StepExecutor, type StepContext, type StepOutput } from "./types.ts";
-import { optimizePanelPrompt, resolveLanguageModel, type LLMProvider, type OptimizePanelPromptInput } from "@audiocomic/ai";
+import { optimizePanelPrompt, resolveLanguageModel, composeNegativePrompt, type LLMProvider, type OptimizePanelPromptInput } from "@audiocomic/ai";
 import type { WorldBible, PanelSpec } from "@audiocomic/domain";
 import { uuid } from "@audiocomic/shared";
 
@@ -204,12 +204,16 @@ export const OptimizePromptsStep: StepExecutor = {
           catch: (e) => (e instanceof Error ? e : new Error(String(e))),
         });
 
+        // Negative prompt is deterministic (not LLM-generated) so the user
+        // can tune it independently and it stays stable across regenerations.
+        const negativePrompt = composeNegativePrompt(panel, allCharacters, worldBible);
+
         // Persist the optimized prompt + clear stale flag.
         yield* Effect.tryPromise({
           try: () =>
             bridge.repo.panelSpecs.patch(panel.id, {
               renderPrompt: result.prompt,
-              renderNegativePrompt: result.negativePrompt,
+              renderNegativePrompt: negativePrompt,
               promptStale: false,
             }),
           catch: (e) => (e instanceof Error ? e : new Error(String(e))),

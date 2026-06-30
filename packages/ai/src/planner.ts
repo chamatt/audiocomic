@@ -256,8 +256,20 @@ async function streamObjectWithProgress<T>(
   let tokenCount = 0;
   const elapsedStr = () => ((Date.now() - start) / 1000).toFixed(1);
 
+  // Combine the user's abort signal with a 120s timeout so flaky upstream
+  // providers (OpenRouter rate-limiting, hangs) can't block the pipeline
+  // forever. Pass 2/3 calls typically finish in 2-15s; 120s is a generous
+  // ceiling that still prevents infinite hangs.
+  const TIMEOUT_MS = 120_000;
+  const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
+  const userSignal = opts.abortSignal;
+  const combinedSignal = userSignal
+    ? AbortSignal.any([userSignal, timeoutSignal])
+    : timeoutSignal;
+  const timedOpts = { ...opts, abortSignal: combinedSignal };
+
   try {
-    const { fullStream, object } = streamObject(opts);
+    const { fullStream, object } = streamObject(timedOpts);
 
     // Consume fullStream to get text-delta events for live token display.
     // streamObject handles schema enforcement internally.
@@ -293,11 +305,12 @@ async function streamObjectWithProgress<T>(
   } catch (err) {
     const elapsed = elapsedStr();
     const msg = err instanceof Error ? err.message : String(err);
-    log.info(`[planner] ${label}: stream failed in ${elapsed}s (${msg}), falling back to generateObject`);
+    const isTimeout = msg.includes('timeout') || msg.includes('TimeoutError') || (err instanceof Error && err.name === 'TimeoutError');
+    log.info(`[planner] ${label}: ${isTimeout ? 'timed out' : 'stream failed'} in ${elapsed}s (${msg}), falling back to generateObject`);
     emit?.({ type: 'llm_error', label, detail: msg, elapsed: Number(elapsed) });
 
-    // Fallback: non-streaming generateObject
-    const result = await generateObject(opts);
+    // Fallback: non-streaming generateObject (also timeout-protected)
+    const result = await generateObject(timedOpts);
     const elapsed2 = elapsedStr();
     log.info(`[planner] ${label}: generateObject fallback done in ${elapsed2}s`);
     emit?.({ type: 'llm_done', label, detail: 'fallback: generateObject', elapsed: Number(elapsed2) });
@@ -339,6 +352,8 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
             'Identify the world setting, recurring characters, and break the text into',
             'chapters and scenes. Each scene must include a short verbatim textExcerpt',
             'drawn from the source so later passes can extract beats.',
+            'Each chapter MUST contain at least one scene. A chapter with zero scenes',
+            'is invalid — every chapter has narrative content that can be segmented.',
             input.artStyle ? `Target art style: ${input.artStyle}.` : '',
             input.genre && input.genre.length > 0 ? `Genre: ${input.genre.join(', ')}.` : '',
             input.language ? `Source language: ${input.language}.` : '',
@@ -348,9 +363,22 @@ export class AIStoryPlanner implements StoryPlannerAdapter {
           prompt: text,
           abortSignal: input.signal,
         }, input.emit);
+
+        // Validate: reject degenerate plans where any chapter has 0 scenes.
+        // The LLM sometimes returns a valid schema object with empty scene
+        // arrays (especially under load / with smaller models), which produces
+        // 0 beats → 1 fallback panel per chapter. Treat this as a retryable
+        // failure so the retry loop re-attempts instead of accepting garbage.
+        const emptyChapters = pass1.chapters.filter((c) => c.scenes.length === 0);
+        if (emptyChapters.length > 0) {
+          throw new Error(
+            `Pass 1 returned ${emptyChapters.length}/${pass1.chapters.length} chapter(s) with 0 scenes`,
+          );
+        }
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         log.info(`[planner] pass 1 failed (attempt ${attempt + 1}/3): ${lastError.message}`);
+        pass1 = null;
         if (attempt < 2) {
           // Brief pause before retry
           await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
