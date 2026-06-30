@@ -89,6 +89,7 @@ export const Project = z.object({
   renderProvider: z.string().optional(), // e.g. "pollinations-free", "pollinations-paid"
   llmProvider: z.string().optional(), // "openrouter" | "pollinations" | "openai" | etc.
   llmModel: z.string().optional(), // model name, e.g. "mistralai/mistral-nemo" or "openai"
+  artStyle: z.string().default("comic book art"),
 });
 export type Project = z.infer<typeof Project>;
 

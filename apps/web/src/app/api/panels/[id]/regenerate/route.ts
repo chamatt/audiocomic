@@ -102,7 +102,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             sceneSummary: section?.summary,
             sceneObjects: section?.objects,
             worldSetting: worldBible?.setting,
-            worldArtStyle: worldBible?.artStyle,
+            worldArtStyle: project?.artStyle || worldBible?.artStyle,
             worldColorPalette: worldBible?.colorPalette,
             worldArtStyleNegative: worldBible?.artStyleNegative,
             worldTone: worldBible?.tone,

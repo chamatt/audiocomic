@@ -58,6 +58,7 @@ export const projects = pgTable(
     renderProvider: varchar("render_provider", { length: 64 }),
     llmProvider: varchar("llm_provider", { length: 64 }),
     llmModel: varchar("llm_model", { length: 128 }),
+    artStyle: text("art_style").notNull().default("comic book art"),
   },
   (t) => [index("projects_status_idx").on(t.status)],
 );

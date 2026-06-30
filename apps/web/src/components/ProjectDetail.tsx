@@ -467,6 +467,18 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
   const project = detail.project;
   const [llmProvider, setLlmProvider] = useState<string>(project.llmProvider ?? "");
   const [llmModel, setLlmModel] = useState<string>(project.llmModel ?? "");
+  const [artStyle, setArtStyle] = useState<string>(project.artStyle ?? "comic book art");
+  const handleArtStyleChange = useCallback(
+    (value: string) => {
+      setArtStyle(value);
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artStyle: value }),
+      });
+    },
+    [projectId],
+  );
   const handleLlmProviderChange = useCallback(
     (provider: string) => {
       setLlmProvider(provider);
@@ -640,6 +652,26 @@ export function ProjectDetail({ projectId, initialProject, initialDetail }: Prop
                 <div className="flex flex-col gap-2">
                   <Label>Modality</Label>
                   <Input value={project.modality} readOnly className="capitalize" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Art Style</CardTitle>
+                <CardDescription>
+                  Global visual style applied to all panels. Defaults to "comic book art".
+                  This overrides the LLM-generated art style from planning.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Art Style</Label>
+                  <textarea
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    value={artStyle}
+                    onChange={(e) => handleArtStyleChange(e.target.value)}
+                    placeholder="comic book art"
+                  />
                 </div>
               </CardContent>
             </Card>
