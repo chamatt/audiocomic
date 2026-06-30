@@ -392,19 +392,20 @@ function makeStoryPlannerHandle(
       log.info("planStory started", { textLength: text.length, projectId });
       emit?.({ type: "progress", label: "Pass 1: Planning story structure" });
 
-      // ── Pass 1: chapters + scenes + world + characters (with KB tools) ──
-      log.info("Pass 1: calling agent with KB tools (maxSteps: 15)", { projectId });
-      const pass1Response = await tryGenerateWithJsonFallback(
-        agent,
+      // ── Pass 1: chapters + scenes + world + characters ──
+      // Split into two phases to avoid model confusion when mixing tools + structured output:
+      //   Phase A: agent.generate() with tools only — model gathers KB context
+      //   Phase B: tryGenerateWithJsonFallback with structured output only — model produces the plan
+      log.info("Pass 1A: gathering context with KB tools (maxSteps: 8)", { projectId });
+      const phaseAResponse = await agent.generate(
         `Decompose this chapter transcript into a comic plan. ` +
           `First use the available tools to look up existing characters, world info, ` +
           `and cross-chapter context via vector search. ` +
-          `Then break the text into chapters and scenes with verbatim excerpts.\n\nTranscript:\n${text}`,
+          `Call list-characters FIRST, then use other tools as needed. ` +
+          `After gathering context, summarize what you found.\n\nTranscript:\n${text}`,
         {
-          maxSteps: 15,
-          structuredOutput: { schema: pass1Schema },
+          maxSteps: 8,
           prepareStep: async ({ stepNumber, messages }) => {
-            // Log tool calls and results from the most recent message
             if (messages && messages.length > 0) {
               const lastMsg = messages[messages.length - 1] as {
                 toolCalls?: { toolName: string; args?: unknown }[];
@@ -412,7 +413,7 @@ function makeStoryPlannerHandle(
               };
               if (lastMsg.toolCalls?.length) {
                 log.info(
-                  `Pass 1: step ${stepNumber} — tool calls: ${lastMsg.toolCalls.map((t) => `${t.toolName}(${JSON.stringify(t.args ?? {}).slice(0, 100)})`).join(", ")}`,
+                  `Pass 1A: step ${stepNumber} — tool calls: ${lastMsg.toolCalls.map((t) => `${t.toolName}(${JSON.stringify(t.args ?? {}).slice(0, 100)})`).join(", ")}`,
                 );
               }
               if (lastMsg.toolResults?.length) {
@@ -422,26 +423,46 @@ function makeStoryPlannerHandle(
                       ? tr.result.slice(0, 200)
                       : JSON.stringify(tr.result ?? "").slice(0, 200);
                   log.info(
-                    `Pass 1: step ${stepNumber} — tool result: ${tr.toolName} → ${tr.isError ? "ERROR: " : ""}${resultStr}`,
+                    `Pass 1A: step ${stepNumber} — tool result: ${tr.toolName} → ${tr.isError ? "ERROR: " : ""}${resultStr}`,
                   );
                 }
               }
-              if (!lastMsg.toolCalls?.length && stepNumber > 1) {
-                log.info(`Pass 1: step ${stepNumber} — generating structured output`);
-              }
             }
-            // Step 1: force tool usage. Steps 2-3: allow tools. Step 4+: force structured output.
+            // Step 1: force tool usage. Steps 2+: allow tools or stop.
             if (stepNumber < 2) return { toolChoice: "required" };
-            if (stepNumber < 4) return { toolChoice: "auto" };
-            return {
-              tools: undefined,
-              toolChoice: "none",
-              structuredOutput: { schema: pass1Schema },
-            };
+            return { toolChoice: "auto" };
           },
         },
       );
-      log.info("Pass 1: agent response received", {
+      log.info("Pass 1A: context gathering complete", {
+        elapsed: `${Date.now() - startTime}ms`,
+        toolCalls: phaseAResponse.toolCalls?.length ?? 0,
+        textLength: phaseAResponse.text?.length ?? 0,
+      });
+
+      // Phase B: structured output using the context from Phase A
+      log.info("Pass 1B: generating structured plan (no tools)", { projectId });
+      const pass1Response = await tryGenerateWithJsonFallback(
+        agent,
+        [
+          ...phaseAResponse.messages,
+          {
+            role: "user" as const,
+            content:
+              `Now produce the structured comic plan. ` +
+              `Using the context you just gathered from the knowledge base tools, ` +
+              `break the transcript into chapters and scenes with verbatim excerpts, ` +
+              `identify all characters (reuse existing names from list-characters where applicable), ` +
+              `and define the world setting and art style. ` +
+              `Output the structured JSON plan now.`,
+          },
+        ],
+        {
+          maxSteps: 3,
+          structuredOutput: { schema: pass1Schema },
+        },
+      );
+      log.info("Pass 1B: structured output received", {
         elapsed: `${Date.now() - startTime}ms`,
         hasObject: !!pass1Response.object,
       });
