@@ -621,10 +621,6 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
     const ch = chapters.find((c) => c.id === selectedChapterId);
     return ch?.stage ?? null;
   }, [chapters, selectedChapterId]);
-  const selectedChapter = useMemo(() => {
-    if (!selectedChapterId) return null;
-    return chapters.find((c) => c.id === selectedChapterId) ?? null;
-  }, [chapters, selectedChapterId]);
 
   // Knowledge panel visibility is driven by the shared right-dock store.
   const showKnowledge = rightPanel === 'knowledge';
@@ -744,21 +740,10 @@ export function CanvasTab({ projectId }: CanvasTabProps): JSX.Element {
                   }}
                 >
                   <SelectTrigger className="h-11 min-w-[20rem] max-w-[28rem] rounded-lg border-border bg-background px-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <SelectValue
-                        placeholder="All chapters"
-                        className="min-w-0 truncate text-left text-sm font-medium"
-                      />
-                      {selectedChapter ? (
-                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {selectedChapter.stage}
-                        </span>
-                      ) : (
-                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          overview
-                        </span>
-                      )}
-                    </div>
+                    <SelectValue
+                      placeholder="All chapters"
+                      className="min-w-0 flex-1 truncate text-left text-sm font-medium"
+                    />
                   </SelectTrigger>
                   <SelectContent align="start" className="min-w-[20rem]">
                     {chapters.map((ch) => (
